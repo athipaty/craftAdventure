@@ -259,6 +259,42 @@ body {
   #action-btn:active {
     background: rgba(76, 139, 245, 0.95);
   }
+
+  /* Move/Upgrade sit in a small stack above the main action button, only
+     shown (see updateDigPrompt()) while standing near a placed structure. */
+  #structure-actions {
+    position: absolute;
+    right: 24px;
+    bottom: 128px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  #move-btn,
+  #upgrade-btn {
+    width: 68px;
+    height: 44px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background: rgba(40, 44, 55, 0.8);
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    touch-action: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #move-btn:active,
+  #upgrade-btn:active {
+    background: rgba(40, 44, 55, 0.95);
+  }
+
+  #upgrade-btn:disabled {
+    opacity: 0.4;
+  }
 }
 
 #dig-prompt {
