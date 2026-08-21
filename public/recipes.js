@@ -42,6 +42,16 @@ const RECIPES = {
     },
     description: 'Increases how much you can carry.',
   },
+  knight: {
+    label: 'Knight',
+    upgradeKey: 'knightLevel',
+    maxLevel: 2,
+    costs: {
+      1: { wood: 6, ore: 6 },
+      2: { ore: 12, stone: 8 },
+    },
+    description: 'Lets you fight off enemies, and hits harder.',
+  },
 };
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -58,40 +58,27 @@ const STRUCTURES = {
       3: { stone: 10, ore: 6 },
     },
   },
-  // A fighting unit, not a barrier — no levels, just a build cost. Its
-  // combat health lives in knightHealth below, not on this definition.
-  knight: {
-    label: "Knight",
-    cost: { wood: 10, ore: 8 },
-    radius: 8,
-  },
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
 const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
 
-// --- Knight vs. enemy combat -------------------------------------------
-// Session-only: enemies aren't persisted at all (same as resources — each
-// session gets a fresh scatter), and a Knight's health during battle isn't
-// either. Only whether a Knight structure still exists is saved, via the
-// normal structures list plus the no-refund structure-lost call below.
-const KNIGHT_MAX_HEALTH = 30;
-const KNIGHT_ATTACK_DAMAGE = 5;
-const KNIGHT_ATTACK_COOLDOWN_MS = 800;
+// --- Player vs. enemy combat --------------------------------------------
+// "Knight" is player equipment (see RECIPES in recipes.js), same as the
+// axe/pickaxe — crafting it is what lets the player fight at all, and its
+// level scales attack damage. Enemies are session-only, same as how
+// resources already work: not persisted, just a fresh scatter each login.
+// Enemies don't fight back or touch the player — deliberately scoped down,
+// this is "hit monsters with your weapon", not a full combat system.
+const KNIGHT_ATTACK_DAMAGE = { 1: 4, 2: 8 };
+const PLAYER_ATTACK_COOLDOWN_MS = 500;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
-const ENEMY_ATTACK_DAMAGE = 3;
-const ENEMY_ATTACK_COOLDOWN_MS = 1000;
-const ENEMY_AGGRO_RANGE = 140; // how far a Knight can be before an enemy notices it
-const ENEMY_COMBAT_RANGE = 40; // melee range once an enemy reaches its target Knight
-const ENEMY_CHASE_SPEED = 0.5;
 const ENEMY_WANDER_SPEED = 0.2;
 const ENEMY_RESPAWN_MS = 20000;
 
 let enemies = [];
-// structureId -> { health, lastAttackAt } for every built Knight — kept in
-// sync with player.structures by syncKnightHealth(), called every combat
-// tick, rather than threaded through every place structures gets reloaded.
-let knightHealth = new Map();
+let nearbyEnemy = null; // enemy in attack range right now, if any
+let lastPlayerAttackAt = 0;
 let placingType = null; // structure key currently being lined up (brand-new build), if any
 // Structure currently picked up to be relocated (its pre-move doc, so we
 // know its type/level/_id) — mutually exclusive with placingType, and
@@ -499,7 +486,6 @@ async function resetPlayer() {
     placingType = null;
     movingStructure = null;
     placeOffset = { x: 0, y: 0 };
-    knightHealth = new Map();
     exploredCells.fill(0);
     closeCraftPanel();
     closeBuildPanel();
@@ -679,49 +665,6 @@ function structureUpgradeInfo(structure) {
   return { currentLevel, maxLevel, maxed, cost, canAfford };
 }
 
-// Keeps knightHealth in step with player.structures — adds a fresh health
-// entry for any Knight it hasn't seen yet, drops entries for Knights that
-// are no longer there (demolished, moved out from under us some other way).
-// Called every combat tick rather than threaded through every place
-// player.structures gets reassigned.
-function syncKnightHealth() {
-  const liveIds = new Set();
-  for (const s of player.structures) {
-    if (s.type !== "knight") continue;
-    liveIds.add(s._id);
-    if (!knightHealth.has(s._id)) {
-      knightHealth.set(s._id, { health: KNIGHT_MAX_HEALTH, lastAttackAt: 0 });
-    }
-  }
-  for (const id of knightHealth.keys()) {
-    if (!liveIds.has(id)) knightHealth.delete(id);
-  }
-}
-
-// Tells the backend a structure was destroyed in combat rather than
-// voluntarily demolished, so it's removed with no resource refund.
-async function reportStructureLost(structureId) {
-  const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/structure-lost`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ structureId }),
-  });
-  const data = await res.json();
-  if (res.ok) player.structures = data.structures;
-}
-
-function damageKnight(structure, amount) {
-  const hp = knightHealth.get(structure._id);
-  if (!hp) return;
-  hp.health -= amount;
-  if (hp.health <= 0) {
-    knightHealth.delete(structure._id);
-    player.structures = player.structures.filter((s) => s._id !== structure._id);
-    spawnFloatingText(structure.x, structure.y - 20, "Knight fell!", "#ff8a8a");
-    reportStructureLost(structure._id);
-  }
-}
-
 function damageEnemy(enemy, amount) {
   enemy.health -= amount;
   if (enemy.health <= 0) {
@@ -731,52 +674,28 @@ function damageEnemy(enemy, amount) {
   }
 }
 
-// Each enemy targets its single nearest Knight: closes in while outside
-// combat range, otherwise trades blows with it (each side on its own
-// attack cooldown). Outside every Knight's aggro range, it just wanders.
-// No pathfinding around obstacles and enemies never touch the player
-// directly — deliberately simple, this is a Knights-fight-monsters loop,
-// not a full combat system.
-function updateCombat(now) {
-  syncKnightHealth();
+// Swings the player's Knight weapon at nearbyEnemy, gated by both a cooldown
+// (so mashing E doesn't one-frame-kill everything) and actually having
+// crafted the weapon — no Knight level, no fighting.
+function attackNearbyEnemy() {
+  const level = player.upgrades.knightLevel;
+  if (!nearbyEnemy || level < 1) return;
+  const now = Date.now();
+  if (now - lastPlayerAttackAt < PLAYER_ATTACK_COOLDOWN_MS) return;
+  lastPlayerAttackAt = now;
+  const damage = KNIGHT_ATTACK_DAMAGE[level] || KNIGHT_ATTACK_DAMAGE[1];
+  spawnFloatingText(nearbyEnemy.x, nearbyEnemy.y - 12, `-${damage}`, "#ff8a8a");
+  damageEnemy(nearbyEnemy, damage);
+}
 
+// Enemies just wander and respawn when defeated — they don't fight back or
+// touch the player at all, so this is far simpler than a real combat AI.
+function updateCombat(now) {
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue; // waiting to respawn
-
-    let target = null;
-    let targetDist = Infinity;
-    for (const s of player.structures) {
-      if (s.type !== "knight") continue;
-      const dist = Math.hypot(s.x - enemy.x, s.y - enemy.y);
-      if (dist < targetDist) {
-        targetDist = dist;
-        target = s;
-      }
-    }
-
-    if (target && targetDist <= ENEMY_AGGRO_RANGE) {
-      if (targetDist > ENEMY_COMBAT_RANGE) {
-        const dx = target.x - enemy.x;
-        const dy = target.y - enemy.y;
-        const len = Math.hypot(dx, dy) || 1;
-        enemy.x += (dx / len) * ENEMY_CHASE_SPEED;
-        enemy.y += (dy / len) * ENEMY_CHASE_SPEED;
-      } else {
-        if (now - enemy.lastAttackAt >= ENEMY_ATTACK_COOLDOWN_MS) {
-          enemy.lastAttackAt = now;
-          damageKnight(target, ENEMY_ATTACK_DAMAGE);
-        }
-        const hp = knightHealth.get(target._id);
-        if (hp && now - hp.lastAttackAt >= KNIGHT_ATTACK_COOLDOWN_MS) {
-          hp.lastAttackAt = now;
-          damageEnemy(enemy, KNIGHT_ATTACK_DAMAGE);
-        }
-      }
-    } else {
-      enemy.wanderAngle += (Math.random() - 0.5) * 0.4;
-      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
-      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
-    }
+    enemy.wanderAngle += (Math.random() - 0.5) * 0.4;
+    enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
+    enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
   }
 
   for (const enemy of enemies) {
@@ -798,6 +717,8 @@ function performAction() {
     confirmPlacement();
   } else if (nearbyNode) {
     startDig(nearbyNode);
+  } else if (nearbyEnemy) {
+    attackNearbyEnemy();
   } else if (nearbyStructure) {
     demolishStructure(nearbyStructure);
   }
@@ -945,6 +866,39 @@ function drawBagIcon(x, y, scale, level = 1) {
   }
 }
 
+function drawSwordIcon(x, y, scale, level = 1) {
+  const upgraded = level >= 2;
+
+  ctx.strokeStyle = upgraded ? "#e8e8e8" : "#c9c9c9";
+  ctx.lineWidth = 3 * scale;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - 5 * scale, y + 9 * scale);
+  ctx.lineTo(x + 6 * scale, y - 10 * scale);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#8a8a8a";
+  ctx.lineWidth = 3 * scale;
+  ctx.beginPath();
+  ctx.moveTo(x - 8 * scale, y + 4 * scale);
+  ctx.lineTo(x - 1 * scale, y + 7 * scale);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#5a3921";
+  ctx.lineWidth = 3.5 * scale;
+  ctx.beginPath();
+  ctx.moveTo(x - 6 * scale, y + 9 * scale);
+  ctx.lineTo(x - 9 * scale, y + 12 * scale);
+  ctx.stroke();
+
+  if (upgraded) {
+    ctx.fillStyle = "#ffd23f";
+    ctx.beginPath();
+    ctx.arc(x - 4 * scale, y + 5 * scale, 1.6 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // Mobile's floating Craft button uses this in place of the "Craft" text
 // label — same hand-drawn style as the tool icons above, just not tied to
 // any recipe/level.
@@ -970,7 +924,13 @@ function drawHammerIcon(x, y, scale) {
   ctx.restore();
 }
 
-const TOOL_ICON_DRAWERS = { axe: drawAxeIcon, pickaxe: drawPickaxeIcon, boots: drawBootsIcon, bag: drawBagIcon };
+const TOOL_ICON_DRAWERS = {
+  axe: drawAxeIcon,
+  pickaxe: drawPickaxeIcon,
+  boots: drawBootsIcon,
+  bag: drawBagIcon,
+  knight: drawSwordIcon,
+};
 
 const toolIconCache = {};
 function getToolIconUrl(key, level = 1) {
@@ -1311,6 +1271,7 @@ function update() {
     }
     nearbyNode = null;
     nearbyStructure = null;
+    nearbyEnemy = null;
     updateDigPrompt();
     return;
   }
@@ -1364,6 +1325,17 @@ function update() {
     if (dist <= GATHER_RADIUS && dist < bestStructDist) {
       bestStructDist = dist;
       nearbyStructure = s;
+    }
+  }
+
+  nearbyEnemy = null;
+  let bestEnemyDist = Infinity;
+  for (const enemy of enemies) {
+    if (enemy.health <= 0) continue;
+    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    if (dist <= GATHER_RADIUS && dist < bestEnemyDist) {
+      bestEnemyDist = dist;
+      nearbyEnemy = enemy;
     }
   }
 
@@ -1584,6 +1556,12 @@ function updateDigPrompt() {
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Hit";
     actionBtn.classList.remove("hidden");
+  } else if (nearbyEnemy) {
+    const armed = player.upgrades.knightLevel >= 1;
+    promptText.textContent = armed ? "Press E to attack" : "Craft a Knight to fight";
+    prompt.classList.remove("hidden");
+    actionBtn.textContent = "Attack";
+    actionBtn.classList.toggle("hidden", !armed);
   } else if (nearbyStructure) {
     const label = STRUCTURES[nearbyStructure.type]?.label || nearbyStructure.type;
     const { currentLevel, maxed, cost, canAfford } = structureUpgradeInfo(nearbyStructure);
@@ -1747,64 +1725,6 @@ function drawWall(x, y, level = 1) {
   }
 }
 
-// A fighting unit — silver/gray armor (vs. the player's blue) with a
-// shield, sword, and helmet, so it reads as a distinct kind of thing from
-// both the player and a wall at a glance.
-function drawKnight(x, y) {
-  drawShadow(x, y + 12, 10, 4);
-
-  ctx.strokeStyle = "#2c3e50";
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(x - 4, y + 4);
-  ctx.lineTo(x - 4, y + 12);
-  ctx.moveTo(x + 4, y + 4);
-  ctx.lineTo(x + 4, y + 12);
-  ctx.stroke();
-
-  // shield
-  ctx.fillStyle = "#7a8a99";
-  ctx.strokeStyle = "#4a5a66";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x - 12, y - 6, 6, 10, 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // sword
-  ctx.strokeStyle = "#c9c9c9";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x + 8, y - 2);
-  ctx.lineTo(x + 15, y - 10);
-  ctx.stroke();
-
-  // armored body
-  ctx.fillStyle = "#8a94a6";
-  ctx.strokeStyle = "#4a5460";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(x - 8, y - 8, 16, 14, 4);
-  ctx.fill();
-  ctx.stroke();
-
-  // helmet
-  ctx.fillStyle = "#5a6a7a";
-  ctx.strokeStyle = "#333c46";
-  ctx.beginPath();
-  ctx.arc(x, y - 12, 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.strokeStyle = "#222";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 3, y - 12);
-  ctx.lineTo(x + 3, y - 12);
-  ctx.stroke();
-}
-
 // A small hostile creature — deliberately simple (round body, pointed
 // ears, red eyes) so it reads as "monster" against the friendlier resource
 // and structure art.
@@ -1842,8 +1762,8 @@ function drawEnemy(x, y) {
   ctx.fill();
 }
 
-// Thin bar above a damaged Knight/enemy — hidden entirely at full health so
-// it doesn't clutter every structure/creature on screen.
+// Thin bar above a damaged enemy — hidden entirely at full health so it
+// doesn't clutter every creature on screen.
 function drawHealthBar(x, y, health, maxHealth, width = 20) {
   if (health >= maxHealth) return;
   const pct = Math.max(0, health / maxHealth);
@@ -1854,43 +1774,29 @@ function drawHealthBar(x, y, health, maxHealth, width = 20) {
   ctx.fillRect(x - width / 2, y, width * pct, h);
 }
 
-// Ground footprint half-size per structure type, used to size the
-// demolish-target ring below — matches each type's actual visual width.
-const STRUCTURE_FOOTPRINT_HALF = { wall: WALL_HALF, knight: 8 };
-
-function drawStructureArt(type, x, y, level) {
-  if (type === "wall") drawWall(x, y, level);
-  else if (type === "knight") drawKnight(x, y);
-}
-
 function drawStructure(s, isDemolishTarget = false) {
   const level = s.level || 1;
   if (!isDemolishTarget) {
-    drawStructureArt(s.type, s.x, s.y, level);
-  } else {
-    // In range to demolish (E hits this one): pulse a red ring on the
-    // ground and bob the structure up off it, so it's unmistakably the one
-    // that will be torn down and not one of its neighbors.
-    const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
-    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
-    ctx.save();
-    ctx.fillStyle = `rgba(230, 90, 90, ${0.1 + pulse * 0.15})`;
-    ctx.strokeStyle = `rgba(230, 90, 90, ${0.4 + pulse * 0.5})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(s.x, s.y + half, half + 4, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-
-    const bob = 3 + pulse * 3;
-    drawStructureArt(s.type, s.x, s.y - bob, level);
+    if (s.type === "wall") drawWall(s.x, s.y, level);
+    return;
   }
 
-  if (s.type === "knight") {
-    const hp = knightHealth.get(s._id);
-    if (hp) drawHealthBar(s.x, s.y - 24, hp.health, KNIGHT_MAX_HEALTH);
-  }
+  // In range to demolish (E hits this one): pulse a red ring on the ground
+  // and bob the structure up off it, so it's unmistakably the one that will
+  // be torn down and not one of its neighbors.
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
+  ctx.save();
+  ctx.fillStyle = `rgba(230, 90, 90, ${0.1 + pulse * 0.15})`;
+  ctx.strokeStyle = `rgba(230, 90, 90, ${0.4 + pulse * 0.5})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(s.x, s.y + WALL_HALF, WALL_HALF + 4, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  const bob = 3 + pulse * 3;
+  if (s.type === "wall") drawWall(s.x, s.y - bob, level);
 }
 
 // The "you're about to place here" slot — a highlighted square at the
