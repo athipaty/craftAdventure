@@ -36,7 +36,10 @@ const STRUCTURES = {
   wall: {
     label: "Wall",
     cost: { wood: 5 }, // level 1 (build cost)
-    radius: 14,
+    // Kept small (well under half of PLACE_GRID) so two walls dropped on
+    // neighboring grid cells don't block each other's placement — that's
+    // what makes lining up a fence or walled area work.
+    radius: 6,
     maxLevel: 3,
     upgradeCost: {
       2: { wood: 6, stone: 4 },
@@ -1450,34 +1453,37 @@ const WALL_LEVEL_STYLE = {
   3: { fill: "#5a6068", stroke: "#2b2e33", line: "rgba(255, 255, 255, 0.15)" },
 };
 
+// Square, sized to exactly one PLACE_GRID cell — so walls placed on
+// neighboring grid cells butt up edge-to-edge with no gap or overlap,
+// which is what makes lining up a fence or walled-off area straightforward.
+const WALL_HALF = PLACE_GRID / 2;
+
 function drawWall(x, y, level = 1) {
   const style = WALL_LEVEL_STYLE[level] || WALL_LEVEL_STYLE[1];
-  drawShadow(x, y + 11, 13, 4);
+  drawShadow(x, y + WALL_HALF - 1, WALL_HALF + 1, 3);
 
   ctx.fillStyle = style.fill;
   ctx.strokeStyle = style.stroke;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(x - 12, y - 12, 24, 20, 3);
+  ctx.roundRect(x - WALL_HALF, y - WALL_HALF, WALL_HALF * 2, WALL_HALF * 2, 2);
   ctx.fill();
   ctx.stroke();
 
-  // horizontal plank/mortar lines
+  // horizontal plank/mortar line
   ctx.strokeStyle = style.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(x - 12, y - 4);
-  ctx.lineTo(x + 12, y - 4);
-  ctx.moveTo(x - 12, y + 4);
-  ctx.lineTo(x + 12, y + 4);
+  ctx.moveTo(x - WALL_HALF, y);
+  ctx.lineTo(x + WALL_HALF, y);
   ctx.stroke();
 
   if (level >= 3) {
     ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-    for (const rx of [-9, 9]) {
-      for (const ry of [-9, 6]) {
+    for (const rx of [-WALL_HALF + 2, WALL_HALF - 2]) {
+      for (const ry of [-WALL_HALF + 2, WALL_HALF - 2]) {
         ctx.beginPath();
-        ctx.arc(x + rx, y + ry, 1.3, 0, Math.PI * 2);
+        ctx.arc(x + rx, y + ry, 1.1, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -1500,7 +1506,7 @@ function drawStructure(s, isDemolishTarget = false) {
   ctx.strokeStyle = `rgba(230, 90, 90, ${0.4 + pulse * 0.5})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.ellipse(s.x, s.y + 12, 16, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(s.x, s.y + WALL_HALF, WALL_HALF + 4, 5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
