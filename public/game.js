@@ -291,7 +291,7 @@ function updateCamera() {
 // reads as movement, not just a static green backdrop.
 function drawGrid() {
   const { w: viewW, h: viewH } = viewWorldSize();
-  const gridSize = 120;
+  const gridSize = 16;
   const startX = Math.floor(cameraX / gridSize) * gridSize;
   const startY = Math.floor(cameraY / gridSize) * gridSize;
 
