@@ -149,9 +149,11 @@ body {
     width: 110px;
     height: 110px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.35);
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.55);
+    border: 3px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     touch-action: none;
+    z-index: 10;
   }
 
   #joystick-knob {
@@ -163,8 +165,9 @@ body {
     margin-left: -24px;
     margin-top: -24px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.55);
-    border: 2px solid rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid rgba(255, 255, 255, 1);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
     pointer-events: none;
   }
 
@@ -354,6 +357,10 @@ body {
     position: fixed;
     inset: 0;
     width: 100vw;
+    /* dvh isn't supported on some older mobile browsers — if the second
+       declaration below is invalid there, the browser ignores it and keeps
+       this vh fallback rather than dropping height entirely. */
+    height: 100vh;
     height: 100dvh;
     max-width: none;
     justify-content: center;
@@ -381,6 +388,7 @@ body {
     width: auto;
     height: auto;
     max-width: 100%;
+    max-height: calc(100vh - 70px);
     max-height: calc(100dvh - 70px);
   }
 
