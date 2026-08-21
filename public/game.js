@@ -1060,8 +1060,24 @@ function drawMinimap() {
   ctx.rect(mapX, mapY, MINIMAP_W, MINIMAP_H);
   ctx.clip();
 
+  // Same fog the main view uses — unexplored ground stays dark here too, at
+  // cell resolution since drawing WORLD_W x WORLD_H worth of individual
+  // fog cells this small would just look noisy.
+  const cellW = FOG_CELL * scaleX;
+  const cellH = FOG_CELL * scaleY;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+  for (let r = 0; r < FOG_ROWS; r++) {
+    for (let c = 0; c < FOG_COLS; c++) {
+      if (!exploredCells[r * FOG_COLS + c]) {
+        ctx.fillRect(mapX + c * cellW, mapY + r * cellH, cellW + 0.5, cellH + 0.5);
+      }
+    }
+  }
+
   for (const node of resources) {
     if (node.amount <= 0) continue;
+    const cell = Math.floor(node.y / FOG_CELL) * FOG_COLS + Math.floor(node.x / FOG_CELL);
+    if (!exploredCells[cell]) continue; // hidden until you've actually been near it
     ctx.fillStyle = MINIMAP_DOT_COLOR[node.type] || "#fff";
     ctx.beginPath();
     ctx.arc(mapX + node.x * scaleX, mapY + node.y * scaleY, 2, 0, Math.PI * 2);
