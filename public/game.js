@@ -35,6 +35,9 @@ const STRUCTURES = {
   wall: { label: "Wall", cost: { wood: 5 }, radius: 14 },
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
+const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
+let placingType = null; // structure key currently being lined up, if any
+let nearbyStructure = null; // placed structure in range right now, if any
 
 let player = null;
 let resources = [];
@@ -384,6 +387,7 @@ async function resetPlayer() {
 
     isDigging = false;
     digTargetNode = null;
+    placingType = null;
     exploredCells.fill(0);
     closeCraftPanel();
     closeBuildPanel();
@@ -427,15 +431,40 @@ async function craftItem(key) {
   renderCraftPanel();
 }
 
-// Places a structure a fixed distance in front of the player, facing
-// whichever way they're currently facing — mirrors how gathering works
-// (walk up, act), rather than a separate click-to-place mode.
-async function buildStructure(key) {
-  const structure = STRUCTURES[key];
+// Where a structure would land right now: a fixed distance in front of the
+// player, facing whichever way they're currently facing, snapped to the same
+// 16px grid the ground is drawn on so the target slot is unambiguous. Walking
+// or turning during placement moves this, which is how "pick a spot" works
+// here — there's no click-to-target anywhere else in the game, so placement
+// stays consistent with the existing "walk up, act" interaction model.
+function placementPosition() {
   const angle = dirIndex * (Math.PI / 4);
-  const x = Math.min(WORLD_W - 14, Math.max(14, player.x + Math.cos(angle) * PLACE_DISTANCE));
-  const y = Math.min(WORLD_H - 14, Math.max(14, player.y + Math.sin(angle) * PLACE_DISTANCE));
+  const rawX = player.x + Math.cos(angle) * PLACE_DISTANCE;
+  const rawY = player.y + Math.sin(angle) * PLACE_DISTANCE;
+  const x = Math.min(WORLD_W - 14, Math.max(14, Math.round(rawX / PLACE_GRID) * PLACE_GRID));
+  const y = Math.min(WORLD_H - 14, Math.max(14, Math.round(rawY / PLACE_GRID) * PLACE_GRID));
+  return { x, y };
+}
 
+function startPlacing(key) {
+  placingType = key;
+  closeBuildPanel();
+}
+
+function cancelPlacing() {
+  placingType = null;
+  updateDigPrompt();
+}
+
+function confirmPlacement() {
+  if (!placingType) return;
+  const { x, y } = placementPosition();
+  if (!structureAfford(placingType) || positionBlocked(x, y)) return;
+  buildStructure(placingType, x, y);
+}
+
+async function buildStructure(key, x, y) {
+  const structure = STRUCTURES[key];
   const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/build`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -448,9 +477,41 @@ async function buildStructure(key) {
   }
   player.inventory = data.inventory;
   player.structures = data.structures;
+  placingType = null;
   spawnFloatingText(x, y - 20, structure.label, "#8fb4f7");
   renderHud();
-  renderBuildPanel();
+}
+
+async function demolishStructure(structure) {
+  const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/demolish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structureId: structure._id }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || "Demolish failed");
+    return;
+  }
+  player.inventory = data.inventory;
+  player.structures = data.structures;
+  const label = STRUCTURES[structure.type]?.label || structure.type;
+  spawnFloatingText(structure.x, structure.y - 20, `-${label}`, "#ff8a8a");
+  renderHud();
+}
+
+// Single entry point for the "act" input (E key / mobile action button),
+// same priority everywhere it's wired up: finish what you're already doing,
+// then placing, then gathering, then demolishing.
+function performAction() {
+  if (isDigging) return;
+  if (placingType) {
+    confirmPlacement();
+  } else if (nearbyNode) {
+    startDig(nearbyNode);
+  } else if (nearbyStructure) {
+    demolishStructure(nearbyStructure);
+  }
 }
 
 function renderHud() {
@@ -595,6 +656,31 @@ function drawBagIcon(x, y, scale, level = 1) {
   }
 }
 
+// Mobile's floating Craft button uses this in place of the "Craft" text
+// label — same hand-drawn style as the tool icons above, just not tied to
+// any recipe/level.
+function drawHammerIcon(x, y, scale) {
+  ctx.strokeStyle = "#8a5a2f";
+  ctx.lineWidth = 3.5 * scale;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - 6 * scale, y + 10 * scale);
+  ctx.lineTo(x + 3 * scale, y - 7 * scale);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(x + 3 * scale, y - 7 * scale);
+  ctx.rotate(-Math.PI / 4.2);
+  ctx.fillStyle = "#8a8a8a";
+  ctx.strokeStyle = "#5c5c5c";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(-9 * scale, -5 * scale, 18 * scale, 10 * scale, 2 * scale);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 const TOOL_ICON_DRAWERS = { axe: drawAxeIcon, pickaxe: drawPickaxeIcon, boots: drawBootsIcon, bag: drawBagIcon };
 
 const toolIconCache = {};
@@ -621,6 +707,22 @@ function getToolIconUrl(key, level = 1) {
 
   toolIconCache[cacheKey] = iconCanvas.toDataURL();
   return toolIconCache[cacheKey];
+}
+
+let craftButtonIconCache = null;
+function getCraftButtonIconUrl() {
+  if (craftButtonIconCache) return craftButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 36;
+  iconCanvas.height = 36;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+  drawHammerIcon(18, 20, 1);
+  ctx = savedCtx;
+
+  craftButtonIconCache = iconCanvas.toDataURL();
+  return craftButtonIconCache;
 }
 
 function craftEntryState(key) {
@@ -759,7 +861,7 @@ function renderBuildPanel() {
     btn.disabled = !canAfford;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      buildStructure(key);
+      startPlacing(key);
     });
     row.appendChild(btn);
 
@@ -773,6 +875,7 @@ function isBuildPanelOpen() {
 
 function openBuildPanel() {
   closeCraftPanel();
+  placingType = null;
   document.getElementById("build-panel").classList.remove("hidden");
   keys.clear();
   renderBuildPanel();
@@ -858,6 +961,17 @@ function update() {
       nearbyNode = node;
     }
   }
+
+  nearbyStructure = null;
+  let bestStructDist = Infinity;
+  for (const s of player.structures) {
+    const dist = Math.hypot(s.x - player.x, s.y - player.y);
+    if (dist <= GATHER_RADIUS && dist < bestStructDist) {
+      bestStructDist = dist;
+      nearbyStructure = s;
+    }
+  }
+
   updateDigPrompt();
 }
 
@@ -918,14 +1032,25 @@ function handleDigging(now) {
   renderHud();
 }
 
-// Bottom-left circular joystick (drag to move) and bottom-right action
-// button (tap to hit/gather), plus a mouse fallback so the layout can be
-// checked on desktop. Touches are tracked by identifier so dragging the
-// joystick doesn't get confused by a second finger tapping the action button.
+// Floating bottom-left joystick (drag to move) and bottom-right action
+// button (tap to hit/gather/place/demolish), plus a mouse fallback so the
+// layout can be checked on desktop. Touches are tracked by identifier so
+// dragging the joystick doesn't get confused by a second finger tapping the
+// action button. "Floating" means the base isn't pinned to one fixed spot —
+// touching anywhere in the bottom-left zone spawns it centered on that
+// point, so it lands wherever the player's thumb naturally is.
 function setupTouchControls() {
+  const zone = document.getElementById("joystick-zone");
   const base = document.getElementById("joystick-base");
   const knob = document.getElementById("joystick-knob");
   let activeId = null;
+
+  function showBaseAt(clientX, clientY) {
+    const wrapRect = document.getElementById("canvas-wrap").getBoundingClientRect();
+    base.style.left = `${clientX - wrapRect.left}px`;
+    base.style.top = `${clientY - wrapRect.top}px`;
+    base.classList.add("active");
+  }
 
   function moveTo(clientX, clientY) {
     const rect = base.getBoundingClientRect();
@@ -956,14 +1081,17 @@ function setupTouchControls() {
     joystickVector.x = 0;
     joystickVector.y = 0;
     knob.style.transform = "translate(0px, 0px)";
+    base.classList.remove("active");
   }
 
-  base.addEventListener(
+  zone.addEventListener(
     "touchstart",
     (e) => {
+      if (activeId !== null) return; // already tracking a touch
       e.preventDefault();
       const t = e.changedTouches[0];
       activeId = t.identifier;
+      showBaseAt(t.clientX, t.clientY);
       moveTo(t.clientX, t.clientY);
     },
     { passive: false }
@@ -989,8 +1117,10 @@ function setupTouchControls() {
   window.addEventListener("touchend", endTouch);
   window.addEventListener("touchcancel", endTouch);
 
-  base.addEventListener("mousedown", (e) => {
+  zone.addEventListener("mousedown", (e) => {
+    if (activeId !== null) return;
     activeId = "mouse";
+    showBaseAt(e.clientX, e.clientY);
     moveTo(e.clientX, e.clientY);
   });
   window.addEventListener("mousemove", (e) => {
@@ -1003,24 +1133,41 @@ function setupTouchControls() {
   const actionBtn = document.getElementById("action-btn");
   const triggerAction = (e) => {
     e.preventDefault();
-    if (!isDigging && nearbyNode) startDig(nearbyNode);
+    performAction();
   };
   actionBtn.addEventListener("touchstart", triggerAction, { passive: false });
   actionBtn.addEventListener("click", triggerAction);
+  document.getElementById("cancel-place-btn").addEventListener("click", cancelPlacing);
 
   document.getElementById("craft-btn").addEventListener("click", toggleCraftPanel);
 }
 
 function updateDigPrompt() {
   const prompt = document.getElementById("dig-prompt");
+  const promptText = document.getElementById("dig-prompt-text");
   const actionBtn = document.getElementById("action-btn");
+  const cancelBtn = document.getElementById("cancel-place-btn");
+  cancelBtn.classList.toggle("hidden", !placingType);
+
   if (isDigging) {
-    prompt.textContent = `Gathering ${digTargetNode.type}...`;
+    promptText.textContent = `Gathering ${digTargetNode.type}...`;
     prompt.classList.remove("hidden");
     actionBtn.classList.add("hidden");
-  } else if (nearbyNode) {
-    prompt.textContent = `Press E to gather ${nearbyNode.type}`;
+  } else if (placingType) {
+    promptText.textContent = `Press E to place ${STRUCTURES[placingType].label}`;
     prompt.classList.remove("hidden");
+    actionBtn.textContent = "Place";
+    actionBtn.classList.remove("hidden");
+  } else if (nearbyNode) {
+    promptText.textContent = `Press E to gather ${nearbyNode.type}`;
+    prompt.classList.remove("hidden");
+    actionBtn.textContent = "Hit";
+    actionBtn.classList.remove("hidden");
+  } else if (nearbyStructure) {
+    const label = STRUCTURES[nearbyStructure.type]?.label || nearbyStructure.type;
+    promptText.textContent = `Press E to demolish ${label}`;
+    prompt.classList.remove("hidden");
+    actionBtn.textContent = "Demolish";
     actionBtn.classList.remove("hidden");
   } else {
     prompt.classList.add("hidden");
@@ -1149,6 +1296,30 @@ function drawStructure(s) {
   if (s.type === "wall") drawWall(s.x, s.y);
 }
 
+// The "you're about to place here" slot — a highlighted square at the
+// snapped target position (green if it's a legal spot, red if not), with a
+// translucent preview of the structure itself sitting on top of it.
+function drawPlacementGhost() {
+  if (!placingType) return;
+  const { x, y } = placementPosition();
+  const structure = STRUCTURES[placingType];
+  const valid = structureAfford(placingType) && !positionBlocked(x, y);
+  const half = structure.radius + 4;
+
+  ctx.fillStyle = valid ? "rgba(90, 220, 120, 0.2)" : "rgba(230, 90, 90, 0.2)";
+  ctx.strokeStyle = valid ? "rgba(90, 220, 120, 0.9)" : "rgba(230, 90, 90, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(x - half, y - half, half * 2, half * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  drawStructure({ type: placingType, x, y });
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -1168,6 +1339,7 @@ function draw() {
   }
 
   for (const s of player.structures) drawStructure(s);
+  drawPlacementGhost();
 
   drawCharacter(player.x, player.y);
   drawFloatingTexts();
@@ -1619,6 +1791,7 @@ function startGame() {
   document.getElementById("wood-icon").src = getResourceIconUrl("wood");
   document.getElementById("stone-icon").src = getResourceIconUrl("stone");
   document.getElementById("ore-icon").src = getResourceIconUrl("ore");
+  document.getElementById("craft-btn-icon").src = getCraftButtonIconUrl();
 
   spawnResources();
   renderHud();
@@ -1634,6 +1807,22 @@ function startGame() {
     if (k === "b") {
       toggleBuildPanel();
       return;
+    }
+
+    // Placement doesn't swallow movement — walking/turning is how you pick a
+    // spot — so only intercept the confirm/cancel keys and fall through for
+    // everything else (WASD reaches `keys.add(k)` below as normal, and "e"
+    // is handled by the shared performAction() further down).
+    if (placingType) {
+      if (k === "enter") {
+        e.preventDefault();
+        confirmPlacement();
+        return;
+      }
+      if (k === "escape") {
+        cancelPlacing();
+        return;
+      }
     }
 
     if (isCraftPanelOpen()) {
@@ -1658,7 +1847,7 @@ function startGame() {
     }
 
     if (k === "e") {
-      if (!isDigging && nearbyNode) startDig(nearbyNode);
+      performAction();
       return;
     }
     keys.add(k);

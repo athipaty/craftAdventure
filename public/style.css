@@ -121,6 +121,12 @@ body {
   background: #4c8bf533;
 }
 
+/* Mobile swaps the text label for the hammer icon (see the media query
+   below); on desktop the icon image just stays unused/hidden. */
+.btn-icon {
+  display: none;
+}
+
 #reset-btn {
   padding: 5px 12px;
   font-size: 0.85rem;
@@ -168,18 +174,40 @@ body {
     display: block;
   }
 
+  /* Floating joystick: touching anywhere in this bottom-left zone spawns the
+     base centered on that point (JS sets left/top on touch/mousedown), so
+     it works wherever the player's thumb naturally lands instead of forcing
+     them to find one exact fixed spot. The zone itself stays invisible. */
+  #joystick-zone {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 55%;
+    height: 65%;
+    touch-action: none;
+  }
+
   #joystick-base {
     position: absolute;
-    left: 20px;
-    bottom: 20px;
+    /* left/top are set in JS to the touch point; centered via negative
+       margin so that point becomes the base's middle, not its corner. */
     width: 110px;
     height: 110px;
+    margin-left: -55px;
+    margin-top: -55px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
     border: 3px solid rgba(255, 255, 255, 0.7);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     touch-action: none;
     z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+
+  #joystick-base.active {
+    opacity: 1;
   }
 
   #joystick-knob {
@@ -224,6 +252,9 @@ body {
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 999px;
@@ -231,6 +262,13 @@ body {
   font-size: 0.9rem;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* The prompt pill itself ignores clicks (so it never blocks the canvas
+   underneath) — the cancel button opts back in so it stays tappable. */
+#cancel-place-btn {
+  pointer-events: auto;
+  font-size: 1.1rem;
 }
 
 .hint {
@@ -407,11 +445,41 @@ body {
     height: 17px;
   }
 
-  #craft-btn,
   #build-btn,
   #reset-btn {
     padding: 3px 8px;
     font-size: 0.75rem;
+  }
+
+  /* Floats over the canvas top-right as a bare icon instead of sitting in
+     the HUD row as a text button — build-btn takes over the HUD's
+     margin-left:auto now that craft-btn has left the flex flow. */
+  #craft-btn {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin-left: 0;
+    border: none;
+    background: transparent;
+    z-index: 8;
+  }
+
+  #build-btn {
+    margin-left: auto;
+  }
+
+  #craft-btn .btn-label {
+    display: none;
+  }
+
+  #craft-btn .btn-icon {
+    display: block;
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
   }
 
   /* Least essential HUD text — drop it on mobile to leave room for the
