@@ -725,6 +725,22 @@ function getCraftButtonIconUrl() {
   return craftButtonIconCache;
 }
 
+let buildButtonIconCache = null;
+function getBuildButtonIconUrl() {
+  if (buildButtonIconCache) return buildButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 36;
+  iconCanvas.height = 36;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+  drawWall(18, 20); // same art as a placed wall — ties the icon to what it builds
+  ctx = savedCtx;
+
+  buildButtonIconCache = iconCanvas.toDataURL();
+  return buildButtonIconCache;
+}
+
 function craftEntryState(key) {
   const recipe = RECIPES[key];
   const currentLevel = player.upgrades[recipe.upgradeKey] || 0;
@@ -1792,6 +1808,7 @@ function startGame() {
   document.getElementById("stone-icon").src = getResourceIconUrl("stone");
   document.getElementById("ore-icon").src = getResourceIconUrl("ore");
   document.getElementById("craft-btn-icon").src = getCraftButtonIconUrl();
+  document.getElementById("build-btn-icon").src = getBuildButtonIconUrl();
 
   spawnResources();
   renderHud();

@@ -445,19 +445,20 @@ body {
     height: 17px;
   }
 
-  #build-btn,
   #reset-btn {
     padding: 3px 8px;
     font-size: 0.75rem;
+    /* Craft and Build both left the flex row for the floating icons below,
+       so Reset is now the only thing left to push to the row's end. */
+    margin-left: auto;
   }
 
-  /* Floats over the canvas top-right as a bare icon instead of sitting in
-     the HUD row as a text button — build-btn takes over the HUD's
-     margin-left:auto now that craft-btn has left the flex flow. */
-  #craft-btn {
+  /* Both float over the canvas top-right as bare icons instead of sitting in
+     the HUD row as text buttons — Build sits just left of Craft. */
+  #craft-btn,
+  #build-btn {
     position: fixed;
     top: max(10px, env(safe-area-inset-top));
-    right: max(10px, env(safe-area-inset-right));
     width: 40px;
     height: 40px;
     padding: 0;
@@ -467,15 +468,21 @@ body {
     z-index: 8;
   }
 
-  #build-btn {
-    margin-left: auto;
+  #craft-btn {
+    right: max(10px, env(safe-area-inset-right));
   }
 
-  #craft-btn .btn-label {
+  #build-btn {
+    right: calc(max(10px, env(safe-area-inset-right)) + 48px);
+  }
+
+  #craft-btn .btn-label,
+  #build-btn .btn-label {
     display: none;
   }
 
-  #craft-btn .btn-icon {
+  #craft-btn .btn-icon,
+  #build-btn .btn-icon {
     display: block;
     width: 100%;
     height: 100%;
