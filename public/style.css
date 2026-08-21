@@ -107,7 +107,8 @@ body {
    viewport, so they always stay inside the actual game area instead of
    drifting into a wide desktop window's empty centering margins. */
 #craft-btn,
-#build-btn {
+#build-btn,
+#fullscreen-btn {
   position: absolute;
   top: max(10px, env(safe-area-inset-top));
   width: 40px;
@@ -125,6 +126,12 @@ body {
 
 #build-btn {
   right: calc(max(10px, env(safe-area-inset-right)) + 48px);
+}
+
+/* Sits to the left of Build, so left-to-right it reads Fullscreen, Build,
+   Craft. */
+#fullscreen-btn {
+  right: calc(max(10px, env(safe-area-inset-right)) + 96px);
 }
 
 .btn-label {
