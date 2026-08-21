@@ -101,30 +101,41 @@ body {
   vertical-align: middle;
 }
 
+/* Float over the canvas top-right as bare icon buttons — same on desktop
+   and mobile, Build sitting just left of Craft. Positioned absolute against
+   #canvas-wrap (the nearest positioned ancestor), not fixed against the
+   viewport, so they always stay inside the actual game area instead of
+   drifting into a wide desktop window's empty centering margins. */
 #craft-btn,
 #build-btn {
-  padding: 5px 14px;
-  font-size: 0.85rem;
-  border: 1px solid #4c8bf5;
-  border-radius: 6px;
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
   background: transparent;
-  color: #8fb4f7;
   cursor: pointer;
+  z-index: 8;
 }
 
 #craft-btn {
-  margin-left: auto;
+  right: max(10px, env(safe-area-inset-right));
 }
 
-#craft-btn:hover,
-#build-btn:hover {
-  background: #4c8bf533;
+#build-btn {
+  right: calc(max(10px, env(safe-area-inset-right)) + 48px);
 }
 
-/* Mobile swaps the text label for the hammer icon (see the media query
-   below); on desktop the icon image just stays unused/hidden. */
-.btn-icon {
+.btn-label {
   display: none;
+}
+
+.btn-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
 }
 
 #reset-btn {
@@ -135,6 +146,9 @@ body {
   background: transparent;
   color: #ff8a8a;
   cursor: pointer;
+  /* Craft and Build both float over the canvas now, so Reset is the only
+     thing left in the HUD row to push to its trailing end. */
+  margin-left: auto;
 }
 
 #reset-btn:hover {
@@ -448,45 +462,6 @@ body {
   #reset-btn {
     padding: 3px 8px;
     font-size: 0.75rem;
-    /* Craft and Build both left the flex row for the floating icons below,
-       so Reset is now the only thing left to push to the row's end. */
-    margin-left: auto;
-  }
-
-  /* Both float over the canvas top-right as bare icons instead of sitting in
-     the HUD row as text buttons — Build sits just left of Craft. */
-  #craft-btn,
-  #build-btn {
-    position: fixed;
-    top: max(10px, env(safe-area-inset-top));
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    margin-left: 0;
-    border: none;
-    background: transparent;
-    z-index: 8;
-  }
-
-  #craft-btn {
-    right: max(10px, env(safe-area-inset-right));
-  }
-
-  #build-btn {
-    right: calc(max(10px, env(safe-area-inset-right)) + 48px);
-  }
-
-  #craft-btn .btn-label,
-  #build-btn .btn-label {
-    display: none;
-  }
-
-  #craft-btn .btn-icon,
-  #build-btn .btn-icon {
-    display: block;
-    width: 100%;
-    height: 100%;
-    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
   }
 
   /* Least essential HUD text — drop it on mobile to leave room for the

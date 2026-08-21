@@ -34,14 +34,6 @@
       <span><img class="hud-icon" id="ore-icon" alt="ore" /> <b id="ore-count">0</b></span>
       <span id="capacity"></span>
       <span id="save-status"></span>
-      <button id="craft-btn">
-        <span class="btn-label">Craft</span>
-        <img id="craft-btn-icon" class="btn-icon" alt="Craft" />
-      </button>
-      <button id="build-btn">
-        <span class="btn-label">Build</span>
-        <img id="build-btn-icon" class="btn-icon" alt="Build" />
-      </button>
       <button id="reset-btn" title="Testing only — wipes this save back to defaults">Reset</button>
     </div>
 
@@ -51,6 +43,17 @@
         <span id="dig-prompt-text"></span>
         <button id="cancel-place-btn" class="hidden panel-close" aria-label="Cancel">×</button>
       </div>
+
+      <!-- Positioned absolute against canvas-wrap (not the HUD row) so they
+           float over the game area itself on every screen size. -->
+      <button id="craft-btn">
+        <span class="btn-label">Craft</span>
+        <img id="craft-btn-icon" class="btn-icon" alt="Craft" />
+      </button>
+      <button id="build-btn">
+        <span class="btn-label">Build</span>
+        <img id="build-btn-icon" class="btn-icon" alt="Build" />
+      </button>
 
       <div id="touch-controls">
         <div id="joystick-zone"></div>
