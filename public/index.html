@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Craft Adventure</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -16,21 +17,34 @@
 
   <div id="game-screen" class="hidden">
     <div id="hud">
-      <span>🪵 <b id="wood-count">0</b></span>
-      <span>🪨 <b id="stone-count">0</b></span>
-      <span>⛏️ <b id="ore-count">0</b></span>
+      <span><img class="hud-icon" id="wood-icon" alt="wood" /> <b id="wood-count">0</b></span>
+      <span><img class="hud-icon" id="stone-icon" alt="stone" /> <b id="stone-count">0</b></span>
+      <span><img class="hud-icon" id="ore-icon" alt="ore" /> <b id="ore-count">0</b></span>
       <span id="capacity"></span>
       <span id="save-status"></span>
+      <button id="craft-btn">Craft</button>
+      <button id="reset-btn" title="Testing only — wipes this save back to defaults">Reset</button>
     </div>
 
-    <canvas id="game-canvas" width="800" height="600"></canvas>
+    <div id="canvas-wrap">
+      <canvas id="game-canvas" width="800" height="600"></canvas>
+      <div id="dig-prompt" class="hidden"></div>
 
-    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk into a resource &nbsp;|&nbsp; Craft: press C</p>
+      <div id="touch-controls">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+        <button id="action-btn" class="hidden">Hit</button>
+      </div>
+    </div>
+
+    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk up to a resource, press E &nbsp;|&nbsp; Craft: press C</p>
 
     <div id="craft-panel" class="hidden">
       <h2>Crafting</h2>
       <div id="craft-list"></div>
-      <button id="close-craft">Close (C)</button>
+      <p class="hint">↑↓ to select &nbsp;|&nbsp; Enter to craft &nbsp;|&nbsp; Esc/C to close</p>
+      <button id="close-craft">Close (Esc)</button>
     </div>
   </div>
 
