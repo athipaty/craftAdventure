@@ -63,6 +63,10 @@ body {
   padding: 8px;
 }
 
+#rotate-overlay {
+  display: none;
+}
+
 #hud {
   display: flex;
   flex-wrap: wrap;
@@ -338,4 +342,76 @@ body {
 .craft-item button:disabled {
   background: #555;
   cursor: not-allowed;
+}
+
+/* Touch-device layout. Placed last on purpose so these overrides win the
+   cascade against the desktop rules above (same specificity, later wins). */
+@media (pointer: coarse) {
+  /* Fill the actual screen instead of sitting in a small centered box, and
+     lay out landscape — a phone-shaped 4:3 canvas with side-mounted
+     joystick/action controls needs the width. */
+  #game-screen {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    justify-content: center;
+    padding: 4px;
+    gap: 4px;
+  }
+
+  #hud {
+    font-size: 0.85rem;
+    gap: 4px 12px;
+    flex-shrink: 0;
+  }
+
+  /* canvas-wrap intentionally does NOT stretch to fill the flex row — it
+     shrink-wraps to the canvas's actual rendered size, so the joystick/action
+     button (positioned relative to canvas-wrap) land on the canvas's real
+     edges instead of floating in empty space if the canvas ends up narrower
+     than the screen. */
+  #canvas-wrap {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
+  #game-canvas {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100dvh - 70px);
+  }
+
+  /* Keyboard-only instructions don't apply once touch controls take over */
+  .hint {
+    display: none;
+  }
+
+  @media (orientation: portrait) {
+    #rotate-overlay {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #1b1f2a;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .rotate-icon {
+      font-size: 3rem;
+      animation: rotate-hint 1.6s ease-in-out infinite;
+    }
+
+    @keyframes rotate-hint {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
+  }
 }
