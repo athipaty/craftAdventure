@@ -28,15 +28,30 @@ let digDurationMs = 500; // recomputed per-swing in startDig() based on tool lev
 const PLAYER_RADIUS = 10;
 const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
 
-// Buildable structures — costs are also enforced server-side (see the
-// backend's own STRUCTURES table) so a player can't skip payment by editing
-// this file; this copy just drives the client UI/collision/rendering.
+// Buildable structures — costs/levels are also enforced server-side (see
+// the backend's own STRUCTURES table) so a player can't skip payment or
+// grant themselves levels by editing this file; this copy just drives the
+// client UI/collision/rendering.
 const STRUCTURES = {
-  wall: { label: "Wall", cost: { wood: 5 }, radius: 14 },
+  wall: {
+    label: "Wall",
+    cost: { wood: 5 }, // level 1 (build cost)
+    radius: 14,
+    maxLevel: 3,
+    upgradeCost: {
+      2: { wood: 6, stone: 4 },
+      3: { stone: 10, ore: 6 },
+    },
+  },
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
 const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
-let placingType = null; // structure key currently being lined up, if any
+let placingType = null; // structure key currently being lined up (brand-new build), if any
+// Structure currently picked up to be relocated (its pre-move doc, so we
+// know its type/level/_id) — mutually exclusive with placingType, and
+// drives the same ghost-placement UI for a free reposition instead of a
+// paid build.
+let movingStructure = null;
 // Pixel offset (world space) the placement ghost has been nudged away from
 // its default in-front-of-player spot. Movement input drags this around
 // instead of the character while a structure is being lined up.
@@ -180,7 +195,9 @@ const DIR_TABLE = [
   { flip: 1, face: "backQuarter" }, // 7 NE
 ];
 
-function positionBlocked(x, y) {
+// excludeStructureId lets a structure being moved skip colliding with its
+// own (pre-move) position while its ghost is placed elsewhere.
+function positionBlocked(x, y, excludeStructureId) {
   for (const node of resources) {
     if (node.amount <= 0) continue;
     const scale = 0.55 + 0.45 * (node.amount / NODE_START_AMOUNT);
@@ -188,6 +205,7 @@ function positionBlocked(x, y) {
     if (Math.hypot(node.x - x, node.y - y) < minDist) return true;
   }
   for (const s of player.structures) {
+    if (excludeStructureId && s._id === excludeStructureId) continue;
     const minDist = PLAYER_RADIUS + (STRUCTURES[s.type]?.radius || 14);
     if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
   }
@@ -392,6 +410,7 @@ async function resetPlayer() {
     isDigging = false;
     digTargetNode = null;
     placingType = null;
+    movingStructure = null;
     placeOffset = { x: 0, y: 0 };
     exploredCells.fill(0);
     closeCraftPanel();
@@ -453,19 +472,37 @@ function placementPosition() {
 
 function startPlacing(key) {
   placingType = key;
+  movingStructure = null;
   placeOffset = { x: 0, y: 0 };
   closeBuildPanel();
 }
 
+// Picks a placed structure up to relocate it: pulls it out of the normal
+// render/collision pass (see draw()/positionBlocked's excludeStructureId)
+// and drives it through the same ghost-placement UI as a fresh build,
+// except confirming calls moveStructure() instead of buildStructure() —
+// no cost, since it's the same structure just landing somewhere else.
+function startMovingStructure(structure) {
+  movingStructure = structure;
+  placingType = null;
+  placeOffset = { x: 0, y: 0 };
+}
+
 function cancelPlacing() {
   placingType = null;
+  movingStructure = null;
   placeOffset = { x: 0, y: 0 };
   updateDigPrompt();
 }
 
 function confirmPlacement() {
-  if (!placingType) return;
   const { x, y } = placementPosition();
+  if (movingStructure) {
+    if (positionBlocked(x, y, movingStructure._id)) return;
+    moveStructure(movingStructure, x, y);
+    return;
+  }
+  if (!placingType) return;
   if (!structureAfford(placingType) || positionBlocked(x, y)) return;
   buildStructure(placingType, x, y);
 }
@@ -490,6 +527,41 @@ async function buildStructure(key, x, y) {
   renderHud();
 }
 
+async function moveStructure(structure, x, y) {
+  const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/move-structure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structureId: structure._id, x, y }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || "Move failed");
+    return;
+  }
+  player.structures = data.structures;
+  movingStructure = null;
+  placeOffset = { x: 0, y: 0 };
+  renderHud();
+}
+
+async function upgradeStructure(structure) {
+  const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/upgrade-structure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structureId: structure._id }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || "Upgrade failed");
+    return;
+  }
+  player.inventory = data.inventory;
+  player.structures = data.structures;
+  const label = STRUCTURES[structure.type]?.label || structure.type;
+  spawnFloatingText(structure.x, structure.y - 20, `${label} Lvl ${(structure.level || 1) + 1}`, "#8fb4f7");
+  renderHud();
+}
+
 async function demolishStructure(structure) {
   const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/demolish`, {
     method: "POST",
@@ -508,12 +580,22 @@ async function demolishStructure(structure) {
   renderHud();
 }
 
+function structureUpgradeInfo(structure) {
+  const def = STRUCTURES[structure.type];
+  const currentLevel = structure.level || 1;
+  const maxLevel = def?.maxLevel || 1;
+  const maxed = currentLevel >= maxLevel;
+  const cost = !maxed ? def.upgradeCost[currentLevel + 1] : null;
+  const canAfford = !!cost && Object.entries(cost).every(([res, amt]) => player.inventory[res] >= amt);
+  return { currentLevel, maxLevel, maxed, cost, canAfford };
+}
+
 // Single entry point for the "act" input (E key / mobile action button),
 // same priority everywhere it's wired up: finish what you're already doing,
-// then placing, then gathering, then demolishing.
+// then placing/moving, then gathering, then demolishing.
 function performAction() {
   if (isDigging) return;
-  if (placingType) {
+  if (placingType || movingStructure) {
     confirmPlacement();
   } else if (nearbyNode) {
     startDig(nearbyNode);
@@ -767,6 +849,14 @@ function buildCostPillsHtml(cost) {
     .join("");
 }
 
+// Plain-text cost, e.g. "6 wood, 4 stone" — used where cost needs to sit in
+// a text-only prompt/title rather than the icon pills above.
+function formatCostText(cost) {
+  return Object.entries(cost)
+    .map(([res, amt]) => `${amt} ${res}`)
+    .join(", ");
+}
+
 // Maxed-out tools have nothing left to offer, so once a tool hits its cap it
 // drops out of the list entirely instead of sitting there as a dead "MAX" row.
 function visibleCraftKeys() {
@@ -900,6 +990,7 @@ function isBuildPanelOpen() {
 function openBuildPanel() {
   closeCraftPanel();
   placingType = null;
+  movingStructure = null;
   placeOffset = { x: 0, y: 0 };
   document.getElementById("build-panel").classList.remove("hidden");
   keys.clear();
@@ -945,10 +1036,11 @@ function update() {
   dx += joystickVector.x;
   dy += joystickVector.y;
 
-  if (placingType) {
-    // Lining up a structure: movement input drags the placement ghost
-    // around instead of walking the character, so the wall you're trying
-    // to position doesn't drift out from under you as you nudge it.
+  if (placingType || movingStructure) {
+    // Lining up a structure (building new or relocating an existing one):
+    // movement input drags the placement ghost around instead of walking
+    // the character, so the wall you're trying to position doesn't drift
+    // out from under you as you nudge it.
     isMoving = false;
     idlePhase += 0.05;
     lastStepIndex = -1;
@@ -1182,6 +1274,22 @@ function setupTouchControls() {
   actionBtn.addEventListener("click", triggerAction);
   document.getElementById("cancel-place-btn").addEventListener("click", cancelPlacing);
 
+  const moveBtn = document.getElementById("move-btn");
+  const triggerMove = (e) => {
+    e.preventDefault();
+    if (nearbyStructure) startMovingStructure(nearbyStructure);
+  };
+  moveBtn.addEventListener("touchstart", triggerMove, { passive: false });
+  moveBtn.addEventListener("click", triggerMove);
+
+  const upgradeBtn = document.getElementById("upgrade-btn");
+  const triggerUpgrade = (e) => {
+    e.preventDefault();
+    if (nearbyStructure && !structureUpgradeInfo(nearbyStructure).maxed) upgradeStructure(nearbyStructure);
+  };
+  upgradeBtn.addEventListener("touchstart", triggerUpgrade, { passive: false });
+  upgradeBtn.addEventListener("click", triggerUpgrade);
+
   document.getElementById("craft-btn").addEventListener("click", toggleCraftPanel);
 }
 
@@ -1190,7 +1298,11 @@ function updateDigPrompt() {
   const promptText = document.getElementById("dig-prompt-text");
   const actionBtn = document.getElementById("action-btn");
   const cancelBtn = document.getElementById("cancel-place-btn");
-  cancelBtn.classList.toggle("hidden", !placingType);
+  const moveBtn = document.getElementById("move-btn");
+  const upgradeBtn = document.getElementById("upgrade-btn");
+  cancelBtn.classList.toggle("hidden", !(placingType || movingStructure));
+  moveBtn.classList.add("hidden");
+  upgradeBtn.classList.add("hidden");
 
   if (isDigging) {
     promptText.textContent = `Gathering ${digTargetNode.type}...`;
@@ -1201,6 +1313,12 @@ function updateDigPrompt() {
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Place";
     actionBtn.classList.remove("hidden");
+  } else if (movingStructure) {
+    const label = STRUCTURES[movingStructure.type]?.label || movingStructure.type;
+    promptText.textContent = `Press E to set the ${label} down here`;
+    prompt.classList.remove("hidden");
+    actionBtn.textContent = "Move";
+    actionBtn.classList.remove("hidden");
   } else if (nearbyNode) {
     promptText.textContent = `Press E to gather ${nearbyNode.type}`;
     prompt.classList.remove("hidden");
@@ -1208,10 +1326,20 @@ function updateDigPrompt() {
     actionBtn.classList.remove("hidden");
   } else if (nearbyStructure) {
     const label = STRUCTURES[nearbyStructure.type]?.label || nearbyStructure.type;
-    promptText.textContent = `Press E to demolish ${label}`;
+    const { currentLevel, maxed, cost, canAfford } = structureUpgradeInfo(nearbyStructure);
+    // Kept short on purpose (#dig-prompt is a nowrap pill) — the cost detail
+    // lives in the upgrade button's title instead of cluttering this line.
+    const upgradeHint = maxed ? "max" : "U upgrade";
+    promptText.textContent = `${label} Lvl ${currentLevel} — E demolish · M move · ${upgradeHint}`;
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Demolish";
     actionBtn.classList.remove("hidden");
+    moveBtn.classList.remove("hidden");
+    if (!maxed) {
+      upgradeBtn.disabled = !canAfford;
+      upgradeBtn.title = `Upgrade to Lvl ${currentLevel + 1} (${formatCostText(cost)})`;
+      upgradeBtn.classList.remove("hidden");
+    }
   } else {
     prompt.classList.add("hidden");
     actionBtn.classList.add("hidden");
@@ -1313,19 +1441,29 @@ function drawResource(node) {
   else if (node.type === "ore") drawOre(x, y, scale);
 }
 
-function drawWall(x, y) {
+// Material tier per wall level — same shape at every level, just a
+// different skin, so an upgraded wall reads as visibly sturdier at a
+// glance: wood -> stone -> reinforced (with rivets).
+const WALL_LEVEL_STYLE = {
+  1: { fill: "#8a5a2f", stroke: "#5a3a1c", line: "rgba(0, 0, 0, 0.25)" },
+  2: { fill: "#9a9a9a", stroke: "#5f5f5f", line: "rgba(0, 0, 0, 0.3)" },
+  3: { fill: "#5a6068", stroke: "#2b2e33", line: "rgba(255, 255, 255, 0.15)" },
+};
+
+function drawWall(x, y, level = 1) {
+  const style = WALL_LEVEL_STYLE[level] || WALL_LEVEL_STYLE[1];
   drawShadow(x, y + 11, 13, 4);
 
-  ctx.fillStyle = "#8a5a2f";
-  ctx.strokeStyle = "#5a3a1c";
+  ctx.fillStyle = style.fill;
+  ctx.strokeStyle = style.stroke;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.roundRect(x - 12, y - 12, 24, 20, 3);
   ctx.fill();
   ctx.stroke();
 
-  // horizontal plank lines
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
+  // horizontal plank/mortar lines
+  ctx.strokeStyle = style.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x - 12, y - 4);
@@ -1333,11 +1471,23 @@ function drawWall(x, y) {
   ctx.moveTo(x - 12, y + 4);
   ctx.lineTo(x + 12, y + 4);
   ctx.stroke();
+
+  if (level >= 3) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    for (const rx of [-9, 9]) {
+      for (const ry of [-9, 6]) {
+        ctx.beginPath();
+        ctx.arc(x + rx, y + ry, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
 }
 
 function drawStructure(s, isDemolishTarget = false) {
+  const level = s.level || 1;
   if (!isDemolishTarget) {
-    if (s.type === "wall") drawWall(s.x, s.y);
+    if (s.type === "wall") drawWall(s.x, s.y, level);
     return;
   }
 
@@ -1356,17 +1506,24 @@ function drawStructure(s, isDemolishTarget = false) {
   ctx.restore();
 
   const bob = 3 + pulse * 3;
-  if (s.type === "wall") drawWall(s.x, s.y - bob);
+  if (s.type === "wall") drawWall(s.x, s.y - bob, level);
 }
 
 // The "you're about to place here" slot — a highlighted square at the
 // snapped target position (green if it's a legal spot, red if not), with a
-// translucent preview of the structure itself sitting on top of it.
+// translucent preview of the structure itself sitting on top of it. Used
+// both for a brand-new build (placingType) and for relocating an existing
+// structure (movingStructure) — the latter is free, so affordability isn't
+// part of its validity check, and it excludes its own pre-move position
+// from the collision check so putting it back down nearby isn't blocked.
 function drawPlacementGhost() {
-  if (!placingType) return;
+  const type = placingType || (movingStructure && movingStructure.type);
+  if (!type) return;
   const { x, y } = placementPosition();
-  const structure = STRUCTURES[placingType];
-  const valid = structureAfford(placingType) && !positionBlocked(x, y);
+  const structure = STRUCTURES[type];
+  const excludeId = movingStructure ? movingStructure._id : undefined;
+  const affordable = placingType ? structureAfford(placingType) : true;
+  const valid = affordable && !positionBlocked(x, y, excludeId);
   const half = structure.radius + 4;
 
   ctx.fillStyle = valid ? "rgba(90, 220, 120, 0.2)" : "rgba(230, 90, 90, 0.2)";
@@ -1379,7 +1536,7 @@ function drawPlacementGhost() {
 
   ctx.save();
   ctx.globalAlpha = 0.6;
-  drawStructure({ type: placingType, x, y });
+  drawStructure({ type, x, y, level: movingStructure ? movingStructure.level : 1 });
   ctx.restore();
 }
 
@@ -1401,7 +1558,10 @@ function draw() {
     drawResource(node);
   }
 
-  for (const s of player.structures) drawStructure(s, s === nearbyStructure);
+  for (const s of player.structures) {
+    if (movingStructure && s._id === movingStructure._id) continue; // shown as the ghost instead
+    drawStructure(s, s === nearbyStructure);
+  }
   drawPlacementGhost();
 
   drawCharacter(player.x, player.y);
@@ -1466,6 +1626,7 @@ function drawMinimap() {
   // distinct from the round resource dots above.
   ctx.fillStyle = "#c9a06a";
   for (const s of player.structures) {
+    if (movingStructure && s._id === movingStructure._id) continue; // being relocated right now
     ctx.fillRect(mapX + s.x * scaleX - 2, mapY + s.y * scaleY - 2, 4, 4);
   }
 
@@ -1883,10 +2044,10 @@ function startGame() {
 
     // Only intercept the confirm/cancel keys here and fall through for
     // everything else — WASD still reaches `keys.add(k)` below as normal,
-    // but update() reads placingType and steers that input into nudging the
-    // placement ghost instead of walking the character. "e" is handled by
-    // the shared performAction() further down.
-    if (placingType) {
+    // but update() reads placingType/movingStructure and steers that input
+    // into nudging the placement ghost instead of walking the character.
+    // "e" is handled by the shared performAction() further down.
+    if (placingType || movingStructure) {
       if (k === "enter") {
         e.preventDefault();
         confirmPlacement();
@@ -1894,6 +2055,15 @@ function startGame() {
       }
       if (k === "escape") {
         cancelPlacing();
+        return;
+      }
+    } else if (nearbyStructure) {
+      if (k === "m") {
+        startMovingStructure(nearbyStructure);
+        return;
+      }
+      if (k === "u" && !structureUpgradeInfo(nearbyStructure).maxed) {
+        upgradeStructure(nearbyStructure);
         return;
       }
     }
