@@ -374,22 +374,22 @@ body {
     flex-shrink: 0;
   }
 
-  /* canvas-wrap intentionally does NOT stretch to fill the flex row — it
-     shrink-wraps to the canvas's actual rendered size, so the joystick/action
-     button (positioned relative to canvas-wrap) land on the canvas's real
-     edges instead of floating in empty space if the canvas ends up narrower
-     than the screen. */
+  /* canvas-wrap fills all remaining space below the HUD — game.js measures
+     this box and sizes the canvas's actual pixel buffer to match exactly
+     (see resizeCanvas()), so the game world fills the real screen instead of
+     being letterboxed inside a fixed 4:3 shape. */
   #canvas-wrap {
-    flex: 0 1 auto;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
     max-width: 100%;
   }
 
   #game-canvas {
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
     max-width: 100%;
-    max-height: calc(100vh - 70px);
-    max-height: calc(100dvh - 70px);
+    max-height: 100%;
   }
 
   /* Keyboard-only instructions don't apply once touch controls take over */

@@ -10,8 +10,11 @@ const API_BASE = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-
   ? `http://${location.hostname}:5000/api/craft-adventure`
   : "https://center-kitchen-backend.onrender.com/api/craft-adventure";
 
-const CANVAS_W = 800;
-const CANVAS_H = 600;
+// Desktop stays a fixed 800x600. On touch devices these get overwritten by
+// resizeCanvas() to match the real screen, so the game actually fills the
+// phone instead of sitting inside a fixed 4:3 box with empty margins.
+let CANVAS_W = 800;
+let CANVAS_H = 600;
 const GATHER_RADIUS = 32;
 const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.2;
@@ -1202,12 +1205,42 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+// On touch devices, size the canvas's actual pixel buffer to match
+// canvas-wrap's real rendered box, so the game world fills the phone screen
+// instead of being letterboxed inside a fixed 4:3 shape. Desktop is left at
+// the fixed 800x600 the rest of the game was tuned around.
+function resizeCanvas() {
+  if (!window.matchMedia("(pointer: coarse)").matches) return false;
+
+  const rect = document.getElementById("canvas-wrap").getBoundingClientRect();
+  const w = Math.max(200, Math.round(rect.width));
+  const h = Math.max(150, Math.round(rect.height));
+  if (w === CANVAS_W && h === CANVAS_H) return false;
+
+  CANVAS_W = w;
+  CANVAS_H = h;
+  canvas.width = w;
+  canvas.height = h;
+  return true;
+}
+
 function startGame() {
   document.getElementById("login-screen").classList.add("hidden");
   document.getElementById("game-screen").classList.remove("hidden");
 
   canvas = document.getElementById("game-canvas");
   ctx = canvas.getContext("2d");
+  resizeCanvas();
+
+  // If the player rotates mid-game (very likely — the rotate prompt only
+  // exists inside the game screen, not the login screen, so they may well
+  // hit Play while still in portrait), reflow the resources to match the
+  // new shape instead of leaving them clustered in the old, smaller area.
+  const handleResize = () => {
+    if (resizeCanvas()) spawnResources();
+  };
+  window.addEventListener("resize", handleResize);
+  window.addEventListener("orientationchange", () => setTimeout(handleResize, 200));
 
   document.getElementById("wood-icon").src = getResourceIconUrl("wood");
   document.getElementById("stone-icon").src = getResourceIconUrl("stone");
