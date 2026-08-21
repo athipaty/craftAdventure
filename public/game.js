@@ -1308,6 +1308,12 @@ function drawCharacter(x, y) {
   const { flip, face } = DIR_TABLE[dirIndex];
   const lean = face === "side" ? 3 : face === "frontQuarter" || face === "backQuarter" ? 2 : 0;
 
+  // Facing straight up/down, fore-aft leg/arm swing is edge-on and invisible,
+  // so walking there alternates a vertical lift instead of the sideways swing.
+  const facingVertical = !digging && isMoving && (face === "front" || face === "back");
+  const legLift = facingVertical ? Math.sin(walkPhase) * 4 : 0;
+  const armLift = facingVertical ? Math.sin(walkPhase + Math.PI) * 3 : 0;
+
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(flip, 1);
@@ -1324,19 +1330,21 @@ function drawCharacter(x, y) {
   ctx.lineCap = "round";
 
   // legs — front foot plants forward slightly as the body lunges into the hit
+  const legSwingX = facingVertical ? 0 : legSwing;
   ctx.beginPath();
   ctx.moveTo(-4, 5 - bob);
-  ctx.lineTo(-4 + legSwing * 0.4, 15 - bob);
+  ctx.lineTo(-4 + legSwingX * 0.4, 15 - bob - Math.max(0, legLift));
   ctx.moveTo(4, 5 - bob);
-  ctx.lineTo(4 - legSwing * 0.4 + legPlant, 15 - bob);
+  ctx.lineTo(4 - legSwingX * 0.4 + legPlant, 15 - bob - Math.max(0, -legLift));
   ctx.stroke();
 
   // back arm — with a tool, drawDigArm below draws it gripping the handle
   // (a real two-handed swing). Bare-handed, it counter-swings with the punch
   // for balance; while walking, it's the normal opposite-phase arm swing.
   if (!(digging && digToolLevel >= 1)) {
-    const backArmX = digging ? -9 - dig.armLen * 0.3 : -9 + armSwing * 0.4;
-    const backArmY = digging ? 6 - bob - Math.max(0, dig.armLen) * 0.15 : 8 - bob;
+    const armSwingX = facingVertical ? 0 : armSwing;
+    const backArmX = digging ? -9 - dig.armLen * 0.3 : -9 + armSwingX * 0.4;
+    const backArmY = digging ? 6 - bob - Math.max(0, dig.armLen) * 0.15 : 8 - bob - Math.max(0, -armLift);
     ctx.beginPath();
     ctx.moveTo(-9, -1 - bob);
     ctx.lineTo(backArmX, backArmY);
@@ -1347,9 +1355,10 @@ function drawCharacter(x, y) {
   if (digging) {
     drawDigArm(9, -1, -9, -1 - bob, digToolType, digToolLevel, dig.armLen, dig.angle);
   } else {
+    const armSwingX = facingVertical ? 0 : armSwing;
     ctx.beginPath();
     ctx.moveTo(9, -1 - bob);
-    ctx.lineTo(9 - armSwing * 0.4, 8 - bob);
+    ctx.lineTo(9 - armSwingX * 0.4, 8 - bob - Math.max(0, armLift));
     ctx.stroke();
   }
 
