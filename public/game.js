@@ -1695,6 +1695,11 @@ document.getElementById("start-btn").addEventListener("click", async () => {
     errorEl.textContent = "Please enter a name";
     return;
   }
+  // Must fire directly on the click, before any await, or browsers drop the
+  // "user activation" fullscreen needs and silently refuse the request.
+  // (No-ops on iOS Safari, which doesn't support element fullscreen at all —
+  // there, "Add to Home Screen" via the manifest is the real fix.)
+  document.documentElement.requestFullscreen?.().catch(() => {});
   try {
     initAudio();
     player = await loginOrCreate(name);
