@@ -37,7 +37,15 @@ const FLOAT_TEXT_DURATION_MS = 900;
 const RESOURCE_TEXT_COLOR = { wood: "#c98b4a", stone: "#e2e2e2", ore: "#ffd23f" };
 
 function spawnFloatingText(x, y, text, color) {
-  floatingTexts.push({ x, y, text, color, startedAt: Date.now() });
+  floatingTexts.push({
+    x: x + (Math.random() - 0.5) * 24, // a little random horizontal jitter...
+    y,
+    drift: (Math.random() - 0.5) * 14, // ...and continued sideways drift as it rises
+    rise: 26 + Math.random() * 12, // random rise distance
+    text,
+    color,
+    startedAt: Date.now(),
+  });
 }
 
 function drawFloatingTexts() {
@@ -49,10 +57,12 @@ function drawFloatingTexts() {
   ctx.textAlign = "center";
   for (const t of floatingTexts) {
     const progress = (now - t.startedAt) / FLOAT_TEXT_DURATION_MS;
-    const riseY = t.y - progress * 30; // floats upward over its lifetime
-    ctx.globalAlpha = 1 - progress; // ...and fades out as it goes
+    const eased = 1 - Math.pow(1 - progress, 2); // fast start, slows down near the top
+    const riseY = t.y - eased * t.rise;
+    const driftX = t.x + eased * t.drift;
+    ctx.globalAlpha = 1 - progress; // fades out as it goes
     ctx.fillStyle = t.color;
-    ctx.fillText(t.text, t.x, riseY);
+    ctx.fillText(t.text, driftX, riseY);
   }
   ctx.globalAlpha = 1;
 }
