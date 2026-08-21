@@ -342,15 +342,38 @@ body {
     inset: 0;
     width: 100vw;
     max-width: none;
-    justify-content: center;
+    /* flex-start, not center: if the HUD wraps to more lines than expected
+       on a short screen, centering the whole column would clip it equally
+       off both the top AND bottom (no scrolling in a fixed container) —
+       pinning to the top means the HUD is always fully visible, and
+       canvas-wrap (flex: 1) just gets whatever's left below it. */
+    justify-content: flex-start;
     padding: 4px;
     gap: 4px;
+    overflow: hidden;
   }
 
   #hud {
-    font-size: 0.85rem;
-    gap: 4px 12px;
+    font-size: 0.78rem;
+    gap: 3px 8px;
     flex-shrink: 0;
+  }
+
+  .hud-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  #craft-btn,
+  #reset-btn {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+  }
+
+  /* Least essential HUD text — drop it on mobile to leave room for the
+     resource counts and the Craft/Reset buttons to comfortably fit. */
+  #save-status {
+    display: none;
   }
 
   /* Keyboard-only instructions don't apply once touch controls take over */

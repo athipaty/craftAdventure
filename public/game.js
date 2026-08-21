@@ -435,7 +435,16 @@ function getToolIconUrl(key, level = 1) {
   iconCanvas.height = 36;
   const savedCtx = ctx;
   ctx = iconCanvas.getContext("2d");
-  (TOOL_ICON_DRAWERS[key] || drawAxeIcon)(18, 20, 0.9, level);
+
+  // Level 0 (not crafted yet) reuses the level-1 art but faded to a ghost —
+  // a third, distinct look from both the plain level-1 and gold level-2
+  // renders, so "not owned / owned / upgraded" all read differently at a
+  // glance instead of level 0 and level 1 looking identical.
+  const locked = level < 1;
+  if (locked) ctx.globalAlpha = 0.35;
+  (TOOL_ICON_DRAWERS[key] || drawAxeIcon)(18, 20, 0.9, Math.max(1, level));
+  if (locked) ctx.globalAlpha = 1;
+
   ctx = savedCtx;
 
   toolIconCache[cacheKey] = iconCanvas.toDataURL();
@@ -480,7 +489,7 @@ function renderCraftPanel() {
 
     // Just the essentials: current tool -> next tool, and what it costs.
     row.innerHTML = `
-      <img class="tool-icon" src="${getToolIconUrl(key, Math.max(1, currentLevel))}" alt="${recipe.label} current" />
+      <img class="tool-icon" src="${getToolIconUrl(key, currentLevel)}" alt="${recipe.label} current" />
       ${
         maxed
           ? `<span class="max-badge">MAX</span>`
