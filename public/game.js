@@ -235,7 +235,7 @@ function viewWorldSize() {
 // visible) forever after — vs. "currently lit", which only cells within
 // REVEAL_RADIUS right now get (full visibility). Never persisted — resets
 // each time the game loads.
-const FOG_CELL = 80;
+const FOG_CELL = 16;
 const FOG_COLS = Math.ceil(WORLD_W / FOG_CELL);
 const FOG_ROWS = Math.ceil(WORLD_H / FOG_CELL);
 const REVEAL_RADIUS = 180;
