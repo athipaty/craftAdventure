@@ -412,4 +412,72 @@ body {
       50% { transform: rotate(90deg); }
     }
   }
+
+  /* Compact crafting card — the desktop version (420px, roomy padding, 36px
+     icons) is oversized on a short phone screen and needs real scrolling.
+     Also center it via top/left 50% instead of a fixed top offset, since a
+     tuned-for-desktop "60px from the top" eats a big chunk of a ~350px-tall
+     landscape phone screen. */
+  #craft-panel {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 92vw;
+    max-height: 90vh;
+    padding: 12px;
+  }
+
+  #craft-panel h2 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+  }
+
+  .tool-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .craft-item {
+    padding: 7px 8px;
+    gap: 8px;
+  }
+
+  .craft-item .info b {
+    font-size: 0.85rem;
+  }
+
+  .craft-item .info small {
+    font-size: 0.72rem;
+  }
+
+  .craft-item button {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+  }
+
+  .next-tier {
+    padding: 4px 6px;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .next-tier-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .next-tier-label {
+    font-size: 0.68rem;
+    margin-bottom: 1px;
+  }
+
+  .cost-pill {
+    font-size: 0.78rem;
+    gap: 3px;
+  }
+
+  .cost-pill img {
+    width: 15px;
+    height: 15px;
+  }
 }
