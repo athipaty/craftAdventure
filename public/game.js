@@ -19,11 +19,12 @@ let CANVAS_W = 800;
 let CANVAS_H = 600;
 const WORLD_W = 2400;
 const WORLD_H = 1600;
+const ZOOM = 1.5; // >1 shows less world per screen pixel, i.e. "closer in"
 const GATHER_RADIUS = 32;
 const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.2;
 const NODE_START_AMOUNT = 8;
-const DIG_DURATION_MS = 500;
+let digDurationMs = 500; // recomputed per-swing in startDig() based on tool level
 const PLAYER_RADIUS = 10;
 const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
 
@@ -223,16 +224,73 @@ const MIN_NODE_SPACING = 55; // no two nodes' "own area" may overlap closer than
 // Centers the camera on the player, clamped so it never scrolls past the
 // edge of the world (or, if the world happens to be smaller than the
 // viewport, just stays put at 0).
+// How much world-space is actually visible on screen at once — shrinks as
+// ZOOM increases, since a zoomed-in camera shows less of the world.
+function viewWorldSize() {
+  return { w: CANVAS_W / ZOOM, h: CANVAS_H / ZOOM };
+}
+
+// Fog of war. The world is divided into cells; a cell is "explored" once the
+// player has ever been within REVEAL_RADIUS of it, and stays explored (dimly
+// visible) forever after — vs. "currently lit", which only cells within
+// REVEAL_RADIUS right now get (full visibility). Never persisted — resets
+// each time the game loads.
+const FOG_CELL = 80;
+const FOG_COLS = Math.ceil(WORLD_W / FOG_CELL);
+const FOG_ROWS = Math.ceil(WORLD_H / FOG_CELL);
+const REVEAL_RADIUS = 180;
+const exploredCells = new Uint8Array(FOG_COLS * FOG_ROWS);
+
+function updateFog() {
+  const cellReach = Math.ceil(REVEAL_RADIUS / FOG_CELL) + 1;
+  const pc = Math.floor(player.x / FOG_CELL);
+  const pr = Math.floor(player.y / FOG_CELL);
+
+  for (let r = Math.max(0, pr - cellReach); r <= Math.min(FOG_ROWS - 1, pr + cellReach); r++) {
+    for (let c = Math.max(0, pc - cellReach); c <= Math.min(FOG_COLS - 1, pc + cellReach); c++) {
+      const dx = (c + 0.5) * FOG_CELL - player.x;
+      const dy = (r + 0.5) * FOG_CELL - player.y;
+      if (dx * dx + dy * dy <= REVEAL_RADIUS * REVEAL_RADIUS) {
+        exploredCells[r * FOG_COLS + c] = 1;
+      }
+    }
+  }
+}
+
+function drawFog() {
+  const view = viewWorldSize();
+  const colStart = Math.max(0, Math.floor(cameraX / FOG_CELL));
+  const colEnd = Math.min(FOG_COLS - 1, Math.floor((cameraX + view.w) / FOG_CELL));
+  const rowStart = Math.max(0, Math.floor(cameraY / FOG_CELL));
+  const rowEnd = Math.min(FOG_ROWS - 1, Math.floor((cameraY + view.h) / FOG_CELL));
+
+  for (let r = rowStart; r <= rowEnd; r++) {
+    for (let c = colStart; c <= colEnd; c++) {
+      const cx = (c + 0.5) * FOG_CELL;
+      const cy = (r + 0.5) * FOG_CELL;
+      const dx = cx - player.x;
+      const dy = cy - player.y;
+      if (dx * dx + dy * dy <= REVEAL_RADIUS * REVEAL_RADIUS) continue; // currently lit
+
+      const wasExplored = exploredCells[r * FOG_COLS + c];
+      ctx.fillStyle = wasExplored ? "rgba(0, 0, 0, 0.55)" : "rgba(0, 0, 0, 0.96)";
+      ctx.fillRect(c * FOG_CELL, r * FOG_CELL, FOG_CELL, FOG_CELL);
+    }
+  }
+}
+
 function updateCamera() {
-  const maxCamX = Math.max(0, WORLD_W - CANVAS_W);
-  const maxCamY = Math.max(0, WORLD_H - CANVAS_H);
-  cameraX = Math.max(0, Math.min(maxCamX, player.x - CANVAS_W / 2));
-  cameraY = Math.max(0, Math.min(maxCamY, player.y - CANVAS_H / 2));
+  const { w: viewW, h: viewH } = viewWorldSize();
+  const maxCamX = Math.max(0, WORLD_W - viewW);
+  const maxCamY = Math.max(0, WORLD_H - viewH);
+  cameraX = Math.max(0, Math.min(maxCamX, player.x - viewW / 2));
+  cameraY = Math.max(0, Math.min(maxCamY, player.y - viewH / 2));
 }
 
 // Faint world-space grid so panning the camera over empty ground still
 // reads as movement, not just a static green backdrop.
 function drawGrid() {
+  const { w: viewW, h: viewH } = viewWorldSize();
   const gridSize = 120;
   const startX = Math.floor(cameraX / gridSize) * gridSize;
   const startY = Math.floor(cameraY / gridSize) * gridSize;
@@ -240,13 +298,13 @@ function drawGrid() {
   ctx.strokeStyle = "rgba(0, 0, 0, 0.06)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = startX; x <= cameraX + CANVAS_W; x += gridSize) {
+  for (let x = startX; x <= cameraX + viewW; x += gridSize) {
     ctx.moveTo(x, cameraY);
-    ctx.lineTo(x, cameraY + CANVAS_H);
+    ctx.lineTo(x, cameraY + viewH);
   }
-  for (let y = startY; y <= cameraY + CANVAS_H; y += gridSize) {
+  for (let y = startY; y <= cameraY + viewH; y += gridSize) {
     ctx.moveTo(cameraX, y);
-    ctx.lineTo(cameraX + CANVAS_W, y);
+    ctx.lineTo(cameraX + viewW, y);
   }
   ctx.stroke();
 }
@@ -619,6 +677,7 @@ function toggleCraftPanel() {
 
 function update() {
   updateCamera();
+  updateFog();
 
   const now = Date.now();
   for (const node of resources) {
@@ -688,10 +747,23 @@ function update() {
   updateDigPrompt();
 }
 
+// A bare-handed swing is slow; each tool level speeds it up — upgrading
+// isn't just bigger yields, it's a faster gathering rhythm too.
+function toolLevelFor(node) {
+  return node.type === "wood" ? player.upgrades.axeLevel : player.upgrades.pickaxeLevel;
+}
+
+function digDurationFor(toolLevel) {
+  if (toolLevel >= 2) return 380;
+  if (toolLevel >= 1) return 500;
+  return 700;
+}
+
 function startDig(node) {
   isDigging = true;
   digTargetNode = node;
   digStartedAt = Date.now();
+  digDurationMs = digDurationFor(toolLevelFor(node));
   digImpactTriggered = false;
   isMoving = false;
 
@@ -706,14 +778,14 @@ function startDig(node) {
 
 function handleDigging(now) {
   const elapsed = now - digStartedAt;
-  const progress = Math.min(1, elapsed / DIG_DURATION_MS);
+  const progress = Math.min(1, elapsed / digDurationMs);
   if (!digImpactTriggered && progress >= DIG_THRUST_END && digTargetNode) {
     digTargetNode.hitAt = now;
     digImpactTriggered = true;
     playHit(digTargetNode.type);
   }
 
-  if (elapsed < DIG_DURATION_MS) return;
+  if (elapsed < digDurationMs) return;
 
   const node = digTargetNode;
   isDigging = false;
@@ -724,8 +796,7 @@ function handleDigging(now) {
   const remainingCapacity = cap - totalCarried(player.inventory);
   if (remainingCapacity <= 0) return;
 
-  const toolLevel = node.type === "wood" ? player.upgrades.axeLevel : player.upgrades.pickaxeLevel;
-  const gained = Math.min(1 + toolLevel, node.amount, remainingCapacity);
+  const gained = Math.min(1 + toolLevelFor(node), node.amount, remainingCapacity);
   player.inventory[node.type] += gained;
   node.amount -= gained;
   if (node.amount <= 0) node.respawnAt = Date.now() + RESPAWN_MS;
@@ -941,9 +1012,12 @@ function drawResource(node) {
 function draw() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Everything below is drawn in world coordinates — this one translate is
-  // the entire camera. No other draw function needs to know cameraX/Y exist.
+  // Everything below is drawn in world coordinates — this scale+translate
+  // is the entire camera (zoom first, so the translate is expressed in
+  // already-zoomed screen pixels: screen = (world - camera) * ZOOM). No
+  // other draw function needs to know cameraX/Y or ZOOM exist.
   ctx.save();
+  ctx.scale(ZOOM, ZOOM);
   ctx.translate(-cameraX, -cameraY);
 
   drawGrid();
@@ -955,6 +1029,7 @@ function draw() {
 
   drawCharacter(player.x, player.y);
   drawFloatingTexts();
+  drawFog();
 
   ctx.restore();
 
@@ -994,13 +1069,14 @@ function drawMinimap() {
   }
 
   // Outline of what the camera currently shows
+  const view = viewWorldSize();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
   ctx.lineWidth = 1;
   ctx.strokeRect(
     mapX + cameraX * scaleX,
     mapY + cameraY * scaleY,
-    CANVAS_W * scaleX,
-    CANVAS_H * scaleY
+    view.w * scaleX,
+    view.h * scaleY
   );
 
   ctx.fillStyle = "#4c8bf5";
@@ -1018,7 +1094,7 @@ function drawMinimap() {
   ctx.strokeRect(mapX, mapY, MINIMAP_W, MINIMAP_H);
 }
 
-// Dig-swing phase boundaries (fraction of DIG_DURATION_MS). Shared with
+// Dig-swing phase boundaries (fraction of digDurationMs). Shared with
 // handleDigging() so the impact sound/shake fire on the exact frame the
 // animation reaches full extension.
 const DIG_WINDUP_END = 0.3;
@@ -1194,7 +1270,7 @@ function drawDigArm(shoulderX, shoulderY, backShoulderX, backShoulderY, toolType
 
 function drawCharacter(x, y) {
   const digging = isDigging;
-  const digProgress = digging ? Math.min(1, (Date.now() - digStartedAt) / DIG_DURATION_MS) : 0;
+  const digProgress = digging ? Math.min(1, (Date.now() - digStartedAt) / digDurationMs) : 0;
 
   const bob = digging ? 0 : isMoving ? Math.abs(Math.sin(walkPhase)) * 2 : Math.sin(idlePhase) * 1;
   const legSwing = digging || !isMoving ? 0 : Math.sin(walkPhase) * 6;
