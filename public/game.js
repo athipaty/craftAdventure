@@ -957,6 +957,65 @@ function draw() {
   drawFloatingTexts();
 
   ctx.restore();
+
+  drawMinimap();
+}
+
+// Top-left minimap of the whole world: resource dots, the current camera
+// viewport outline, and the player. Drawn in plain screen coordinates
+// (after the camera ctx.restore() above), and kept translucent so it never
+// fully hides the game underneath it.
+const MINIMAP_W = 160;
+const MINIMAP_H = Math.round(MINIMAP_W * (WORLD_H / WORLD_W));
+const MINIMAP_MARGIN = 12;
+const MINIMAP_DOT_COLOR = { wood: "#8a5a2f", stone: "#c2c2c2", ore: "#ffd23f" };
+
+function drawMinimap() {
+  const scaleX = MINIMAP_W / WORLD_W;
+  const scaleY = MINIMAP_H / WORLD_H;
+  const mapX = MINIMAP_MARGIN;
+  const mapY = MINIMAP_MARGIN;
+
+  ctx.save();
+
+  ctx.fillStyle = "rgba(20, 40, 25, 0.45)";
+  ctx.fillRect(mapX, mapY, MINIMAP_W, MINIMAP_H);
+
+  ctx.beginPath();
+  ctx.rect(mapX, mapY, MINIMAP_W, MINIMAP_H);
+  ctx.clip();
+
+  for (const node of resources) {
+    if (node.amount <= 0) continue;
+    ctx.fillStyle = MINIMAP_DOT_COLOR[node.type] || "#fff";
+    ctx.beginPath();
+    ctx.arc(mapX + node.x * scaleX, mapY + node.y * scaleY, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Outline of what the camera currently shows
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(
+    mapX + cameraX * scaleX,
+    mapY + cameraY * scaleY,
+    CANVAS_W * scaleX,
+    CANVAS_H * scaleY
+  );
+
+  ctx.fillStyle = "#4c8bf5";
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(mapX + player.x * scaleX, mapY + player.y * scaleY, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(mapX, mapY, MINIMAP_W, MINIMAP_H);
 }
 
 // Dig-swing phase boundaries (fraction of DIG_DURATION_MS). Shared with
