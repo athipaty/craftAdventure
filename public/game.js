@@ -965,7 +965,7 @@ function draw() {
 // viewport outline, and the player. Drawn in plain screen coordinates
 // (after the camera ctx.restore() above), and kept translucent so it never
 // fully hides the game underneath it.
-const MINIMAP_W = 160;
+const MINIMAP_W = 260;
 const MINIMAP_H = Math.round(MINIMAP_W * (WORLD_H / WORLD_W));
 const MINIMAP_MARGIN = 12;
 const MINIMAP_DOT_COLOR = { wood: "#8a5a2f", stone: "#c2c2c2", ore: "#ffd23f" };
@@ -989,7 +989,7 @@ function drawMinimap() {
     if (node.amount <= 0) continue;
     ctx.fillStyle = MINIMAP_DOT_COLOR[node.type] || "#fff";
     ctx.beginPath();
-    ctx.arc(mapX + node.x * scaleX, mapY + node.y * scaleY, 1.5, 0, Math.PI * 2);
+    ctx.arc(mapX + node.x * scaleX, mapY + node.y * scaleY, 2, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -1007,7 +1007,7 @@ function drawMinimap() {
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(mapX + player.x * scaleX, mapY + player.y * scaleY, 3, 0, Math.PI * 2);
+  ctx.arc(mapX + player.x * scaleX, mapY + player.y * scaleY, 4, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
