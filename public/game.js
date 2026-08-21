@@ -373,22 +373,36 @@ function isTooCloseToOtherNodes(x, y, excludeNode) {
   return false;
 }
 
+// A player-built structure claims its footprint — resources should never
+// spawn or respawn on top of a spot someone already built on.
+function isTooCloseToStructures(x, y, type) {
+  const resourceRadius = RESOURCE_COLLISION_RADIUS[type] || 12;
+  for (const s of player.structures) {
+    const minDist = (STRUCTURES[s.type]?.radius || 14) + resourceRadius;
+    if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
+  }
+  return false;
+}
+
 // Picks a fresh spot for a respawning node — far enough from where it just
-// was that it doesn't feel like it grew right back in the same place, and
-// far enough from every other node so nothing spawns overlapping.
+// was that it doesn't feel like it grew right back in the same place, far
+// enough from every other node so nothing spawns overlapping, and clear of
+// any built structure.
 function pickRespawnPosition(node) {
   for (let attempt = 0; attempt < 40; attempt++) {
     const { x, y } = randomMapPoint();
     const farFromOldSpot = Math.hypot(x - node.x, y - node.y) >= RESPAWN_MIN_DISTANCE;
-    if (farFromOldSpot && !isTooCloseToOtherNodes(x, y, node)) return { x, y };
+    if (farFromOldSpot && !isTooCloseToOtherNodes(x, y, node) && !isTooCloseToStructures(x, y, node.type)) {
+      return { x, y };
+    }
   }
   return randomMapPoint();
 }
 
-function pickSpawnPosition() {
+function pickSpawnPosition(type) {
   for (let attempt = 0; attempt < 40; attempt++) {
     const { x, y } = randomMapPoint();
-    if (!isTooCloseToOtherNodes(x, y, null)) return { x, y };
+    if (!isTooCloseToOtherNodes(x, y, null) && !isTooCloseToStructures(x, y, type)) return { x, y };
   }
   return randomMapPoint();
 }
@@ -398,7 +412,7 @@ function spawnResources() {
   const counts = computeResourceSpawnCounts();
   for (const [type, count] of Object.entries(counts)) {
     for (let i = 0; i < count; i++) {
-      const { x, y } = pickSpawnPosition();
+      const { x, y } = pickSpawnPosition(type);
       resources.push({ type, x, y, amount: NODE_START_AMOUNT, respawnAt: 0 });
     }
   }
