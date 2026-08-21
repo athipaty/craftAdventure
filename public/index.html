@@ -28,6 +28,7 @@
       <span id="capacity"></span>
       <span id="save-status"></span>
       <button id="craft-btn">Craft</button>
+      <button id="build-btn">Build</button>
       <button id="reset-btn" title="Testing only — wipes this save back to defaults">Reset</button>
     </div>
 
@@ -43,13 +44,26 @@
       </div>
     </div>
 
-    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk up to a resource, press E &nbsp;|&nbsp; Craft: press C</p>
+    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk up to a resource, press E &nbsp;|&nbsp; Craft: press C &nbsp;|&nbsp; Build: press B</p>
+
+    <div id="panel-backdrop" class="hidden"></div>
 
     <div id="craft-panel" class="hidden">
-      <h2>Crafting</h2>
+      <div class="panel-header">
+        <h2>Crafting</h2>
+        <button id="close-craft" class="panel-close" aria-label="Close">×</button>
+      </div>
       <div id="craft-list"></div>
       <p class="hint">↑↓ to select &nbsp;|&nbsp; Enter to craft &nbsp;|&nbsp; Esc/C to close</p>
-      <button id="close-craft">Close (Esc)</button>
+    </div>
+
+    <div id="build-panel" class="hidden">
+      <div class="panel-header">
+        <h2>Build</h2>
+        <button id="close-build" class="panel-close" aria-label="Close">×</button>
+      </div>
+      <div id="build-list"></div>
+      <p class="hint">Places in front of you, facing the way you're walking</p>
     </div>
   </div>
 

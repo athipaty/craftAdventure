@@ -28,6 +28,14 @@ let digDurationMs = 500; // recomputed per-swing in startDig() based on tool lev
 const PLAYER_RADIUS = 10;
 const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
 
+// Buildable structures — costs are also enforced server-side (see the
+// backend's own STRUCTURES table) so a player can't skip payment by editing
+// this file; this copy just drives the client UI/collision/rendering.
+const STRUCTURES = {
+  wall: { label: "Wall", cost: { wood: 5 }, radius: 14 },
+};
+const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
+
 let player = null;
 let resources = [];
 let keys = new Set();
@@ -171,6 +179,10 @@ function positionBlocked(x, y) {
     const scale = 0.55 + 0.45 * (node.amount / NODE_START_AMOUNT);
     const minDist = PLAYER_RADIUS + (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
     if (Math.hypot(node.x - x, node.y - y) < minDist) return true;
+  }
+  for (const s of player.structures) {
+    const minDist = PLAYER_RADIUS + (STRUCTURES[s.type]?.radius || 14);
+    if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
   }
   return false;
 }
@@ -368,11 +380,13 @@ async function resetPlayer() {
     });
     if (!res.ok) throw new Error((await res.json()).error || "Reset failed");
     player = await res.json();
+    player.structures = player.structures || [];
 
     isDigging = false;
     digTargetNode = null;
     exploredCells.fill(0);
     closeCraftPanel();
+    closeBuildPanel();
     spawnResources();
     renderHud();
     document.getElementById("save-status").textContent = "Reset " + new Date().toLocaleTimeString();
@@ -411,6 +425,32 @@ async function craftItem(key) {
   player.upgrades = data.upgrades;
   renderHud();
   renderCraftPanel();
+}
+
+// Places a structure a fixed distance in front of the player, facing
+// whichever way they're currently facing — mirrors how gathering works
+// (walk up, act), rather than a separate click-to-place mode.
+async function buildStructure(key) {
+  const structure = STRUCTURES[key];
+  const angle = dirIndex * (Math.PI / 4);
+  const x = Math.min(WORLD_W - 14, Math.max(14, player.x + Math.cos(angle) * PLACE_DISTANCE));
+  const y = Math.min(WORLD_H - 14, Math.max(14, player.y + Math.sin(angle) * PLACE_DISTANCE));
+
+  const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/build`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: key, x, y }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || "Build failed");
+    return;
+  }
+  player.inventory = data.inventory;
+  player.structures = data.structures;
+  spawnFloatingText(x, y - 20, structure.label, "#8fb4f7");
+  renderHud();
+  renderBuildPanel();
 }
 
 function renderHud() {
@@ -601,19 +641,30 @@ function buildCostPillsHtml(cost) {
     .join("");
 }
 
+// Maxed-out tools have nothing left to offer, so once a tool hits its cap it
+// drops out of the list entirely instead of sitting there as a dead "MAX" row.
+function visibleCraftKeys() {
+  return Object.keys(RECIPES).filter((key) => !craftEntryState(key).maxed);
+}
+
 function renderCraftPanel() {
   const list = document.getElementById("craft-list");
   list.innerHTML = "";
-  const entries = Object.entries(RECIPES);
+  const visibleKeys = visibleCraftKeys();
 
-  entries.forEach(([key, recipe], index) => {
-    const { currentLevel, maxed, nextCost, canAfford } = craftEntryState(key);
+  if (visibleKeys.length === 0) {
+    list.innerHTML = `<p class="hint">All tools maxed out!</p>`;
+    return;
+  }
+  if (selectedCraftIndex >= visibleKeys.length) selectedCraftIndex = visibleKeys.length - 1;
+
+  visibleKeys.forEach((key, index) => {
+    const recipe = RECIPES[key];
+    const { currentLevel, nextCost, canAfford } = craftEntryState(key);
 
     const row = document.createElement("div");
     row.className =
-      "craft-item" +
-      (index === selectedCraftIndex ? " selected" : "") +
-      (!maxed && canAfford ? " craftable" : "");
+      "craft-item" + (index === selectedCraftIndex ? " selected" : "") + (canAfford ? " craftable" : "");
     row.addEventListener("click", () => {
       selectedCraftIndex = index;
       renderCraftPanel();
@@ -622,18 +673,14 @@ function renderCraftPanel() {
     // Just the essentials: current tool -> next tool, and what it costs.
     row.innerHTML = `
       <img class="tool-icon" src="${getToolIconUrl(key, currentLevel)}" alt="${recipe.label} current" />
-      ${
-        maxed
-          ? `<span class="max-badge">MAX</span>`
-          : `<span class="upgrade-arrow">→</span>
-             <img class="tool-icon" src="${getToolIconUrl(key, currentLevel + 1)}" alt="${recipe.label} next" />
-             <div class="cost-row">${buildCostPillsHtml(nextCost)}</div>`
-      }
+      <span class="upgrade-arrow">→</span>
+      <img class="tool-icon" src="${getToolIconUrl(key, currentLevel + 1)}" alt="${recipe.label} next" />
+      <div class="cost-row">${buildCostPillsHtml(nextCost)}</div>
     `;
 
     const btn = document.createElement("button");
-    btn.textContent = maxed ? "Maxed" : "Craft";
-    btn.disabled = maxed || !canAfford;
+    btn.textContent = "Craft";
+    btn.disabled = !canAfford;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       craftItem(key);
@@ -645,15 +692,24 @@ function renderCraftPanel() {
 }
 
 function moveCraftSelection(delta) {
-  const count = Object.keys(RECIPES).length;
+  const count = visibleCraftKeys().length;
+  if (count === 0) return;
   selectedCraftIndex = (selectedCraftIndex + delta + count) % count;
   renderCraftPanel();
 }
 
 function activateSelectedCraft() {
-  const key = Object.keys(RECIPES)[selectedCraftIndex];
-  const { maxed, canAfford } = craftEntryState(key);
-  if (!maxed && canAfford) craftItem(key);
+  const key = visibleCraftKeys()[selectedCraftIndex];
+  if (!key) return;
+  const { canAfford } = craftEntryState(key);
+  if (canAfford) craftItem(key);
+}
+
+// Shared dimmed backdrop behind whichever panel (craft/build) is open —
+// tapping it closes that panel, same as Esc.
+function updateBackdrop() {
+  const anyOpen = isCraftPanelOpen() || isBuildPanelOpen();
+  document.getElementById("panel-backdrop").classList.toggle("hidden", !anyOpen);
 }
 
 function isCraftPanelOpen() {
@@ -661,19 +717,76 @@ function isCraftPanelOpen() {
 }
 
 function openCraftPanel() {
+  closeBuildPanel();
   document.getElementById("craft-panel").classList.remove("hidden");
   keys.clear();
   selectedCraftIndex = 0;
   renderCraftPanel();
+  updateBackdrop();
 }
 
 function closeCraftPanel() {
   document.getElementById("craft-panel").classList.add("hidden");
+  updateBackdrop();
 }
 
 function toggleCraftPanel() {
   if (isCraftPanelOpen()) closeCraftPanel();
   else openCraftPanel();
+}
+
+function structureAfford(key) {
+  const cost = STRUCTURES[key].cost;
+  return Object.entries(cost).every(([res, amt]) => player.inventory[res] >= amt);
+}
+
+function renderBuildPanel() {
+  const list = document.getElementById("build-list");
+  list.innerHTML = "";
+
+  Object.entries(STRUCTURES).forEach(([key, structure]) => {
+    const canAfford = structureAfford(key);
+
+    const row = document.createElement("div");
+    row.className = "craft-item" + (canAfford ? " craftable" : "");
+    row.innerHTML = `
+      <span>${structure.label}</span>
+      <div class="cost-row">${buildCostPillsHtml(structure.cost)}</div>
+    `;
+
+    const btn = document.createElement("button");
+    btn.textContent = "Build";
+    btn.disabled = !canAfford;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      buildStructure(key);
+    });
+    row.appendChild(btn);
+
+    list.appendChild(row);
+  });
+}
+
+function isBuildPanelOpen() {
+  return !document.getElementById("build-panel").classList.contains("hidden");
+}
+
+function openBuildPanel() {
+  closeCraftPanel();
+  document.getElementById("build-panel").classList.remove("hidden");
+  keys.clear();
+  renderBuildPanel();
+  updateBackdrop();
+}
+
+function closeBuildPanel() {
+  document.getElementById("build-panel").classList.add("hidden");
+  updateBackdrop();
+}
+
+function toggleBuildPanel() {
+  if (isBuildPanelOpen()) closeBuildPanel();
+  else openBuildPanel();
 }
 
 function update() {
@@ -1010,6 +1123,32 @@ function drawResource(node) {
   else if (node.type === "ore") drawOre(x, y, scale);
 }
 
+function drawWall(x, y) {
+  drawShadow(x, y + 11, 13, 4);
+
+  ctx.fillStyle = "#8a5a2f";
+  ctx.strokeStyle = "#5a3a1c";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x - 12, y - 12, 24, 20, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  // horizontal plank lines
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x - 12, y - 4);
+  ctx.lineTo(x + 12, y - 4);
+  ctx.moveTo(x - 12, y + 4);
+  ctx.lineTo(x + 12, y + 4);
+  ctx.stroke();
+}
+
+function drawStructure(s) {
+  if (s.type === "wall") drawWall(s.x, s.y);
+}
+
 function draw() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -1027,6 +1166,8 @@ function draw() {
     if (node.amount <= 0) continue;
     drawResource(node);
   }
+
+  for (const s of player.structures) drawStructure(s);
 
   drawCharacter(player.x, player.y);
   drawFloatingTexts();
@@ -1490,6 +1631,11 @@ function startGame() {
       return;
     }
 
+    if (k === "b") {
+      toggleBuildPanel();
+      return;
+    }
+
     if (isCraftPanelOpen()) {
       if (k === "arrowup" || k === "w") {
         e.preventDefault();
@@ -1506,6 +1652,11 @@ function startGame() {
       return; // swallow everything else (no movement/gathering with the menu open)
     }
 
+    if (isBuildPanelOpen()) {
+      if (k === "escape") closeBuildPanel();
+      return; // swallow everything else (no movement/gathering with the menu open)
+    }
+
     if (k === "e") {
       if (!isDigging && nearbyNode) startDig(nearbyNode);
       return;
@@ -1514,6 +1665,12 @@ function startGame() {
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
   document.getElementById("close-craft").addEventListener("click", closeCraftPanel);
+  document.getElementById("close-build").addEventListener("click", closeBuildPanel);
+  document.getElementById("build-btn").addEventListener("click", toggleBuildPanel);
+  document.getElementById("panel-backdrop").addEventListener("click", () => {
+    closeCraftPanel();
+    closeBuildPanel();
+  });
   document.getElementById("reset-btn").addEventListener("click", resetPlayer);
   setupTouchControls();
 
@@ -1541,6 +1698,7 @@ document.getElementById("start-btn").addEventListener("click", async () => {
   try {
     initAudio();
     player = await loginOrCreate(name);
+    player.structures = player.structures || [];
     startGame();
   } catch (err) {
     errorEl.textContent = err.message;

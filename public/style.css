@@ -40,7 +40,8 @@ body {
 }
 
 #login-screen button,
-#craft-panel button {
+#craft-panel button,
+#build-panel button {
   padding: 8px 16px;
   font-size: 1rem;
   border-radius: 6px;
@@ -51,7 +52,8 @@ body {
 }
 
 #login-screen button:hover,
-#craft-panel button:hover {
+#craft-panel button:hover,
+#build-panel button:hover {
   background: #3a6fd6;
 }
 
@@ -99,8 +101,8 @@ body {
   vertical-align: middle;
 }
 
-#craft-btn {
-  margin-left: auto;
+#craft-btn,
+#build-btn {
   padding: 5px 14px;
   font-size: 0.85rem;
   border: 1px solid #4c8bf5;
@@ -110,7 +112,12 @@ body {
   cursor: pointer;
 }
 
-#craft-btn:hover {
+#craft-btn {
+  margin-left: auto;
+}
+
+#craft-btn:hover,
+#build-btn:hover {
   background: #4c8bf533;
 }
 
@@ -231,8 +238,10 @@ body {
   font-size: 0.85rem;
 }
 
-#craft-panel {
+#craft-panel,
+#build-panel {
   position: absolute;
+  z-index: 6;
   top: 60px;
   left: 50%;
   transform: translateX(-50%);
@@ -301,13 +310,6 @@ body {
   flex-shrink: 0;
 }
 
-.max-badge {
-  flex: 1;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #8fb4f7;
-}
-
 .cost-row {
   display: flex;
   flex-wrap: wrap;
@@ -335,6 +337,39 @@ body {
 .craft-item button:disabled {
   background: #555;
   cursor: not-allowed;
+}
+
+#panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.panel-header h2 {
+  margin: 0;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  color: #8fb4f7;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.panel-close:hover {
+  color: #fff;
 }
 
 /* Touch-device layout. Placed last on purpose so these overrides win the
@@ -373,6 +408,7 @@ body {
   }
 
   #craft-btn,
+  #build-btn,
   #reset-btn {
     padding: 3px 8px;
     font-size: 0.75rem;
@@ -415,22 +451,23 @@ body {
     }
   }
 
-  /* Compact crafting card — the desktop version (420px, roomy padding, 36px
-     icons) is oversized on a short phone screen and needs real scrolling.
-     Also center it via top/left 50% instead of a fixed top offset, since a
-     tuned-for-desktop "60px from the top" eats a big chunk of a ~350px-tall
-     landscape phone screen. */
-  #craft-panel {
+  /* Compact crafting/build card — the desktop version (420px, roomy padding,
+     36px icons) is oversized on a short phone screen and needs real
+     scrolling. Also center it via top/left 50% instead of a fixed top
+     offset, since a tuned-for-desktop "60px from the top" eats a big chunk
+     of a ~350px-tall landscape phone screen. Capped narrower and shorter
+     than the raw 92vw/90vh so it reads as a card, not a full takeover. */
+  #craft-panel,
+  #build-panel {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 92vw;
-    max-height: 90vh;
-    padding: 12px;
+    width: min(92vw, 340px);
+    max-height: min(80vh, 380px);
+    padding: 10px;
   }
 
-  #craft-panel h2 {
-    margin: 0 0 6px;
+  .panel-header h2 {
     font-size: 1.05rem;
   }
 
