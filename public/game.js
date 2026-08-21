@@ -25,11 +25,18 @@ const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.0; // lower than before ZOOM went 1.5 -> 1.8, since the higher zoom alone made the same speed look faster on screen
 const NODE_START_AMOUNT = 8;
 let digDurationMs = 500; // recomputed per-swing in startDig() based on tool level
-// Collision hitbox is just the torso/shoulder core (the body is an 18px-wide
-// box, drawn in drawCharacter()) — deliberately smaller than the full
-// sprite, so swinging arms/legs and the shadow can overlap a resource or
-// structure's art without that being treated as a collision.
-const PLAYER_RADIUS = 6;
+// Collision radius against a resource/structure, chosen by whether it's in
+// front of or behind the character on screen. The game always draws the
+// character on top of everything (see draw()) rather than sorting by y, so
+// an object below the character (greater y — visually in front, the way a
+// properly depth-sorted scene would draw it over the character) needs the
+// full radius to stay blocked: getting close there would show the
+// character wrongly standing in front of something that should occlude it.
+// An object above the character (smaller y — already behind, and already
+// drawn underneath) is safe to approach closely, so it gets the smaller,
+// torso-only radius instead.
+const PLAYER_RADIUS_IN_FRONT = 10;
+const PLAYER_RADIUS_BEHIND = 6;
 const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
 
 // Buildable structures — costs/levels are also enforced server-side (see
@@ -208,12 +215,14 @@ function positionBlocked(x, y, excludeStructureId) {
   for (const node of resources) {
     if (node.amount <= 0) continue;
     const scale = 0.55 + 0.45 * (node.amount / NODE_START_AMOUNT);
-    const minDist = PLAYER_RADIUS + (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
+    const playerRadius = node.y > y ? PLAYER_RADIUS_IN_FRONT : PLAYER_RADIUS_BEHIND;
+    const minDist = playerRadius + (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
     if (Math.hypot(node.x - x, node.y - y) < minDist) return true;
   }
   for (const s of player.structures) {
     if (excludeStructureId && s._id === excludeStructureId) continue;
-    const minDist = PLAYER_RADIUS + (STRUCTURES[s.type]?.radius || 14);
+    const playerRadius = s.y > y ? PLAYER_RADIUS_IN_FRONT : PLAYER_RADIUS_BEHIND;
+    const minDist = playerRadius + (STRUCTURES[s.type]?.radius || 14);
     if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
   }
   return false;
