@@ -25,7 +25,11 @@ const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.0; // lower than before ZOOM went 1.5 -> 1.8, since the higher zoom alone made the same speed look faster on screen
 const NODE_START_AMOUNT = 8;
 let digDurationMs = 500; // recomputed per-swing in startDig() based on tool level
-const PLAYER_RADIUS = 10;
+// Collision hitbox is just the torso/shoulder core (the body is an 18px-wide
+// box, drawn in drawCharacter()) — deliberately smaller than the full
+// sprite, so swinging arms/legs and the shadow can overlap a resource or
+// structure's art without that being treated as a collision.
+const PLAYER_RADIUS = 6;
 const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
 
 // Buildable structures — costs/levels are also enforced server-side (see
