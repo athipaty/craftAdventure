@@ -1,6 +1,14 @@
-// Point this at wherever the center-kitchen backend is running.
-// Local dev default matches backend/.env PORT=5000.
-const API_BASE = "http://localhost:5000/api/craft-adventure";
+// Local dev (including opening the dev server from another device on the
+// same network, e.g. your phone, via the PC's LAN IP) talks to the backend
+// on port 5000 on that same host. Anywhere else (the deployed Vercel site)
+// talks to the live Render backend. "localhost" only ever means "whatever
+// device is running this script" — it can never point at your PC from a
+// phone, which is why this used to fail to fetch when opened on mobile.
+const API_BASE = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(
+  location.hostname
+)
+  ? `http://${location.hostname}:5000/api/craft-adventure`
+  : "https://center-kitchen-backend.onrender.com/api/craft-adventure";
 
 const CANVAS_W = 800;
 const CANVAS_H = 600;
