@@ -69,7 +69,7 @@ body {
   gap: 8px;
   position: relative;
   width: 100%;
-  max-width: 1400px;
+  max-width: 1800px;
   /* Fills the browser window's height on desktop just like it fills the
      phone screen on mobile — canvas-wrap (flex: 1 below) then fills
      whatever's left under the HUD, and resizeCanvas() in game.js measures
