@@ -1335,8 +1335,28 @@ function drawWall(x, y) {
   ctx.stroke();
 }
 
-function drawStructure(s) {
-  if (s.type === "wall") drawWall(s.x, s.y);
+function drawStructure(s, isDemolishTarget = false) {
+  if (!isDemolishTarget) {
+    if (s.type === "wall") drawWall(s.x, s.y);
+    return;
+  }
+
+  // In range to demolish (E hits this one): pulse a red ring on the ground
+  // and bob the structure up off it, so it's unmistakably the one that will
+  // be torn down and not one of its neighbors.
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
+  ctx.save();
+  ctx.fillStyle = `rgba(230, 90, 90, ${0.1 + pulse * 0.15})`;
+  ctx.strokeStyle = `rgba(230, 90, 90, ${0.4 + pulse * 0.5})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(s.x, s.y + 12, 16, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  const bob = 3 + pulse * 3;
+  if (s.type === "wall") drawWall(s.x, s.y - bob);
 }
 
 // The "you're about to place here" slot — a highlighted square at the
@@ -1381,7 +1401,7 @@ function draw() {
     drawResource(node);
   }
 
-  for (const s of player.structures) drawStructure(s);
+  for (const s of player.structures) drawStructure(s, s === nearbyStructure);
   drawPlacementGhost();
 
   drawCharacter(player.x, player.y);
