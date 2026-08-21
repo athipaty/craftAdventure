@@ -834,6 +834,66 @@ function getBuildButtonIconUrl() {
   return buildButtonIconCache;
 }
 
+let fullscreenButtonIconCache = null;
+function getFullscreenButtonIconUrl() {
+  if (fullscreenButtonIconCache) return fullscreenButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 36;
+  iconCanvas.height = 36;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  // Four corner brackets — the standard "expand to fullscreen" glyph.
+  ctx.strokeStyle = "#e8e8e8";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  const inset = 7;
+  const arm = 7;
+  const corners = [
+    [
+      [inset + arm, inset],
+      [inset, inset],
+      [inset, inset + arm],
+    ],
+    [
+      [36 - inset - arm, inset],
+      [36 - inset, inset],
+      [36 - inset, inset + arm],
+    ],
+    [
+      [inset, 36 - inset - arm],
+      [inset, 36 - inset],
+      [inset + arm, 36 - inset],
+    ],
+    [
+      [36 - inset, 36 - inset - arm],
+      [36 - inset, 36 - inset],
+      [36 - inset - arm, 36 - inset],
+    ],
+  ];
+  for (const [[x1, y1], [x2, y2], [x3, y3]] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+    ctx.stroke();
+  }
+
+  ctx = savedCtx;
+
+  fullscreenButtonIconCache = iconCanvas.toDataURL();
+  return fullscreenButtonIconCache;
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  } else {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
+}
+
 function craftEntryState(key) {
   const recipe = RECIPES[key];
   const currentLevel = player.upgrades[recipe.upgradeKey] || 0;
@@ -2031,6 +2091,12 @@ function startGame() {
   document.getElementById("ore-icon").src = getResourceIconUrl("ore");
   document.getElementById("craft-btn-icon").src = getCraftButtonIconUrl();
   document.getElementById("build-btn-icon").src = getBuildButtonIconUrl();
+  document.getElementById("fullscreen-btn-icon").src = getFullscreenButtonIconUrl();
+  // iOS Safari has no element Fullscreen API at all — a button that can
+  // never do anything is worse than no button, so hide it there.
+  if (!document.documentElement.requestFullscreen) {
+    document.getElementById("fullscreen-btn").classList.add("hidden");
+  }
 
   spawnResources();
   renderHud();
@@ -2105,6 +2171,7 @@ function startGame() {
   document.getElementById("close-craft").addEventListener("click", closeCraftPanel);
   document.getElementById("close-build").addEventListener("click", closeBuildPanel);
   document.getElementById("build-btn").addEventListener("click", toggleBuildPanel);
+  document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
   document.getElementById("panel-backdrop").addEventListener("click", () => {
     closeCraftPanel();
     closeBuildPanel();
