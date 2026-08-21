@@ -19,7 +19,7 @@ let CANVAS_W = 800;
 let CANVAS_H = 600;
 const WORLD_W = 2400;
 const WORLD_H = 1600;
-const ZOOM = 1.5; // >1 shows less world per screen pixel, i.e. "closer in"
+const ZOOM = 1.8; // >1 shows less world per screen pixel, i.e. "closer in"
 const GATHER_RADIUS = 32;
 const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.2;
@@ -1041,7 +1041,7 @@ function draw() {
 // viewport outline, and the player. Drawn in plain screen coordinates
 // (after the camera ctx.restore() above), and kept translucent so it never
 // fully hides the game underneath it.
-const MINIMAP_W = 260;
+const MINIMAP_W = 320;
 const MINIMAP_H = Math.round(MINIMAP_W * (WORLD_H / WORLD_W));
 const MINIMAP_MARGIN = 12;
 const MINIMAP_DOT_COLOR = { wood: "#8a5a2f", stone: "#c2c2c2", ore: "#ffd23f" };
