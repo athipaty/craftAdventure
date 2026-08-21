@@ -371,6 +371,7 @@ async function resetPlayer() {
 
     isDigging = false;
     digTargetNode = null;
+    exploredCells.fill(0);
     closeCraftPanel();
     spawnResources();
     renderHud();
