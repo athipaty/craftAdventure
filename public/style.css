@@ -8,11 +8,18 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* flex-start, not center: #game-screen fills a fixed 100vh/100dvh. If
+     that ever comes out even a pixel taller than the real viewport (vh
+     rounding, scrollbar reflow, etc.), centering the page would clip it
+     equally off the top AND bottom with no way to scroll to the rest —
+     pinning to the top means only the (least important) bottom edge is
+     ever at risk, and the HUD stays reliably visible. */
+  justify-content: flex-start;
   background: #1b1f2a;
   color: #eee;
   font-family: system-ui, sans-serif;
   overscroll-behavior: none;
+  overflow: hidden;
 }
 
 .hidden {
@@ -21,6 +28,7 @@ body {
 
 #login-screen {
   text-align: center;
+  margin-top: 15vh;
 }
 
 #login-screen input {
