@@ -287,53 +287,24 @@ body {
   flex-shrink: 0;
 }
 
-.next-tier {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, rgba(255, 193, 7, 0.16), rgba(255, 193, 7, 0.03));
-  border: 1px dashed rgba(255, 193, 7, 0.45);
+.upgrade-arrow {
+  opacity: 0.6;
+  font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
-.next-tier-icon {
-  width: 28px;
-  height: 28px;
-  filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.5));
-}
-
-.next-tier-label {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #ffc94d;
-  text-shadow: 0 0 6px rgba(255, 193, 7, 0.35);
-  margin-bottom: 3px;
-}
-
-.next-tier .cost-row {
-  margin-top: 0;
-  opacity: 0.9;
-}
-
-.craft-item .info {
+.max-badge {
   flex: 1;
-}
-
-.craft-item .info b {
-  display: block;
-}
-
-.craft-item .info small {
-  opacity: 0.7;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #8fb4f7;
 }
 
 .cost-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-top: 4px;
+  flex: 1;
 }
 
 .cost-pill {
@@ -442,33 +413,9 @@ body {
     gap: 8px;
   }
 
-  .craft-item .info b {
-    font-size: 0.85rem;
-  }
-
-  .craft-item .info small {
-    font-size: 0.72rem;
-  }
-
   .craft-item button {
     padding: 5px 10px;
     font-size: 0.8rem;
-  }
-
-  .next-tier {
-    padding: 4px 6px;
-    gap: 6px;
-    margin-top: 4px;
-  }
-
-  .next-tier-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .next-tier-label {
-    font-size: 0.68rem;
-    margin-bottom: 1px;
   }
 
   .cost-pill {

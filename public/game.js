@@ -449,13 +449,7 @@ function craftEntryState(key) {
   const nextCost = !maxed ? recipe.costs[currentLevel + 1] : null;
   const canAfford =
     !!nextCost && Object.entries(nextCost).every(([res, amt]) => player.inventory[res] >= amt);
-
-  // One level further out than what you can craft right now — a teaser so
-  // farming feels like it's building toward something, not just the next buy.
-  const previewLevel = currentLevel + 2;
-  const previewCost = !maxed && previewLevel <= recipe.maxLevel ? recipe.costs[previewLevel] : null;
-
-  return { recipe, currentLevel, maxed, nextCost, canAfford, previewLevel, previewCost };
+  return { recipe, currentLevel, maxed, nextCost, canAfford };
 }
 
 function buildCostPillsHtml(cost) {
@@ -472,8 +466,7 @@ function renderCraftPanel() {
   const entries = Object.entries(RECIPES);
 
   entries.forEach(([key, recipe], index) => {
-    const { currentLevel, maxed, nextCost, canAfford, previewLevel, previewCost } =
-      craftEntryState(key);
+    const { currentLevel, maxed, nextCost, canAfford } = craftEntryState(key);
 
     const row = document.createElement("div");
     row.className =
@@ -485,25 +478,16 @@ function renderCraftPanel() {
       renderCraftPanel();
     });
 
-    const costHtml = nextCost ? buildCostPillsHtml(nextCost) : "";
-    const previewHtml = previewCost
-      ? `<div class="next-tier">
-           <img class="tool-icon next-tier-icon" src="${getToolIconUrl(key, previewLevel)}" alt="${recipe.label} Lv ${previewLevel}" />
-           <div>
-             <span class="next-tier-label">⇒ Lv ${previewLevel} unlocks</span>
-             <div class="cost-row">${buildCostPillsHtml(previewCost)}</div>
-           </div>
-         </div>`
-      : "";
-
+    // Just the essentials: current tool -> next tool, and what it costs.
     row.innerHTML = `
-      <img class="tool-icon" src="${getToolIconUrl(key, Math.max(1, currentLevel))}" alt="${recipe.label}" />
-      <div class="info">
-        <b>${recipe.label} (Lv ${currentLevel}/${recipe.maxLevel})</b>
-        <small>${recipe.description}</small>
-        ${maxed ? '<small>Max level</small>' : `<div class="cost-row">${costHtml}</div>`}
-        ${previewHtml}
-      </div>
+      <img class="tool-icon" src="${getToolIconUrl(key, Math.max(1, currentLevel))}" alt="${recipe.label} current" />
+      ${
+        maxed
+          ? `<span class="max-badge">MAX</span>`
+          : `<span class="upgrade-arrow">→</span>
+             <img class="tool-icon" src="${getToolIconUrl(key, currentLevel + 1)}" alt="${recipe.label} next" />
+             <div class="cost-row">${buildCostPillsHtml(nextCost)}</div>`
+      }
     `;
 
     const btn = document.createElement("button");
