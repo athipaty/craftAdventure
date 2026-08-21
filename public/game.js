@@ -1041,7 +1041,7 @@ function draw() {
 // viewport outline, and the player. Drawn in plain screen coordinates
 // (after the camera ctx.restore() above), and kept translucent so it never
 // fully hides the game underneath it.
-const MINIMAP_W = 320;
+const MINIMAP_W = window.matchMedia("(pointer: coarse)").matches ? 150 : 320;
 const MINIMAP_H = Math.round(MINIMAP_W * (WORLD_H / WORLD_W));
 const MINIMAP_MARGIN = 12;
 const MINIMAP_DOT_COLOR = { wood: "#8a5a2f", stone: "#c2c2c2", ore: "#ffd23f" };
