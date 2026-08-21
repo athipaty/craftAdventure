@@ -31,6 +31,32 @@ let canvas, ctx;
 
 const joystickVector = { x: 0, y: 0 }; // set by the on-screen joystick, read by update()
 
+// Floating "+N" popup shown after each successful gather.
+let floatingTexts = [];
+const FLOAT_TEXT_DURATION_MS = 900;
+const RESOURCE_TEXT_COLOR = { wood: "#c98b4a", stone: "#e2e2e2", ore: "#ffd23f" };
+
+function spawnFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, startedAt: Date.now() });
+}
+
+function drawFloatingTexts() {
+  if (floatingTexts.length === 0) return;
+  const now = Date.now();
+  floatingTexts = floatingTexts.filter((t) => now - t.startedAt < FLOAT_TEXT_DURATION_MS);
+
+  ctx.font = "bold 16px sans-serif";
+  ctx.textAlign = "center";
+  for (const t of floatingTexts) {
+    const progress = (now - t.startedAt) / FLOAT_TEXT_DURATION_MS;
+    const riseY = t.y - progress * 30; // floats upward over its lifetime
+    ctx.globalAlpha = 1 - progress; // ...and fades out as it goes
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, t.x, riseY);
+  }
+  ctx.globalAlpha = 1;
+}
+
 let nearbyNode = null; // resource in range right now, if any
 let isDigging = false;
 let digTargetNode = null;
@@ -654,6 +680,7 @@ function handleDigging(now) {
   player.inventory[node.type] += gained;
   node.amount -= gained;
   if (node.amount <= 0) node.respawnAt = Date.now() + RESPAWN_MS;
+  spawnFloatingText(node.x, node.y - 20, `+${gained}`, RESOURCE_TEXT_COLOR[node.type]);
   renderHud();
 }
 
@@ -871,6 +898,7 @@ function draw() {
   }
 
   drawCharacter(player.x, player.y);
+  drawFloatingTexts();
 }
 
 // Dig-swing phase boundaries (fraction of DIG_DURATION_MS). Shared with
