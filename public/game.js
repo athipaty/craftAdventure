@@ -1441,6 +1441,14 @@ function drawMinimap() {
     ctx.fill();
   }
 
+  // Built structures — always shown regardless of fog, since the player
+  // placed them and already knows where they are. Square marker to read as
+  // distinct from the round resource dots above.
+  ctx.fillStyle = "#c9a06a";
+  for (const s of player.structures) {
+    ctx.fillRect(mapX + s.x * scaleX - 2, mapY + s.y * scaleY - 2, 4, 4);
+  }
+
   // Outline of what the camera currently shows
   const view = viewWorldSize();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
