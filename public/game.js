@@ -1205,13 +1205,10 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// On touch devices, size the canvas's actual pixel buffer to match
-// canvas-wrap's real rendered box, so the game world fills the phone screen
-// instead of being letterboxed inside a fixed 4:3 shape. Desktop is left at
-// the fixed 800x600 the rest of the game was tuned around.
+// Sizes the canvas's actual pixel buffer to match canvas-wrap's real
+// rendered box, on every device — the game world fills whatever window/
+// screen it's actually running in instead of sitting in a fixed 800x600 box.
 function resizeCanvas() {
-  if (!window.matchMedia("(pointer: coarse)").matches) return false;
-
   const rect = document.getElementById("canvas-wrap").getBoundingClientRect();
   const w = Math.max(200, Math.round(rect.width));
   const h = Math.max(150, Math.round(rect.height));

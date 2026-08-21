@@ -59,8 +59,17 @@ body {
   gap: 8px;
   position: relative;
   width: 100%;
-  max-width: 800px;
+  max-width: 1400px;
+  /* Fills the browser window's height on desktop just like it fills the
+     phone screen on mobile — canvas-wrap (flex: 1 below) then fills
+     whatever's left under the HUD, and resizeCanvas() in game.js measures
+     that box and sizes the canvas to match it exactly. The vh declaration
+     is a fallback for browsers that don't understand dvh (an invalid value
+     is dropped, leaving this one in effect). */
+  height: 100vh;
+  height: 100dvh;
   padding: 8px;
+  box-sizing: border-box;
 }
 
 #rotate-overlay {
@@ -118,8 +127,10 @@ body {
 
 #canvas-wrap {
   position: relative;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  max-width: 800px;
+  max-width: 100%;
   line-height: 0;
 }
 
@@ -129,7 +140,7 @@ body {
   border: 3px solid #444;
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   touch-action: none;
 }
 
@@ -348,20 +359,17 @@ body {
 }
 
 /* Touch-device layout. Placed last on purpose so these overrides win the
-   cascade against the desktop rules above (same specificity, later wins). */
+   cascade against the desktop rules above (same specificity, later wins).
+   canvas-wrap/game-canvas sizing itself is already universal (see the base
+   rules above) — this block only adds what's mobile-specific: pinning to
+   the true viewport edges (position: fixed handles mobile browser chrome
+   better than being in normal page flow), a smaller HUD, and hiding the
+   keyboard-only hint text. */
 @media (pointer: coarse) {
-  /* Fill the actual screen instead of sitting in a small centered box, and
-     lay out landscape — a phone-shaped 4:3 canvas with side-mounted
-     joystick/action controls needs the width. */
   #game-screen {
     position: fixed;
     inset: 0;
     width: 100vw;
-    /* dvh isn't supported on some older mobile browsers — if the second
-       declaration below is invalid there, the browser ignores it and keeps
-       this vh fallback rather than dropping height entirely. */
-    height: 100vh;
-    height: 100dvh;
     max-width: none;
     justify-content: center;
     padding: 4px;
@@ -372,24 +380,6 @@ body {
     font-size: 0.85rem;
     gap: 4px 12px;
     flex-shrink: 0;
-  }
-
-  /* canvas-wrap fills all remaining space below the HUD — game.js measures
-     this box and sizes the canvas's actual pixel buffer to match exactly
-     (see resizeCanvas()), so the game world fills the real screen instead of
-     being letterboxed inside a fixed 4:3 shape. */
-  #canvas-wrap {
-    flex: 1;
-    min-height: 0;
-    width: 100%;
-    max-width: 100%;
-  }
-
-  #game-canvas {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
   }
 
   /* Keyboard-only instructions don't apply once touch controls take over */
