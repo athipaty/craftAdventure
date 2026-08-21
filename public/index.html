@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Craft Adventure</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="login-screen">
+    <h1>Craft Adventure</h1>
+    <p>Enter a name to start or continue your save</p>
+    <input id="name-input" type="text" maxlength="20" placeholder="Your name" />
+    <button id="start-btn">Play</button>
+    <p id="login-error" class="error"></p>
+  </div>
+
+  <div id="game-screen" class="hidden">
+    <div id="hud">
+      <span>🪵 <b id="wood-count">0</b></span>
+      <span>🪨 <b id="stone-count">0</b></span>
+      <span>⛏️ <b id="ore-count">0</b></span>
+      <span id="capacity"></span>
+      <span id="save-status"></span>
+    </div>
+
+    <canvas id="game-canvas" width="800" height="600"></canvas>
+
+    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk into a resource &nbsp;|&nbsp; Craft: press C</p>
+
+    <div id="craft-panel" class="hidden">
+      <h2>Crafting</h2>
+      <div id="craft-list"></div>
+      <button id="close-craft">Close (C)</button>
+    </div>
+  </div>
+
+  <script src="recipes.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

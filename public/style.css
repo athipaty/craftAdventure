@@ -1,0 +1,122 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1b1f2a;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#login-screen {
+  text-align: center;
+}
+
+#login-screen input {
+  padding: 8px 12px;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #444;
+  margin-right: 8px;
+}
+
+#login-screen button,
+#craft-panel button {
+  padding: 8px 16px;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #4c8bf5;
+  color: white;
+  cursor: pointer;
+}
+
+#login-screen button:hover,
+#craft-panel button:hover {
+  background: #3a6fd6;
+}
+
+.error {
+  color: #ff6b6b;
+  min-height: 1.2em;
+}
+
+#game-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+#hud {
+  display: flex;
+  gap: 20px;
+  font-size: 1.1rem;
+}
+
+#save-status {
+  opacity: 0.6;
+  font-size: 0.9rem;
+}
+
+#game-canvas {
+  background: #2e7d32;
+  border-radius: 8px;
+  border: 3px solid #444;
+}
+
+.hint {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+#craft-panel {
+  position: absolute;
+  top: 60px;
+  background: #262b3a;
+  border: 2px solid #444;
+  border-radius: 8px;
+  padding: 20px;
+  width: 420px;
+  max-width: 90vw;
+}
+
+.craft-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #3a3f52;
+}
+
+.craft-item:last-child {
+  border-bottom: none;
+}
+
+.craft-item .info b {
+  display: block;
+}
+
+.craft-item .info small {
+  opacity: 0.7;
+}
+
+.craft-item button {
+  padding: 6px 12px;
+}
+
+.craft-item button:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
