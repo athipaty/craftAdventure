@@ -37,6 +37,10 @@ const STRUCTURES = {
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
 const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
 let placingType = null; // structure key currently being lined up, if any
+// Pixel offset (world space) the placement ghost has been nudged away from
+// its default in-front-of-player spot. Movement input drags this around
+// instead of the character while a structure is being lined up.
+let placeOffset = { x: 0, y: 0 };
 let nearbyStructure = null; // placed structure in range right now, if any
 
 let player = null;
@@ -388,6 +392,7 @@ async function resetPlayer() {
     isDigging = false;
     digTargetNode = null;
     placingType = null;
+    placeOffset = { x: 0, y: 0 };
     exploredCells.fill(0);
     closeCraftPanel();
     closeBuildPanel();
@@ -432,15 +437,15 @@ async function craftItem(key) {
 }
 
 // Where a structure would land right now: a fixed distance in front of the
-// player, facing whichever way they're currently facing, snapped to the same
-// 16px grid the ground is drawn on so the target slot is unambiguous. Walking
-// or turning during placement moves this, which is how "pick a spot" works
-// here — there's no click-to-target anywhere else in the game, so placement
-// stays consistent with the existing "walk up, act" interaction model.
+// player, facing whichever way they were facing when placement started,
+// nudged by placeOffset and snapped to the same 16px grid the ground is
+// drawn on so the target slot is unambiguous. While placing, movement input
+// drags placeOffset around instead of walking the character (see update()),
+// so lining up a spot doesn't require dragging the player around too.
 function placementPosition() {
   const angle = dirIndex * (Math.PI / 4);
-  const rawX = player.x + Math.cos(angle) * PLACE_DISTANCE;
-  const rawY = player.y + Math.sin(angle) * PLACE_DISTANCE;
+  const rawX = player.x + Math.cos(angle) * PLACE_DISTANCE + placeOffset.x;
+  const rawY = player.y + Math.sin(angle) * PLACE_DISTANCE + placeOffset.y;
   const x = Math.min(WORLD_W - 14, Math.max(14, Math.round(rawX / PLACE_GRID) * PLACE_GRID));
   const y = Math.min(WORLD_H - 14, Math.max(14, Math.round(rawY / PLACE_GRID) * PLACE_GRID));
   return { x, y };
@@ -448,11 +453,13 @@ function placementPosition() {
 
 function startPlacing(key) {
   placingType = key;
+  placeOffset = { x: 0, y: 0 };
   closeBuildPanel();
 }
 
 function cancelPlacing() {
   placingType = null;
+  placeOffset = { x: 0, y: 0 };
   updateDigPrompt();
 }
 
@@ -478,6 +485,7 @@ async function buildStructure(key, x, y) {
   player.inventory = data.inventory;
   player.structures = data.structures;
   placingType = null;
+  placeOffset = { x: 0, y: 0 };
   spawnFloatingText(x, y - 20, structure.label, "#8fb4f7");
   renderHud();
 }
@@ -892,6 +900,7 @@ function isBuildPanelOpen() {
 function openBuildPanel() {
   closeCraftPanel();
   placingType = null;
+  placeOffset = { x: 0, y: 0 };
   document.getElementById("build-panel").classList.remove("hidden");
   keys.clear();
   renderBuildPanel();
@@ -935,6 +944,24 @@ function update() {
   if (keys.has("arrowright") || keys.has("d")) dx += 1;
   dx += joystickVector.x;
   dy += joystickVector.y;
+
+  if (placingType) {
+    // Lining up a structure: movement input drags the placement ghost
+    // around instead of walking the character, so the wall you're trying
+    // to position doesn't drift out from under you as you nudge it.
+    isMoving = false;
+    idlePhase += 0.05;
+    lastStepIndex = -1;
+    if (dx || dy) {
+      const len = Math.hypot(dx, dy);
+      placeOffset.x += (dx / len) * speed;
+      placeOffset.y += (dy / len) * speed;
+    }
+    nearbyNode = null;
+    nearbyStructure = null;
+    updateDigPrompt();
+    return;
+  }
 
   isMoving = Boolean(dx || dy);
   if (isMoving) {
@@ -1826,10 +1853,11 @@ function startGame() {
       return;
     }
 
-    // Placement doesn't swallow movement — walking/turning is how you pick a
-    // spot — so only intercept the confirm/cancel keys and fall through for
-    // everything else (WASD reaches `keys.add(k)` below as normal, and "e"
-    // is handled by the shared performAction() further down).
+    // Only intercept the confirm/cancel keys here and fall through for
+    // everything else — WASD still reaches `keys.add(k)` below as normal,
+    // but update() reads placingType and steers that input into nudging the
+    // placement ghost instead of walking the character. "e" is handled by
+    // the shared performAction() further down.
     if (placingType) {
       if (k === "enter") {
         e.preventDefault();
