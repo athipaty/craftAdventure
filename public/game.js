@@ -10,11 +10,15 @@ const API_BASE = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-
   ? `http://${location.hostname}:5000/api/craft-adventure`
   : "https://center-kitchen-backend.onrender.com/api/craft-adventure";
 
-// Desktop stays a fixed 800x600. On touch devices these get overwritten by
-// resizeCanvas() to match the real screen, so the game actually fills the
-// phone instead of sitting inside a fixed 4:3 box with empty margins.
+// CANVAS_W/H are the VIEWPORT — the visible window onto the world. Desktop
+// stays a fixed 800x600 by default; on any device resizeCanvas() overwrites
+// these to match the real screen, so the game fills whatever it's running
+// in. WORLD_W/H are the actual game world, much bigger than any viewport —
+// the camera (cameraX/Y below) follows the player around inside it.
 let CANVAS_W = 800;
 let CANVAS_H = 600;
+const WORLD_W = 2400;
+const WORLD_H = 1600;
 const GATHER_RADIUS = 32;
 const RESPAWN_MS = 15000;
 const BASE_SPEED = 1.2;
@@ -28,6 +32,8 @@ let resources = [];
 let keys = new Set();
 let saveTimer = null;
 let canvas, ctx;
+let cameraX = 0;
+let cameraY = 0;
 
 const joystickVector = { x: 0, y: 0 }; // set by the on-screen joystick, read by update()
 
@@ -176,7 +182,7 @@ function totalCarried(inv) {
   return inv.wood + inv.stone + inv.ore;
 }
 
-const TOTAL_RESOURCE_NODES = 27;
+const TOTAL_RESOURCE_NODES = 100; // scaled up for WORLD_W x WORLD_H instead of one screen
 
 // Map density follows demand: sum every recipe's cost across all levels, turn
 // that into a % share per material, then hand out TOTAL_RESOURCE_NODES nodes
@@ -214,8 +220,39 @@ function computeResourceSpawnCounts() {
 const RESPAWN_MIN_DISTANCE = 150;
 const MIN_NODE_SPACING = 55; // no two nodes' "own area" may overlap closer than this
 
+// Centers the camera on the player, clamped so it never scrolls past the
+// edge of the world (or, if the world happens to be smaller than the
+// viewport, just stays put at 0).
+function updateCamera() {
+  const maxCamX = Math.max(0, WORLD_W - CANVAS_W);
+  const maxCamY = Math.max(0, WORLD_H - CANVAS_H);
+  cameraX = Math.max(0, Math.min(maxCamX, player.x - CANVAS_W / 2));
+  cameraY = Math.max(0, Math.min(maxCamY, player.y - CANVAS_H / 2));
+}
+
+// Faint world-space grid so panning the camera over empty ground still
+// reads as movement, not just a static green backdrop.
+function drawGrid() {
+  const gridSize = 120;
+  const startX = Math.floor(cameraX / gridSize) * gridSize;
+  const startY = Math.floor(cameraY / gridSize) * gridSize;
+
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.06)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = startX; x <= cameraX + CANVAS_W; x += gridSize) {
+    ctx.moveTo(x, cameraY);
+    ctx.lineTo(x, cameraY + CANVAS_H);
+  }
+  for (let y = startY; y <= cameraY + CANVAS_H; y += gridSize) {
+    ctx.moveTo(cameraX, y);
+    ctx.lineTo(cameraX + CANVAS_W, y);
+  }
+  ctx.stroke();
+}
+
 function randomMapPoint() {
-  return { x: 40 + Math.random() * (CANVAS_W - 80), y: 40 + Math.random() * (CANVAS_H - 80) };
+  return { x: 40 + Math.random() * (WORLD_W - 80), y: 40 + Math.random() * (WORLD_H - 80) };
 }
 
 function isTooCloseToOtherNodes(x, y, excludeNode) {
@@ -581,6 +618,8 @@ function toggleCraftPanel() {
 }
 
 function update() {
+  updateCamera();
+
   const now = Date.now();
   for (const node of resources) {
     if (node.amount <= 0 && now >= node.respawnAt) {
@@ -608,8 +647,8 @@ function update() {
   isMoving = Boolean(dx || dy);
   if (isMoving) {
     const len = Math.hypot(dx, dy);
-    const targetX = Math.min(CANVAS_W - 14, Math.max(14, player.x + (dx / len) * speed));
-    const targetY = Math.min(CANVAS_H - 14, Math.max(14, player.y + (dy / len) * speed));
+    const targetX = Math.min(WORLD_W - 14, Math.max(14, player.x + (dx / len) * speed));
+    const targetY = Math.min(WORLD_H - 14, Math.max(14, player.y + (dy / len) * speed));
 
     // Try the full diagonal move; if a resource blocks it, slide along
     // whichever single axis is still open instead of hard-stopping.
@@ -902,6 +941,13 @@ function drawResource(node) {
 function draw() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
+  // Everything below is drawn in world coordinates — this one translate is
+  // the entire camera. No other draw function needs to know cameraX/Y exist.
+  ctx.save();
+  ctx.translate(-cameraX, -cameraY);
+
+  drawGrid();
+
   for (const node of resources) {
     if (node.amount <= 0) continue;
     drawResource(node);
@@ -909,6 +955,8 @@ function draw() {
 
   drawCharacter(player.x, player.y);
   drawFloatingTexts();
+
+  ctx.restore();
 }
 
 // Dig-swing phase boundaries (fraction of DIG_DURATION_MS). Shared with
@@ -1260,15 +1308,11 @@ function startGame() {
   ctx = canvas.getContext("2d");
   resizeCanvas();
 
-  // If the player rotates mid-game (very likely — the rotate prompt only
-  // exists inside the game screen, not the login screen, so they may well
-  // hit Play while still in portrait), reflow the resources to match the
-  // new shape instead of leaving them clustered in the old, smaller area.
-  const handleResize = () => {
-    if (resizeCanvas()) spawnResources();
-  };
-  window.addEventListener("resize", handleResize);
-  window.addEventListener("orientationchange", () => setTimeout(handleResize, 200));
+  // Just resize the viewport now — the world itself (and resource layout)
+  // is a fixed size independent of screen size, so rotating/resizing only
+  // changes how much of it is visible, not where anything is.
+  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 200));
 
   document.getElementById("wood-icon").src = getResourceIconUrl("wood");
   document.getElementById("stone-icon").src = getResourceIconUrl("stone");
