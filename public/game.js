@@ -63,8 +63,13 @@ const STRUCTURES = {
   // so there's nothing that could destroy it once built.
   tower: {
     label: "Tower",
-    cost: { wood: 8, stone: 10 },
+    cost: { wood: 8, stone: 10 }, // level 1 (build cost)
     radius: 8,
+    maxLevel: 3,
+    upgradeCost: {
+      2: { wood: 10, stone: 8 },
+      3: { stone: 14, ore: 10 },
+    },
   },
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
@@ -74,18 +79,30 @@ const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is dr
 // "Knight" is player equipment (see RECIPES in recipes.js), same as the
 // axe/pickaxe — crafting it is what lets the player fight at all, and its
 // level scales attack damage. "Tower" is a placed structure that fights on
-// its own. Enemies are session-only, same as how resources already work:
-// not persisted, just a fresh scatter each login. Enemies don't fight back
-// or touch the player/Tower — deliberately scoped down, this is "things
-// that hit monsters," not a full combat system with risk on our side.
+// its own, and its level (see STRUCTURES.tower.upgradeCost) scales its
+// damage/range/cooldown via TOWER_STATS below. Enemies are session-only,
+// same as how resources already work: not persisted, just a fresh scatter
+// each login. Enemies approach the player when close enough (see
+// updateCombat()) but never actually deal damage or touch the player/Tower
+// — deliberately scoped down, this is "things that hit monsters," not a
+// full combat system with risk on our side.
 const KNIGHT_ATTACK_DAMAGE = { 1: 4, 2: 8 };
-const TOWER_ATTACK_DAMAGE = 4;
-const TOWER_ATTACK_RANGE = 90;
-const TOWER_ATTACK_COOLDOWN_MS = 900;
+const TOWER_STATS = {
+  1: { damage: 4, range: 90, cooldownMs: 900 },
+  2: { damage: 7, range: 100, cooldownMs: 750 },
+  3: { damage: 11, range: 115, cooldownMs: 600 },
+};
 const TOWER_BEAM_DURATION_MS = 150;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
 const ENEMY_WANDER_SPEED = 0.2;
+// Enemies notice the player within this range and approach instead of
+// wandering, stopping just short so they don't walk on top of the player —
+// GATHER_RADIUS (32) is bigger than the stop distance, so by the time an
+// enemy stops closing in, it's already within the player's attack range.
+const ENEMY_AGGRO_RANGE = 160;
+const ENEMY_APPROACH_SPEED = 0.45;
+const ENEMY_STOP_DISTANCE = 20;
 const ENEMY_RESPAWN_MS = 20000;
 
 let enemies = [];
@@ -746,9 +763,19 @@ function handleAttacking(now) {
 function updateCombat(now) {
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue; // waiting to respawn
-    enemy.wanderAngle += (Math.random() - 0.5) * 0.4;
-    enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
-    enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
+
+    const distToPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+    if (distToPlayer <= ENEMY_AGGRO_RANGE && distToPlayer > ENEMY_STOP_DISTANCE) {
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const len = Math.hypot(dx, dy) || 1;
+      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED));
+      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED));
+    } else {
+      enemy.wanderAngle += (Math.random() - 0.5) * 0.4;
+      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
+      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
+    }
   }
 
   for (const enemy of enemies) {
@@ -762,18 +789,20 @@ function updateCombat(now) {
 
   // Each Tower fires at its own cooldown (tracked directly on the structure
   // object — a runtime-only field, never sent to or read from the server)
-  // at whichever enemy is nearest within range.
+  // at whichever enemy is nearest within range. Stats scale with the
+  // Tower's level (TOWER_STATS), same as its cost does.
   for (const s of player.structures) {
     if (s.type !== "tower") continue;
+    const stats = TOWER_STATS[s.level || 1] || TOWER_STATS[1];
     if (s._lastAttackAt === undefined) s._lastAttackAt = 0;
-    if (now - s._lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) continue;
+    if (now - s._lastAttackAt < stats.cooldownMs) continue;
 
     let target = null;
     let targetDist = Infinity;
     for (const enemy of enemies) {
       if (enemy.health <= 0) continue;
       const dist = Math.hypot(enemy.x - s.x, enemy.y - s.y);
-      if (dist <= TOWER_ATTACK_RANGE && dist < targetDist) {
+      if (dist <= stats.range && dist < targetDist) {
         targetDist = dist;
         target = enemy;
       }
@@ -782,8 +811,8 @@ function updateCombat(now) {
 
     s._lastAttackAt = now;
     towerBeams.push({ x1: s.x, y1: s.y, x2: target.x, y2: target.y, startedAt: now });
-    spawnFloatingText(target.x, target.y - 12, `-${TOWER_ATTACK_DAMAGE}`, "#8fd4ff");
-    damageEnemy(target, TOWER_ATTACK_DAMAGE);
+    spawnFloatingText(target.x, target.y - 12, `-${stats.damage}`, "#8fd4ff");
+    damageEnemy(target, stats.damage);
   }
 
   if (towerBeams.length > 0) {
@@ -1913,11 +1942,21 @@ function drawHealthBar(x, y, health, maxHealth, width = 20) {
 
 // A watchtower — tapered stone base, crenellated platform, and a pulsing
 // crystal on top that ties its look to the beam it fires (see updateCombat).
-function drawTower(x, y) {
+// Same shape at every level, tower-level style follows Tower's stat tier
+// (TOWER_STATS): plain stone -> darker reinforced stone -> a warmer,
+// bigger core, so a stronger Tower reads as visibly stronger at a glance.
+const TOWER_LEVEL_STYLE = {
+  1: { base: "#8a8f99", top: "#9aa0aa", crenel: "#7a808a", stroke: "#565b64", crystal: "120, 200, 255" },
+  2: { base: "#6b7280", top: "#7c8494", crenel: "#5a6270", stroke: "#3f4450", crystal: "150, 130, 255" },
+  3: { base: "#4a4f5c", top: "#5c6270", crenel: "#3a3f4a", stroke: "#25282f", crystal: "255, 150, 90" },
+};
+
+function drawTower(x, y, level = 1) {
+  const style = TOWER_LEVEL_STYLE[level] || TOWER_LEVEL_STYLE[1];
   drawShadow(x, y + 10, 11, 4);
 
-  ctx.fillStyle = "#8a8f99";
-  ctx.strokeStyle = "#565b64";
+  ctx.fillStyle = style.base;
+  ctx.strokeStyle = style.stroke;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(x - 9, y + 9);
@@ -1928,21 +1967,22 @@ function drawTower(x, y) {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#9aa0aa";
+  ctx.fillStyle = style.top;
   ctx.beginPath();
   ctx.roundRect(x - 7, y - 13, 14, 5, 1);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#7a808a";
+  ctx.fillStyle = style.crenel;
   for (const cx of [-6, -1, 4]) {
     ctx.fillRect(x + cx, y - 15, 3, 3);
   }
 
   const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
-  ctx.fillStyle = `rgba(120, 200, 255, ${pulse})`;
+  const crystalRadius = 2.4 + (level - 1) * 0.6;
+  ctx.fillStyle = `rgba(${style.crystal}, ${pulse})`;
   ctx.beginPath();
-  ctx.arc(x, y - 17, 2.4, 0, Math.PI * 2);
+  ctx.arc(x, y - 17, crystalRadius, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1952,7 +1992,7 @@ const STRUCTURE_FOOTPRINT_HALF = { wall: WALL_HALF, tower: 9 };
 
 function drawStructureArt(type, x, y, level) {
   if (type === "wall") drawWall(x, y, level);
-  else if (type === "tower") drawTower(x, y);
+  else if (type === "tower") drawTower(x, y, level);
 }
 
 function drawStructure(s, isDemolishTarget = false) {
