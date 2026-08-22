@@ -58,18 +58,31 @@ const STRUCTURES = {
       3: { stone: 10, ore: 6 },
     },
   },
+  // A defensive turret — auto-fires at any enemy that wanders into range
+  // (see updateCombat()). No health of its own: enemies never fight back,
+  // so there's nothing that could destroy it once built.
+  tower: {
+    label: "Tower",
+    cost: { wood: 8, stone: 10 },
+    radius: 8,
+  },
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
 const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
 
-// --- Player vs. enemy combat --------------------------------------------
+// --- Player/Tower vs. enemy combat --------------------------------------
 // "Knight" is player equipment (see RECIPES in recipes.js), same as the
 // axe/pickaxe — crafting it is what lets the player fight at all, and its
-// level scales attack damage. Enemies are session-only, same as how
-// resources already work: not persisted, just a fresh scatter each login.
-// Enemies don't fight back or touch the player — deliberately scoped down,
-// this is "hit monsters with your weapon", not a full combat system.
+// level scales attack damage. "Tower" is a placed structure that fights on
+// its own. Enemies are session-only, same as how resources already work:
+// not persisted, just a fresh scatter each login. Enemies don't fight back
+// or touch the player/Tower — deliberately scoped down, this is "things
+// that hit monsters," not a full combat system with risk on our side.
 const KNIGHT_ATTACK_DAMAGE = { 1: 4, 2: 8 };
+const TOWER_ATTACK_DAMAGE = 4;
+const TOWER_ATTACK_RANGE = 90;
+const TOWER_ATTACK_COOLDOWN_MS = 900;
+const TOWER_BEAM_DURATION_MS = 150;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
 const ENEMY_WANDER_SPEED = 0.2;
@@ -77,6 +90,7 @@ const ENEMY_RESPAWN_MS = 20000;
 
 let enemies = [];
 let nearbyEnemy = null; // enemy in attack range right now, if any
+let towerBeams = []; // transient { x1, y1, x2, y2, startedAt } zaps, drawn briefly then dropped
 let placingType = null; // structure key currently being lined up (brand-new build), if any
 // Structure currently picked up to be relocated (its pre-move doc, so we
 // know its type/level/_id) — mutually exclusive with placingType, and
@@ -744,6 +758,36 @@ function updateCombat(now) {
       enemy.y = y;
       enemy.health = enemy.maxHealth;
     }
+  }
+
+  // Each Tower fires at its own cooldown (tracked directly on the structure
+  // object — a runtime-only field, never sent to or read from the server)
+  // at whichever enemy is nearest within range.
+  for (const s of player.structures) {
+    if (s.type !== "tower") continue;
+    if (s._lastAttackAt === undefined) s._lastAttackAt = 0;
+    if (now - s._lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) continue;
+
+    let target = null;
+    let targetDist = Infinity;
+    for (const enemy of enemies) {
+      if (enemy.health <= 0) continue;
+      const dist = Math.hypot(enemy.x - s.x, enemy.y - s.y);
+      if (dist <= TOWER_ATTACK_RANGE && dist < targetDist) {
+        targetDist = dist;
+        target = enemy;
+      }
+    }
+    if (!target) continue;
+
+    s._lastAttackAt = now;
+    towerBeams.push({ x1: s.x, y1: s.y, x2: target.x, y2: target.y, startedAt: now });
+    spawnFloatingText(target.x, target.y - 12, `-${TOWER_ATTACK_DAMAGE}`, "#8fd4ff");
+    damageEnemy(target, TOWER_ATTACK_DAMAGE);
+  }
+
+  if (towerBeams.length > 0) {
+    towerBeams = towerBeams.filter((b) => now - b.startedAt < TOWER_BEAM_DURATION_MS);
   }
 }
 
@@ -1867,29 +1911,74 @@ function drawHealthBar(x, y, health, maxHealth, width = 20) {
   ctx.fillRect(x - width / 2, y, width * pct, h);
 }
 
+// A watchtower — tapered stone base, crenellated platform, and a pulsing
+// crystal on top that ties its look to the beam it fires (see updateCombat).
+function drawTower(x, y) {
+  drawShadow(x, y + 10, 11, 4);
+
+  ctx.fillStyle = "#8a8f99";
+  ctx.strokeStyle = "#565b64";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 9, y + 9);
+  ctx.lineTo(x - 6, y - 9);
+  ctx.lineTo(x + 6, y - 9);
+  ctx.lineTo(x + 9, y + 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#9aa0aa";
+  ctx.beginPath();
+  ctx.roundRect(x - 7, y - 13, 14, 5, 1);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#7a808a";
+  for (const cx of [-6, -1, 4]) {
+    ctx.fillRect(x + cx, y - 15, 3, 3);
+  }
+
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
+  ctx.fillStyle = `rgba(120, 200, 255, ${pulse})`;
+  ctx.beginPath();
+  ctx.arc(x, y - 17, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Ground footprint half-size per structure type, used to size the
+// demolish-target ring below — matches each type's actual visual width.
+const STRUCTURE_FOOTPRINT_HALF = { wall: WALL_HALF, tower: 9 };
+
+function drawStructureArt(type, x, y, level) {
+  if (type === "wall") drawWall(x, y, level);
+  else if (type === "tower") drawTower(x, y);
+}
+
 function drawStructure(s, isDemolishTarget = false) {
   const level = s.level || 1;
   if (!isDemolishTarget) {
-    if (s.type === "wall") drawWall(s.x, s.y, level);
+    drawStructureArt(s.type, s.x, s.y, level);
     return;
   }
 
   // In range to demolish (E hits this one): pulse a red ring on the ground
   // and bob the structure up off it, so it's unmistakably the one that will
   // be torn down and not one of its neighbors.
+  const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
   ctx.save();
   ctx.fillStyle = `rgba(230, 90, 90, ${0.1 + pulse * 0.15})`;
   ctx.strokeStyle = `rgba(230, 90, 90, ${0.4 + pulse * 0.5})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.ellipse(s.x, s.y + WALL_HALF, WALL_HALF + 4, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(s.x, s.y + half, half + 4, 5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
 
   const bob = 3 + pulse * 3;
-  if (s.type === "wall") drawWall(s.x, s.y - bob, level);
+  drawStructureArt(s.type, s.x, s.y - bob, level);
 }
 
 // The "you're about to place here" slot — a highlighted square at the
@@ -1951,6 +2040,17 @@ function draw() {
     if (enemy.health <= 0) continue; // waiting to respawn
     drawEnemy(enemy.x, enemy.y);
     drawHealthBar(enemy.x, enemy.y - 16, enemy.health, enemy.maxHealth);
+  }
+
+  const now = Date.now();
+  for (const beam of towerBeams) {
+    const fade = 1 - (now - beam.startedAt) / TOWER_BEAM_DURATION_MS;
+    ctx.strokeStyle = `rgba(120, 200, 255, ${Math.max(0, fade)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(beam.x1, beam.y1);
+    ctx.lineTo(beam.x2, beam.y2);
+    ctx.stroke();
   }
 
   drawCharacter(player.x, player.y);
