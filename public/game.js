@@ -70,7 +70,6 @@ const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is dr
 // Enemies don't fight back or touch the player — deliberately scoped down,
 // this is "hit monsters with your weapon", not a full combat system.
 const KNIGHT_ATTACK_DAMAGE = { 1: 4, 2: 8 };
-const PLAYER_ATTACK_COOLDOWN_MS = 500;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
 const ENEMY_WANDER_SPEED = 0.2;
@@ -78,7 +77,6 @@ const ENEMY_RESPAWN_MS = 20000;
 
 let enemies = [];
 let nearbyEnemy = null; // enemy in attack range right now, if any
-let lastPlayerAttackAt = 0;
 let placingType = null; // structure key currently being lined up (brand-new build), if any
 // Structure currently picked up to be relocated (its pre-move doc, so we
 // know its type/level/_id) — mutually exclusive with placingType, and
@@ -142,6 +140,16 @@ let isDigging = false;
 let digTargetNode = null;
 let digStartedAt = 0;
 let digImpactTriggered = false;
+
+// Attacking with the Knight weapon — same windup/thrust/hold swing as
+// gathering (see drawCharacter()), just aimed at an enemy instead of a
+// resource. A fixed duration rather than digDurationMs since it isn't
+// gated by a tool level the way gathering speed is.
+const ATTACK_DURATION_MS = 350;
+let isAttacking = false;
+let attackTarget = null;
+let attackStartedAt = 0;
+let attackImpactTriggered = false;
 
 let selectedCraftIndex = 0;
 
@@ -483,6 +491,8 @@ async function resetPlayer() {
 
     isDigging = false;
     digTargetNode = null;
+    isAttacking = false;
+    attackTarget = null;
     placingType = null;
     movingStructure = null;
     placeOffset = { x: 0, y: 0 };
@@ -674,18 +684,47 @@ function damageEnemy(enemy, amount) {
   }
 }
 
-// Swings the player's Knight weapon at nearbyEnemy, gated by both a cooldown
-// (so mashing E doesn't one-frame-kill everything) and actually having
-// crafted the weapon — no Knight level, no fighting.
+// Starts the windup against nearbyEnemy — no Knight level, no fighting. The
+// hit itself resolves at the end of the swing (see handleAttacking()), same
+// as gathering resolves at the end of its swing rather than the instant E
+// is pressed. isAttacking itself is the cooldown: can't start a new swing
+// until the current one finishes.
 function attackNearbyEnemy() {
+  if (!nearbyEnemy || player.upgrades.knightLevel < 1 || isAttacking) return;
+  isAttacking = true;
+  attackTarget = nearbyEnemy;
+  attackStartedAt = Date.now();
+  attackImpactTriggered = false;
+  isMoving = false;
+
+  const dx = nearbyEnemy.x - player.x;
+  const dy = nearbyEnemy.y - player.y;
+  if (dx !== 0 || dy !== 0) {
+    const angle = Math.atan2(dy, dx);
+    dirIndex = (((Math.round(angle / (Math.PI / 4)) % 8) + 8) % 8);
+  }
+  updateDigPrompt();
+}
+
+function handleAttacking(now) {
+  const elapsed = now - attackStartedAt;
+  const progress = Math.min(1, elapsed / ATTACK_DURATION_MS);
+  if (!attackImpactTriggered && progress >= DIG_THRUST_END && attackTarget) {
+    attackImpactTriggered = true;
+    playHit("knight"); // anything but "wood" gets playHit's sharper metal-on-metal clink
+  }
+
+  if (elapsed < ATTACK_DURATION_MS) return;
+
+  const target = attackTarget;
+  isAttacking = false;
+  attackTarget = null;
+
+  if (!target || target.health <= 0) return;
   const level = player.upgrades.knightLevel;
-  if (!nearbyEnemy || level < 1) return;
-  const now = Date.now();
-  if (now - lastPlayerAttackAt < PLAYER_ATTACK_COOLDOWN_MS) return;
-  lastPlayerAttackAt = now;
   const damage = KNIGHT_ATTACK_DAMAGE[level] || KNIGHT_ATTACK_DAMAGE[1];
-  spawnFloatingText(nearbyEnemy.x, nearbyEnemy.y - 12, `-${damage}`, "#ff8a8a");
-  damageEnemy(nearbyEnemy, damage);
+  spawnFloatingText(target.x, target.y - 12, `-${damage}`, "#ff8a8a");
+  damageEnemy(target, damage);
 }
 
 // Enemies just wander and respawn when defeated — they don't fight back or
@@ -712,7 +751,7 @@ function updateCombat(now) {
 // same priority everywhere it's wired up: finish what you're already doing,
 // then placing/moving, then gathering, then demolishing.
 function performAction() {
-  if (isDigging) return;
+  if (isDigging || isAttacking) return;
   if (placingType || movingStructure) {
     confirmPlacement();
   } else if (nearbyNode) {
@@ -1246,6 +1285,10 @@ function update() {
     handleDigging(now);
     return;
   }
+  if (isAttacking) {
+    handleAttacking(now);
+    return;
+  }
 
   const speed = BASE_SPEED * (1 + 0.25 * player.upgrades.bootsLevel);
   let dx = 0, dy = 0;
@@ -1584,6 +1627,10 @@ function updateDigPrompt() {
 
   if (isDigging) {
     promptText.textContent = `Gathering ${digTargetNode.type}...`;
+    prompt.classList.remove("hidden");
+    actionBtn.classList.add("hidden");
+  } else if (isAttacking) {
+    promptText.textContent = "Attacking...";
     prompt.classList.remove("hidden");
     actionBtn.classList.add("hidden");
   } else if (placingType) {
@@ -2164,6 +2211,26 @@ function drawDigArm(shoulderX, shoulderY, backShoulderX, backShoulderY, toolType
       ctx.arc(5, -2, 1.4, 0, Math.PI * 2);
       ctx.fill();
     }
+  } else if (toolType === "knight") {
+    ctx.strokeStyle = upgraded ? "#e8e8e8" : "#c9c9c9";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-3, 3);
+    ctx.lineTo(10, -10);
+    ctx.stroke();
+    ctx.strokeStyle = "#8a8a8a";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-5, 0);
+    ctx.lineTo(1, 4);
+    ctx.stroke();
+    if (upgraded) {
+      ctx.fillStyle = "#ffd23f";
+      ctx.beginPath();
+      ctx.arc(-2, 2, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else {
     ctx.strokeStyle = upgraded ? "#5c5c5c" : "#8a8a8a";
     ctx.lineWidth = 4;
@@ -2185,32 +2252,44 @@ function drawDigArm(shoulderX, shoulderY, backShoulderX, backShoulderY, toolType
 }
 
 function drawCharacter(x, y) {
+  // Gathering and attacking share one swing pose — same windup/thrust/hold
+  // arc, just holding a different tool (see swingToolType/Level below) — so
+  // the Knight weapon visibly comes out and gets held two-handed through the
+  // hit, the same way the axe/pickaxe already do.
   const digging = isDigging;
-  const digProgress = digging ? Math.min(1, (Date.now() - digStartedAt) / digDurationMs) : 0;
+  const attacking = isAttacking;
+  const swinging = digging || attacking;
+  const swingProgress = digging
+    ? Math.min(1, (Date.now() - digStartedAt) / digDurationMs)
+    : attacking
+      ? Math.min(1, (Date.now() - attackStartedAt) / ATTACK_DURATION_MS)
+      : 0;
 
-  const bob = digging ? 0 : isMoving ? Math.abs(Math.sin(walkPhase)) * 2 : Math.sin(idlePhase) * 1;
-  const legSwing = digging || !isMoving ? 0 : Math.sin(walkPhase) * 6;
-  const armSwing = digging || !isMoving ? 0 : Math.sin(walkPhase + Math.PI) * 5;
+  const bob = swinging ? 0 : isMoving ? Math.abs(Math.sin(walkPhase)) * 2 : Math.sin(idlePhase) * 1;
+  const legSwing = swinging || !isMoving ? 0 : Math.sin(walkPhase) * 6;
+  const armSwing = swinging || !isMoving ? 0 : Math.sin(walkPhase + Math.PI) * 5;
 
-  const digToolType = digTargetNode ? digTargetNode.type : "wood";
-  const digToolLevel = digging
-    ? digToolType === "wood"
+  const swingToolType = attacking ? "knight" : digTargetNode ? digTargetNode.type : "wood";
+  const swingToolLevel = digging
+    ? swingToolType === "wood"
       ? player.upgrades.axeLevel
       : player.upgrades.pickaxeLevel
-    : 0;
-  const dig = digging
-    ? digToolLevel >= 1
-      ? chopAnimation(digProgress)
-      : punchAnimation(digProgress)
+    : attacking
+      ? player.upgrades.knightLevel
+      : 0;
+  const dig = swinging
+    ? swingToolLevel >= 1
+      ? chopAnimation(swingProgress)
+      : punchAnimation(swingProgress)
     : { angle: PUNCH_ANGLE, armLen: 0, bodyLeanX: 0, squash: 0 };
-  const legPlant = digging ? Math.max(0, dig.bodyLeanX) * 0.5 : 0;
+  const legPlant = swinging ? Math.max(0, dig.bodyLeanX) * 0.5 : 0;
 
   const { flip, face } = DIR_TABLE[dirIndex];
   const lean = face === "side" ? 3 : face === "frontQuarter" || face === "backQuarter" ? 2 : 0;
 
   // Facing straight up/down, fore-aft leg/arm swing is edge-on and invisible,
   // so walking there alternates a vertical lift instead of the sideways swing.
-  const facingVertical = !digging && isMoving && (face === "front" || face === "back");
+  const facingVertical = !swinging && isMoving && (face === "front" || face === "back");
   const legLift = facingVertical ? Math.sin(walkPhase) * 4 : 0;
   const armLift = facingVertical ? Math.sin(walkPhase + Math.PI) * 3 : 0;
 
@@ -2238,22 +2317,24 @@ function drawCharacter(x, y) {
   ctx.lineTo(4 - legSwingX * 0.4 + legPlant, 15 - bob - Math.max(0, -legLift));
   ctx.stroke();
 
-  // back arm — with a tool, drawDigArm below draws it gripping the handle
-  // (a real two-handed swing). Bare-handed, it counter-swings with the punch
-  // for balance; while walking, it's the normal opposite-phase arm swing.
-  if (!(digging && digToolLevel >= 1)) {
+  // back arm — with a tool (or the Knight weapon), drawDigArm below draws it
+  // gripping the handle (a real two-handed swing/attack). Bare-handed, it
+  // counter-swings with the punch for balance; while walking, it's the
+  // normal opposite-phase arm swing.
+  if (!(swinging && swingToolLevel >= 1)) {
     const armSwingX = facingVertical ? 0 : armSwing;
-    const backArmX = digging ? -9 - dig.armLen * 0.3 : -9 + armSwingX * 0.4;
-    const backArmY = digging ? 6 - bob - Math.max(0, dig.armLen) * 0.15 : 8 - bob - Math.max(0, -armLift);
+    const backArmX = swinging ? -9 - dig.armLen * 0.3 : -9 + armSwingX * 0.4;
+    const backArmY = swinging ? 6 - bob - Math.max(0, dig.armLen) * 0.15 : 8 - bob - Math.max(0, -armLift);
     ctx.beginPath();
     ctx.moveTo(-9, -1 - bob);
     ctx.lineTo(backArmX, backArmY);
     ctx.stroke();
   }
 
-  // front arm — normal swing, or a windup/thrust/hold dig swing while gathering
-  if (digging) {
-    drawDigArm(9, -1, -9, -1 - bob, digToolType, digToolLevel, dig.armLen, dig.angle);
+  // front arm — normal swing, or a windup/thrust/hold swing while gathering
+  // or attacking
+  if (swinging) {
+    drawDigArm(9, -1, -9, -1 - bob, swingToolType, swingToolLevel, dig.armLen, dig.angle);
   } else {
     const armSwingX = facingVertical ? 0 : armSwing;
     ctx.beginPath();
