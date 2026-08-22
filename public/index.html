@@ -29,6 +29,10 @@
     </div>
 
     <div id="hud">
+      <span id="health-bar" title="Health">
+        <span id="health-fill"></span>
+        <b id="health-text">30/30</b>
+      </span>
       <span><img class="hud-icon" id="wood-icon" alt="wood" /> <b id="wood-count">0</b></span>
       <span><img class="hud-icon" id="stone-icon" alt="stone" /> <b id="stone-count">0</b></span>
       <span><img class="hud-icon" id="ore-icon" alt="ore" /> <b id="ore-count">0</b></span>
@@ -39,6 +43,7 @@
 
     <div id="canvas-wrap">
       <canvas id="game-canvas" width="800" height="600"></canvas>
+      <div id="damage-flash"></div>
       <div id="dig-prompt" class="hidden">
         <span id="dig-prompt-text"></span>
         <button id="cancel-place-btn" class="hidden panel-close" aria-label="Cancel">×</button>

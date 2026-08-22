@@ -82,10 +82,9 @@ const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is dr
 // its own, and its level (see STRUCTURES.tower.upgradeCost) scales its
 // damage/range/cooldown via TOWER_STATS below. Enemies are session-only,
 // same as how resources already work: not persisted, just a fresh scatter
-// each login. Enemies approach the player when close enough (see
-// updateCombat()) but never actually deal damage or touch the player/Tower
-// — deliberately scoped down, this is "things that hit monsters," not a
-// full combat system with risk on our side.
+// each login — and so is the player's health below: it resets to full each
+// login/reset rather than being saved server-side, same as everything else
+// in this combat system.
 const KNIGHT_ATTACK_DAMAGE = { 1: 4, 2: 8 };
 const TOWER_STATS = {
   1: { damage: 4, range: 90, cooldownMs: 900 },
@@ -97,13 +96,23 @@ const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
 const ENEMY_WANDER_SPEED = 0.2;
 // Enemies notice the player within this range and approach instead of
-// wandering, stopping just short so they don't walk on top of the player —
-// GATHER_RADIUS (32) is bigger than the stop distance, so by the time an
-// enemy stops closing in, it's already within the player's attack range.
+// wandering; once within ENEMY_STOP_DISTANCE they stop and attack instead
+// of closing in further.
 const ENEMY_AGGRO_RANGE = 160;
 const ENEMY_APPROACH_SPEED = 0.45;
 const ENEMY_STOP_DISTANCE = 20;
+const ENEMY_ATTACK_DAMAGE = 2;
+const ENEMY_ATTACK_COOLDOWN_MS = 1000;
 const ENEMY_RESPAWN_MS = 20000;
+
+const PLAYER_MAX_HEALTH = 30;
+// Brief invulnerability after any hit (including a fresh respawn) — without
+// it, standing next to even one enemy would melt through health one tick at
+// a time with no way to react.
+const PLAYER_HIT_INVULNERABLE_MS = 600;
+const PLAYER_RESPAWN_INVULNERABLE_MS = 2000;
+let playerHealth = PLAYER_MAX_HEALTH;
+let playerInvulnerableUntil = 0;
 
 let enemies = [];
 let nearbyEnemy = null; // enemy in attack range right now, if any
@@ -527,6 +536,8 @@ async function resetPlayer() {
     placingType = null;
     movingStructure = null;
     placeOffset = { x: 0, y: 0 };
+    playerHealth = PLAYER_MAX_HEALTH;
+    playerInvulnerableUntil = 0;
     exploredCells.fill(0);
     closeCraftPanel();
     closeBuildPanel();
@@ -715,6 +726,29 @@ function damageEnemy(enemy, amount) {
   }
 }
 
+// Ignored entirely during the brief invulnerability window after the last
+// hit (or a fresh respawn) — otherwise standing next to one enemy would
+// bleed health down one tick at a time with no way to react.
+function damagePlayer(amount) {
+  const now = Date.now();
+  if (now < playerInvulnerableUntil) return;
+  playerHealth = Math.max(0, playerHealth - amount);
+  playerInvulnerableUntil = now + PLAYER_HIT_INVULNERABLE_MS;
+  spawnFloatingText(player.x, player.y - 24, `-${amount}`, "#ff3b3b");
+  flashDamage();
+  renderHud();
+  if (playerHealth <= 0) respawnPlayer();
+}
+
+function respawnPlayer() {
+  player.x = WORLD_W / 2;
+  player.y = WORLD_H / 2;
+  playerHealth = PLAYER_MAX_HEALTH;
+  playerInvulnerableUntil = Date.now() + PLAYER_RESPAWN_INVULNERABLE_MS;
+  spawnFloatingText(player.x, player.y - 24, "You fell...", "#ff3b3b");
+  renderHud();
+}
+
 // Starts the windup against nearbyEnemy — no Knight level, no fighting. The
 // hit itself resolves at the end of the swing (see handleAttacking()), same
 // as gathering resolves at the end of its swing rather than the instant E
@@ -765,7 +799,12 @@ function updateCombat(now) {
     if (enemy.health <= 0) continue; // waiting to respawn
 
     const distToPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
-    if (distToPlayer <= ENEMY_AGGRO_RANGE && distToPlayer > ENEMY_STOP_DISTANCE) {
+    if (distToPlayer <= ENEMY_STOP_DISTANCE) {
+      if (now - enemy.lastAttackAt >= ENEMY_ATTACK_COOLDOWN_MS) {
+        enemy.lastAttackAt = now;
+        damagePlayer(ENEMY_ATTACK_DAMAGE);
+      }
+    } else if (distToPlayer <= ENEMY_AGGRO_RANGE) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const len = Math.hypot(dx, dy) || 1;
@@ -842,6 +881,21 @@ function renderHud() {
   document.getElementById("ore-count").textContent = player.inventory.ore;
   document.getElementById("capacity").textContent =
     `(${totalCarried(player.inventory)}/${capacityFor(player.upgrades.bagLevel)} carried)`;
+  document.getElementById("health-fill").style.width = `${(playerHealth / PLAYER_MAX_HEALTH) * 100}%`;
+  document.getElementById("health-text").textContent = `${playerHealth}/${PLAYER_MAX_HEALTH}`;
+}
+
+// Brief full-screen red flash on taking damage — the "blood" feedback
+// alongside the health bar and floating "-N" text. Re-triggering while
+// still fading (rapid hits) just restarts the flash from full opacity.
+function flashDamage() {
+  const el = document.getElementById("damage-flash");
+  el.classList.remove("active");
+  // Force a reflow so the class removal above actually takes effect before
+  // re-adding it — otherwise the browser can coalesce remove+add into a
+  // no-op and the flash never restarts.
+  void el.offsetWidth;
+  el.classList.add("active");
 }
 
 // Small material icons for the crafting cost display — rendered from the

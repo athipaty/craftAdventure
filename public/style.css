@@ -101,6 +101,61 @@ body {
   vertical-align: middle;
 }
 
+#health-bar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+#health-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(90deg, #8a1620, #e6383f);
+  transition: width 0.2s ease;
+}
+
+#health-text {
+  position: relative;
+  z-index: 1;
+  font-size: 0.75rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Full-bleed red flash over the game area on taking damage — the "blood"
+   feedback alongside the health bar and the floating "-N" text. Not
+   animated by default (opacity: 0); .active plays a one-shot fade that
+   ends back at opacity: 0 on its own, so re-adding the class (see
+   flashDamage() in game.js) is all a re-trigger needs. */
+#damage-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(200, 20, 20, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+#damage-flash.active {
+  animation: damage-flash-fade 0.35s ease-out;
+}
+
+@keyframes damage-flash-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Float over the canvas top-right as bare icon buttons — same on desktop
    and mobile, Build sitting just left of Craft. Positioned absolute against
    #canvas-wrap (the nearest positioned ancestor), not fixed against the
@@ -500,6 +555,15 @@ body {
   .hud-icon {
     width: 17px;
     height: 17px;
+  }
+
+  #health-bar {
+    width: 64px;
+    height: 15px;
+  }
+
+  #health-text {
+    font-size: 0.65rem;
   }
 
   #reset-btn {
