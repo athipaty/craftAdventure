@@ -1497,13 +1497,59 @@ function setupTouchControls() {
     if (activeId === "mouse") resetJoystick();
   });
 
+  // Swing the tool by swiping across the action button rather than just
+  // tapping it — a short tap still works too (falls through on touchend if
+  // the swipe distance was never reached), so this only adds a gesture, it
+  // doesn't remove the old one.
   const actionBtn = document.getElementById("action-btn");
-  const triggerAction = (e) => {
+  const SWIPE_DISTANCE = 24; // px of travel that counts as a swing
+  const SWIPE_MAX_DURATION_MS = 500; // swipes slower than this feel like a drag, not a swing
+  let actionTouchId = null;
+  let actionTouchStartX = 0;
+  let actionTouchStartY = 0;
+  let actionTouchStartAt = 0;
+  let actionSwipeTriggered = false;
+
+  actionBtn.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      actionTouchId = t.identifier;
+      actionTouchStartX = t.clientX;
+      actionTouchStartY = t.clientY;
+      actionTouchStartAt = Date.now();
+      actionSwipeTriggered = false;
+    },
+    { passive: false }
+  );
+  actionBtn.addEventListener(
+    "touchmove",
+    (e) => {
+      if (actionTouchId === null || actionSwipeTriggered) return;
+      const t = [...e.changedTouches].find((t) => t.identifier === actionTouchId);
+      if (!t) return;
+      const dist = Math.hypot(t.clientX - actionTouchStartX, t.clientY - actionTouchStartY);
+      if (dist >= SWIPE_DISTANCE && Date.now() - actionTouchStartAt <= SWIPE_MAX_DURATION_MS) {
+        actionSwipeTriggered = true;
+        performAction();
+      }
+    },
+    { passive: false }
+  );
+  actionBtn.addEventListener("touchend", (e) => {
+    const t = [...e.changedTouches].find((t) => t.identifier === actionTouchId);
+    if (!t) return;
+    if (!actionSwipeTriggered) performAction(); // plain tap still works
+    actionTouchId = null;
+  });
+  actionBtn.addEventListener("touchcancel", () => {
+    actionTouchId = null;
+  });
+  actionBtn.addEventListener("click", (e) => {
     e.preventDefault();
     performAction();
-  };
-  actionBtn.addEventListener("touchstart", triggerAction, { passive: false });
-  actionBtn.addEventListener("click", triggerAction);
+  });
   document.getElementById("cancel-place-btn").addEventListener("click", cancelPlacing);
 
   const moveBtn = document.getElementById("move-btn");
