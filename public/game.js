@@ -1851,6 +1851,11 @@ function setupTouchControls() {
     joystickVector.y = 0;
     knob.style.transform = "translate(0px, 0px)";
     base.classList.remove("active");
+    // Drop the inline left/top a touch set (see showBaseAt) so the base
+    // falls back to its dim default resting spot in CSS, instead of
+    // staying (now visible, if dim) wherever the last touch happened.
+    base.style.left = "";
+    base.style.top = "";
   }
 
   zone.addEventListener(
