@@ -1438,11 +1438,27 @@ function getDemolishButtonIconUrl() {
   return demolishButtonIconCache;
 }
 
+// Safari (desktop, and older versions in particular) can lack the
+// unprefixed Fullscreen API entirely while still supporting its old
+// -webkit- prefixed equivalent, so every check/call here tries both rather
+// than just document.documentElement.requestFullscreen. The prefixed calls
+// don't return a promise the way the standard ones do, hence the extra
+// `?.catch?.()` instead of a plain `.catch()`.
+function fullscreenSupported() {
+  return !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+}
+
+function isFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
 function toggleFullscreen() {
-  if (document.fullscreenElement) {
-    document.exitFullscreen?.().catch(() => {});
+  if (isFullscreenActive()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    exit?.call(document)?.catch?.(() => {});
   } else {
-    document.documentElement.requestFullscreen?.().catch(() => {});
+    const request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+    request?.call(document.documentElement)?.catch?.(() => {});
   }
 }
 
@@ -3000,9 +3016,12 @@ function startGame() {
   document.getElementById("move-btn-icon").src = getMoveButtonIconUrl();
   document.getElementById("upgrade-btn-icon").src = getUpgradeButtonIconUrl();
   document.getElementById("demolish-btn-icon").src = getDemolishButtonIconUrl();
-  // iOS Safari has no element Fullscreen API at all — a button that can
-  // never do anything is worse than no button, so hide it there.
-  if (!document.documentElement.requestFullscreen) {
+  // iOS Safari has no element Fullscreen API at all (standard or -webkit-
+  // prefixed) — a button that can never do anything is worse than no
+  // button, so hide it there. Desktop Safari, including older versions
+  // that only expose the -webkit- prefixed form, is covered by
+  // fullscreenSupported() and keeps the button.
+  if (!fullscreenSupported()) {
     document.getElementById("fullscreen-btn").classList.add("hidden");
   }
 
@@ -3125,8 +3144,10 @@ document.getElementById("start-btn").addEventListener("click", async () => {
   // Must fire directly on the click, before any await, or browsers drop the
   // "user activation" fullscreen needs and silently refuse the request.
   // (No-ops on iOS Safari, which doesn't support element fullscreen at all —
-  // there, "Add to Home Screen" via the manifest is the real fix.)
-  document.documentElement.requestFullscreen?.().catch(() => {});
+  // there, "Add to Home Screen" via the manifest is the real fix. Desktop
+  // Safari's -webkit- prefixed fallback is covered by toggleFullscreen()'s
+  // request logic, reused here instead of calling requestFullscreen directly.)
+  if (!isFullscreenActive()) toggleFullscreen();
   try {
     initAudio();
     player = await loginOrCreate(name);
