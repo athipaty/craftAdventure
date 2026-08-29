@@ -113,6 +113,10 @@ const PLAYER_HIT_INVULNERABLE_MS = 600;
 const PLAYER_RESPAWN_INVULNERABLE_MS = 2000;
 let playerHealth = PLAYER_MAX_HEALTH;
 let playerInvulnerableUntil = 0;
+// Timestamp of the last hit landed — drives a brief red flash on the
+// character/health bar in drawCharacter() (see HIT_FLASH_MS there), same
+// "just remember when, fade based on elapsed time" approach as flashDamage().
+let lastPlayerHitAt = 0;
 
 let enemies = [];
 let nearbyEnemy = null; // enemy in attack range right now, if any
@@ -875,6 +879,7 @@ function damagePlayer(amount) {
   if (now < playerInvulnerableUntil) return;
   playerHealth = Math.max(0, playerHealth - amount);
   playerInvulnerableUntil = now + PLAYER_HIT_INVULNERABLE_MS;
+  lastPlayerHitAt = now;
   spawnFloatingText(player.x, player.y - 24, `-${amount}`, "#ff3b3b");
   flashDamage();
   renderHud();
@@ -3051,6 +3056,23 @@ function drawCharacter(x, y) {
 
   ctx.restore();
 
+  // One-shot red flash on the character and its health bar right when a
+  // hit lands — damagePlayer() just stamps lastPlayerHitAt, this fades an
+  // overlay out over HIT_FLASH_MS on its own each frame, the same
+  // remember-when/fade-by-elapsed-time approach #damage-flash uses via CSS.
+  const HIT_FLASH_MS = 300;
+  const sinceHit = Date.now() - lastPlayerHitAt;
+  const hitFlash = sinceHit < HIT_FLASH_MS ? 1 - sinceHit / HIT_FLASH_MS : 0;
+  if (hitFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = hitFlash * 0.6;
+    ctx.fillStyle = "#ff2020";
+    ctx.beginPath();
+    ctx.ellipse(x, y - 10, 16, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Small "blood level" bar right above the character's head — the HUD's
   // corner health bar is easy to lose track of mid-fight since it's far
   // from where the actual hit lands; this puts the same number right at
@@ -3061,6 +3083,15 @@ function drawCharacter(x, y) {
   const healthBarX = x - healthBarW / 2;
   const healthBarY = y - 44;
   const healthFrac = Math.max(0, Math.min(1, playerHealth / PLAYER_MAX_HEALTH));
+  if (hitFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = hitFlash;
+    ctx.shadowColor = "#ff2020";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "#ff2020";
+    ctx.fillRect(healthBarX - 2, healthBarY - 2, healthBarW + 4, healthBarH + 4);
+    ctx.restore();
+  }
   ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
   ctx.fillRect(healthBarX, healthBarY, healthBarW, healthBarH);
   ctx.fillStyle = healthFrac > 0.3 ? "#e6383f" : "#ff6a00";
