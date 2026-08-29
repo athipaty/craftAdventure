@@ -2184,7 +2184,12 @@ function setupTouchControls() {
     e.preventDefault();
     if (!nearbyStructure || structureUpgradeInfo(nearbyStructure).maxed) return;
     upgradeStructure(nearbyStructure);
-    structureMenuOpen = false;
+    // Unlike Move/Demolish, upgrading doesn't hand off to another mode
+    // (a placement ghost, a confirm dialog) — it's just this button again
+    // for the next level, so leave the branch menu open instead of
+    // collapsing it. updateDigPrompt() already hides Upgrade on its own
+    // once the structure hits max level or nearbyStructure is lost (i.e.
+    // the player walks away).
   });
 
   setupBranchButton(document.getElementById("demolish-btn"), (e) => {
