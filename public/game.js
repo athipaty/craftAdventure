@@ -751,10 +751,20 @@ async function buildStructure(key, x, y) {
   }
   player.inventory = data.inventory;
   player.structures = data.structures;
-  placingType = null;
-  placeOffset = { x: 0, y: 0 };
   spawnFloatingText(x, y - 20, structure.label, "#8fb4f7");
   renderHud();
+
+  // Stay in placement mode for another of the same structure — building
+  // usually happens in a batch (a run of wall segments, a couple of
+  // towers), so this skips the trip back to the Build panel for each one.
+  // Auto-cancels the moment there's no longer enough to afford another.
+  placeOffset = { x: 0, y: 0 };
+  if (structureAfford(key)) {
+    placingType = key;
+  } else {
+    placingType = null;
+    showGameAlert(missingResourceMessage(structure.cost) || "Not enough resources to keep building");
+  }
 }
 
 async function moveStructure(structure, x, y) {
