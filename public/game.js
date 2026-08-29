@@ -541,6 +541,7 @@ async function resetPlayer() {
     exploredCells.fill(0);
     closeCraftPanel();
     closeBuildPanel();
+    cancelDemolishConfirm();
     spawnResources();
     spawnEnemies();
     renderHud();
@@ -707,6 +708,58 @@ async function demolishStructure(structure) {
   renderHud();
 }
 
+// Mirrors the backend's totalInvestedCost (routes/craftAdventure/index.js)
+// — build cost plus every upgrade paid to reach the current level. Only
+// used to preview the refund in the demolish confirmation dialog; the
+// server is still the source of truth for the actual refund.
+function structureRefundPreview(structure) {
+  const def = STRUCTURES[structure.type];
+  if (!def) return {};
+  const total = { ...def.cost };
+  const level = structure.level || 1;
+  for (let lvl = 2; lvl <= level; lvl++) {
+    const upgradeCost = def.upgradeCost?.[lvl] || {};
+    for (const [resource, amount] of Object.entries(upgradeCost)) {
+      total[resource] = (total[resource] || 0) + amount;
+    }
+  }
+  return total;
+}
+
+let pendingDemolish = null; // structure awaiting confirmation in the demolish dialog, if any
+
+function isDemolishConfirmOpen() {
+  return !document.getElementById("demolish-confirm").classList.contains("hidden");
+}
+
+// Opens the "are you sure" dialog instead of demolishing immediately —
+// demolishStructure() itself still does the actual removal, only once
+// confirmDemolish() below calls it.
+function requestDemolishConfirm(structure) {
+  pendingDemolish = structure;
+  const label = STRUCTURES[structure.type]?.label || structure.type;
+  document.getElementById("demolish-confirm-text").textContent = `Demolish this ${label}? You'll get back:`;
+  document.getElementById("demolish-confirm-refund").innerHTML = buildCostPillsHtml(structureRefundPreview(structure));
+  document.getElementById("demolish-confirm").classList.remove("hidden");
+  keys.clear();
+  updateBackdrop();
+}
+
+function cancelDemolishConfirm() {
+  pendingDemolish = null;
+  document.getElementById("demolish-confirm").classList.add("hidden");
+  updateBackdrop();
+}
+
+function confirmDemolish() {
+  if (!pendingDemolish) return;
+  const structure = pendingDemolish;
+  pendingDemolish = null;
+  document.getElementById("demolish-confirm").classList.add("hidden");
+  updateBackdrop();
+  demolishStructure(structure);
+}
+
 function structureUpgradeInfo(structure) {
   const def = STRUCTURES[structure.type];
   const currentLevel = structure.level || 1;
@@ -863,7 +916,7 @@ function updateCombat(now) {
 // same priority everywhere it's wired up: finish what you're already doing,
 // then placing/moving, then gathering, then demolishing.
 function performAction() {
-  if (isDigging || isAttacking) return;
+  if (isDigging || isAttacking || isDemolishConfirmOpen()) return;
   if (placingType || movingStructure) {
     confirmPlacement();
   } else if (nearbyNode) {
@@ -871,7 +924,7 @@ function performAction() {
   } else if (nearbyEnemy) {
     attackNearbyEnemy();
   } else if (nearbyStructure) {
-    demolishStructure(nearbyStructure);
+    requestDemolishConfirm(nearbyStructure);
   }
 }
 
@@ -1306,10 +1359,10 @@ function activateSelectedCraft() {
   if (canAfford) craftItem(key);
 }
 
-// Shared dimmed backdrop behind whichever panel (craft/build) is open —
-// tapping it closes that panel, same as Esc.
+// Shared dimmed backdrop behind whichever panel (craft/build/demolish
+// confirm) is open — tapping it closes that panel/dialog, same as Esc.
 function updateBackdrop() {
-  const anyOpen = isCraftPanelOpen() || isBuildPanelOpen();
+  const anyOpen = isCraftPanelOpen() || isBuildPanelOpen() || isDemolishConfirmOpen();
   document.getElementById("panel-backdrop").classList.toggle("hidden", !anyOpen);
 }
 
@@ -1752,7 +1805,10 @@ function updateDigPrompt() {
   moveBtn.classList.add("hidden");
   upgradeBtn.classList.add("hidden");
 
-  if (isDigging) {
+  if (isDemolishConfirmOpen()) {
+    prompt.classList.add("hidden");
+    actionBtn.classList.add("hidden");
+  } else if (isDigging) {
     promptText.textContent = `Gathering ${digTargetNode.type}...`;
     prompt.classList.remove("hidden");
     actionBtn.classList.add("hidden");
@@ -2668,6 +2724,16 @@ function startGame() {
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
 
+    if (isDemolishConfirmOpen()) {
+      if (k === "enter") {
+        e.preventDefault();
+        confirmDemolish();
+      } else if (k === "escape") {
+        cancelDemolishConfirm();
+      }
+      return; // swallow everything else while the dialog is up
+    }
+
     if (k === "c") {
       toggleCraftPanel();
       return;
@@ -2739,7 +2805,10 @@ function startGame() {
   document.getElementById("panel-backdrop").addEventListener("click", () => {
     closeCraftPanel();
     closeBuildPanel();
+    cancelDemolishConfirm();
   });
+  document.getElementById("demolish-cancel-btn").addEventListener("click", cancelDemolishConfirm);
+  document.getElementById("demolish-confirm-btn").addEventListener("click", confirmDemolish);
   document.getElementById("reset-btn").addEventListener("click", resetPlayer);
   setupTouchControls();
 
