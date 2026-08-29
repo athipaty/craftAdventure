@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Craft Adventure</title>
+  <!-- The backend lives on a different origin (Render) than this static
+       site, so the login/build/craft/... fetches each pay a fresh DNS +
+       TCP + TLS setup cost on top of the request itself. Hinting the
+       browser to open that connection now, while the page is still
+       loading, means it's already warm by the time Play is clicked. -->
+  <link rel="preconnect" href="https://center-kitchen-backend.onrender.com" crossorigin />
+  <link rel="dns-prefetch" href="https://center-kitchen-backend.onrender.com" />
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.json" />
   <!-- iOS ignores manifest display mode — these are what actually make
@@ -12,6 +19,12 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#1b1f2a" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <!-- Same reasoning as the script tags being at the end of body — the
+       parser won't discover recipes.js/game.js until it reaches them, so
+       preloading here lets the browser start fetching both in parallel
+       with everything above, instead of only once parsing gets there. -->
+  <link rel="preload" href="recipes.js" as="script" />
+  <link rel="preload" href="game.js" as="script" />
 </head>
 <body>
   <div id="login-screen">
