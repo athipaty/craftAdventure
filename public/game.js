@@ -302,8 +302,23 @@ function positionBlocked(x, y, excludeStructureId) {
   }
   for (const s of player.structures) {
     if (excludeStructureId && s._id === excludeStructureId) continue;
-    const minDist = PLAYER_RADIUS + (STRUCTURES[s.type]?.radius || 14);
-    if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
+    // Circle-vs-box (closest point on the structure's actual square
+    // footprint, STRUCTURE_FOOTPRINT_HALF, to the candidate position),
+    // not circle-vs-circle. STRUCTURES[type].radius is deliberately
+    // smaller than the real footprint so adjacent grid-cell placement
+    // stays allowed (see buildStructure()); using that same small radius
+    // for movement too left the corners of each wall's square art
+    // uncovered — just enough of a gap right at the seam between two
+    // walls for the player to wedge into and get stuck. This still lets
+    // adjacent placement through (the math below only blocks candidate
+    // points within PLAYER_RADIUS of the box itself), it just closes the
+    // gap once something's actually built there.
+    const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
+    const closestX = Math.min(Math.max(x, s.x - half), s.x + half);
+    const closestY = Math.min(Math.max(y, s.y - half), s.y + half);
+    const dx = x - closestX;
+    const dy = y - closestY;
+    if (dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS) return true;
   }
   return false;
 }
