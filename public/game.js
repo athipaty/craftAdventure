@@ -904,12 +904,12 @@ function updateCombat(now) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const len = Math.hypot(dx, dy) || 1;
-      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED));
-      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED));
+      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED * frameScale));
+      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED * frameScale));
     } else {
-      enemy.wanderAngle += (Math.random() - 0.5) * 0.4;
-      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
-      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED));
+      enemy.wanderAngle += (Math.random() - 0.5) * 0.4 * frameScale;
+      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
+      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
     }
   }
 
@@ -1663,7 +1663,7 @@ function update() {
     return;
   }
 
-  const speed = BASE_SPEED * (1 + 0.25 * player.upgrades.bootsLevel);
+  const speed = BASE_SPEED * (1 + 0.25 * player.upgrades.bootsLevel) * frameScale;
   let dx = 0, dy = 0;
   if (keys.has("arrowup") || keys.has("w")) dy -= 1;
   if (keys.has("arrowdown") || keys.has("s")) dy += 1;
@@ -1678,7 +1678,7 @@ function update() {
     // the character, so the wall you're trying to position doesn't drift
     // out from under you as you nudge it.
     isMoving = false;
-    idlePhase += 0.05;
+    idlePhase += 0.05 * frameScale;
     lastStepIndex = -1;
     if (dx || dy) {
       const len = Math.hypot(dx, dy);
@@ -1712,7 +1712,7 @@ function update() {
 
     const angle = Math.atan2(dy, dx);
     dirIndex = (((Math.round(angle / (Math.PI / 4)) % 8) + 8) % 8);
-    walkPhase += 0.25;
+    walkPhase += 0.25 * frameScale;
 
     const stepIndex = Math.floor(walkPhase / Math.PI);
     if (stepIndex !== lastStepIndex) {
@@ -1720,7 +1720,7 @@ function update() {
       playFootstep();
     }
   } else {
-    idlePhase += 0.05;
+    idlePhase += 0.05 * frameScale;
     lastStepIndex = -1;
   }
 
@@ -2971,7 +2971,28 @@ function drawCharacter(x, y) {
   ctx.fillText(player.name, x, y - 34);
 }
 
+let lastFrameTime = 0;
+// Every per-frame movement/animation constant below (player walk speed,
+// enemy chase/wander speed, walkPhase/idlePhase) was tuned as a fixed
+// amount added once per requestAnimationFrame callback, assuming a steady
+// 60fps — which makes actual speed track frame rate directly instead of
+// real time. That's faster outright on a 90/120Hz display, and can also
+// spike for a frame or two whenever the browser "catches up" after any
+// stall (a dropped frame, a layout-forcing reflow like flashDamage() on
+// getting hit, a backgrounded tab regaining focus). frameScale corrects
+// for that: 1.0 at the 60fps baseline this was all tuned against, scaling
+// every one of those per-frame constants by how much real time actually
+// elapsed since the last frame.
+let frameScale = 1;
+
 function loop() {
+  const now = Date.now();
+  const dt = lastFrameTime ? now - lastFrameTime : 1000 / 60;
+  lastFrameTime = now;
+  // Clamped so a long stall doesn't apply one giant catch-up step on the
+  // next frame — worst case that shows up as things briefly slowing down
+  // rather than a teleport-y speed burst.
+  frameScale = Math.min(3, Math.max(0, dt / (1000 / 60)));
   update();
   draw();
   requestAnimationFrame(loop);
