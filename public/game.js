@@ -931,7 +931,7 @@ function damagePlayer(amount) {
   playerHealth = Math.max(0, playerHealth - amount);
   playerInvulnerableUntil = now + PLAYER_HIT_INVULNERABLE_MS;
   lastPlayerHitAt = now;
-  spawnFloatingText(player.x, player.y - 24, `-${amount}`, "#ff3b3b");
+  spawnFloatingText(player.x, player.y - 41, `-${amount}`, "#ff3b3b");
   flashDamage();
   renderHud();
   if (playerHealth <= 0) respawnPlayer();
@@ -942,7 +942,7 @@ function respawnPlayer() {
   player.y = WORLD_H / 2;
   playerHealth = PLAYER_MAX_HEALTH;
   playerInvulnerableUntil = Date.now() + PLAYER_RESPAWN_INVULNERABLE_MS;
-  spawnFloatingText(player.x, player.y - 24, "You fell...", "#ff3b3b");
+  spawnFloatingText(player.x, player.y - 41, "You fell...", "#ff3b3b");
   renderHud();
 }
 
@@ -3033,6 +3033,13 @@ function drawCharacter(x, y) {
   ctx.translate(x, y);
   ctx.scale(flip, 1);
   ctx.translate(lean, 0);
+  // (x, y) is the character's actual logical position — feet on the
+  // ground, where collision/gathering/camera all treat it as standing —
+  // so shift the whole body up until the shadow (drawn below at local
+  // y=17) lands back on y=0. Without this the body/legs/head (drawn
+  // around local y=0) made the character look like it was floating with
+  // its waist, not its feet, pinned to its actual position.
+  ctx.translate(0, -17);
 
   // shadow
   ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
@@ -3161,7 +3168,7 @@ function drawCharacter(x, y) {
     ctx.globalAlpha = hitFlash * 0.6;
     ctx.fillStyle = "#ff2020";
     ctx.beginPath();
-    ctx.ellipse(x, y - 10, 16, 22, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y - 27, 16, 22, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -3174,7 +3181,9 @@ function drawCharacter(x, y) {
   const healthBarW = 30;
   const healthBarH = 4;
   const healthBarX = x - healthBarW / 2;
-  const healthBarY = y - 44;
+  // -44, then another -17 to follow the body's own shadow-anchoring shift
+  // above, so it stays right above the (now higher) head.
+  const healthBarY = y - 44 - 17;
   const healthFrac = Math.max(0, Math.min(1, playerHealth / PLAYER_MAX_HEALTH));
   if (hitFlash > 0) {
     ctx.save();
