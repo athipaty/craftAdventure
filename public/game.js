@@ -362,13 +362,43 @@ function viewWorldSize() {
 // Fog of war. The world is divided into cells; a cell is "explored" once the
 // player has ever been within REVEAL_RADIUS of it, and stays explored (dimly
 // visible) forever after — vs. "currently lit", which only cells within
-// REVEAL_RADIUS right now get (full visibility). Never persisted — resets
-// each time the game loads.
+// REVEAL_RADIUS right now get (full visibility). Persisted server-side as a
+// packed/base64 string on player.exploredCells (see packExploredCells() /
+// unpackExploredCells() below) so it survives a logout/login instead of
+// starting fogged again every time.
 const FOG_CELL = 16;
 const FOG_COLS = Math.ceil(WORLD_W / FOG_CELL);
 const FOG_ROWS = Math.ceil(WORLD_H / FOG_CELL);
 const REVEAL_RADIUS = 180;
 const exploredCells = new Uint8Array(FOG_COLS * FOG_ROWS);
+
+// One bit per cell instead of one byte, base64-encoded — exploredCells is
+// ~15,000 bytes in memory (one Uint8Array entry per cell), far more than
+// worth sending/storing every autosave. ~2500 chars packed vs ~15,000 raw.
+function packExploredCells() {
+  const bytes = new Uint8Array(Math.ceil(exploredCells.length / 8));
+  for (let i = 0; i < exploredCells.length; i++) {
+    if (exploredCells[i]) bytes[i >> 3] |= 1 << (i & 7);
+  }
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function unpackExploredCells(encoded) {
+  exploredCells.fill(0);
+  if (!encoded) return;
+  let binary;
+  try {
+    binary = atob(encoded);
+  } catch {
+    return; // corrupt/foreign data — just start fogged rather than throwing
+  }
+  for (let i = 0; i < exploredCells.length; i++) {
+    const byte = binary.charCodeAt(i >> 3) || 0;
+    if (byte & (1 << (i & 7))) exploredCells[i] = 1;
+  }
+}
 
 function updateFog() {
   const cellReach = Math.ceil(REVEAL_RADIUS / FOG_CELL) + 1;
@@ -580,7 +610,7 @@ async function resetPlayer() {
     placeOffset = { x: 0, y: 0 };
     playerHealth = PLAYER_MAX_HEALTH;
     playerInvulnerableUntil = 0;
-    exploredCells.fill(0);
+    unpackExploredCells(player.exploredCells);
     closeCraftPanel();
     closeBuildPanel();
     cancelDemolishConfirm();
@@ -601,7 +631,12 @@ async function savePlayer() {
     await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x: player.x, y: player.y, inventory: player.inventory }),
+      body: JSON.stringify({
+        x: player.x,
+        y: player.y,
+        inventory: player.inventory,
+        exploredCells: packExploredCells(),
+      }),
     });
     statusEl.textContent = "Saved " + new Date().toLocaleTimeString();
   } catch {
@@ -3074,6 +3109,7 @@ function startGame() {
 
   spawnResources();
   spawnEnemies();
+  unpackExploredCells(player.exploredCells);
   renderHud();
 
   window.addEventListener("keydown", (e) => {
