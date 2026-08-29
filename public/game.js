@@ -1004,6 +1004,18 @@ function renderHud() {
     `(${totalCarried(player.inventory)}/${capacityFor(player.upgrades.bagLevel)} carried)`;
   document.getElementById("health-fill").style.width = `${(playerHealth / PLAYER_MAX_HEALTH) * 100}%`;
   document.getElementById("health-text").textContent = `${playerHealth}/${PLAYER_MAX_HEALTH}`;
+  updateCraftBadge();
+}
+
+// Badge on the Craft icon showing how many recipes you can currently
+// afford — renderHud() already runs after every inventory-changing action
+// (craft, build, demolish refund, gather, damage, login/reset), so hooking
+// in here keeps it live without needing its own call sites.
+function updateCraftBadge() {
+  const badge = document.getElementById("craft-btn-badge");
+  const count = visibleCraftKeys().filter((key) => craftEntryState(key).canAfford).length;
+  badge.textContent = count;
+  badge.classList.toggle("hidden", count === 0);
 }
 
 // Brief full-screen red flash on taking damage — the "blood" feedback

@@ -255,6 +255,29 @@ body {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
 }
 
+/* Count of currently-affordable recipes, kept in sync with inventory by
+   updateCraftBadge() (see renderHud() in game.js) — the Craft icon looks
+   identical whether or not you can actually craft anything otherwise, so
+   this is the only hint you get without opening the panel. #craft-btn is
+   already position: absolute, so this positions off its own box. */
+.btn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #ffd23f;
+  color: #1b1f2a;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
 #reset-btn {
   padding: 5px 12px;
   font-size: 0.85rem;
