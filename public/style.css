@@ -194,6 +194,56 @@ body {
   }
 }
 
+/* Replaces the native alert() previously used for API errors (can't craft/
+   build/move/upgrade/demolish) — a real alert() drops iOS out of
+   fullscreen and blocks the page until dismissed, which is a jarring way
+   to say "not enough wood". Same restart trick as #damage-flash: showGameAlert()
+   (game.js) removes .active, forces a reflow, then re-adds it, so back-to-
+   back errors each get the full animation instead of being swallowed. The
+   keyframe handles fade-in, hold, and fade-out in one shot — no timers. */
+#game-alert {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  max-width: 90%;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: rgba(194, 59, 59, 0.92);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-6px);
+}
+
+#game-alert.active {
+  animation: game-alert-toast 2.6s ease forwards;
+}
+
+@keyframes game-alert-toast {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  8% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  85% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+}
+
 /* Float over the canvas top-right as bare icon buttons — same on desktop
    and mobile, Build sitting just left of Craft. Positioned absolute against
    #canvas-wrap (the nearest positioned ancestor), not fixed against the
