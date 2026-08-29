@@ -380,29 +380,26 @@ body {
     transform: scale(0.93);
   }
 
-  /* Move/Upgrade/Demolish sit in a row to the left of the main action
-     button (not stacked above it), only shown (see updateDigPrompt()) once
-     the action button has been tapped to reveal them. right: pushes the
-     row's right edge just past the 88px action button so it grows further
-     left as buttons are added; bottom: centers its 44px-tall buttons
-     against the action button's 88px height. DOM order is
-     Demolish/Upgrade/Move, so — unreversed in a row — Move (the most
-     common pick) lands closest to the action button and Demolish (the
-     one-shot destructive pick) ends up furthest from the thumb's resting
-     position. */
+  /* An invisible anchor placed exactly over the (circular) action button —
+     same right/bottom/size — so the fan buttons below can be positioned
+     with right/bottom values measured from the action button's own edges,
+     rather than fighting flex layout for a radial arrangement. It carries
+     no visuals of its own and ignores touches (pointer-events: none);
+     each fan button re-enables its own with pointer-events: auto. */
   #structure-actions {
     position: absolute;
-    right: calc(24px + 88px + 12px);
-    bottom: 50px;
-    display: flex;
-    flex-direction: row;
-    gap: 8px;
-    align-items: center;
+    right: 24px;
+    bottom: 28px;
+    width: 88px;
+    height: 88px;
+    pointer-events: none;
   }
 
   #move-btn,
   #upgrade-btn,
   #demolish-btn {
+    position: absolute;
+    pointer-events: auto;
     width: 68px;
     height: 44px;
     border-radius: 999px;
@@ -416,6 +413,26 @@ body {
     -webkit-tap-highlight-color: transparent;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: background 0.12s ease, transform 0.08s ease;
+  }
+
+  /* Fanned out around the action button's left/top sides only — its
+     bottom-right corner is screen edge, so there's nowhere for buttons to
+     go on the right or below. Move sits due west (the easiest, most
+     common pick), Demolish due north (the most deliberate reach, for the
+     one destructive option), Upgrade fills the diagonal between them. */
+  #move-btn {
+    right: 98px;
+    bottom: 22px;
+  }
+
+  #upgrade-btn {
+    right: 78px;
+    bottom: 78px;
+  }
+
+  #demolish-btn {
+    right: 10px;
+    bottom: 98px;
   }
 
   #move-btn:active,
