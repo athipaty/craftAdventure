@@ -320,8 +320,12 @@ body {
 
   #joystick-base {
     position: absolute;
-    /* left/top are set in JS to the touch point; centered via negative
-       margin so that point becomes the base's middle, not its corner. */
+    /* Default resting spot (dim, see opacity below) — same left/top +
+       negative-margin centering trick used when JS overrides these inline
+       on touch, just with fixed coordinates instead of the touch point, so
+       there's always something on screen to show where to put your thumb. */
+    left: 130px;
+    top: calc(100% - 110px);
     width: 110px;
     height: 110px;
     margin-left: -55px;
@@ -332,7 +336,7 @@ body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     touch-action: none;
     z-index: 10;
-    opacity: 0;
+    opacity: 0.35;
     pointer-events: none;
     transition: opacity 0.12s ease;
   }
