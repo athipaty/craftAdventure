@@ -393,7 +393,8 @@ body {
   }
 
   #move-btn,
-  #upgrade-btn {
+  #upgrade-btn,
+  #demolish-btn {
     width: 68px;
     height: 44px;
     border-radius: 999px;
@@ -410,7 +411,8 @@ body {
   }
 
   #move-btn:active,
-  #upgrade-btn:active {
+  #upgrade-btn:active,
+  #demolish-btn:active {
     background: rgba(40, 44, 55, 0.95);
     transform: scale(0.93);
   }
@@ -419,6 +421,17 @@ body {
     opacity: 0.4;
     cursor: not-allowed;
     transform: none;
+  }
+
+  /* Destructive branch option — red-tinted like the demolish confirm
+     dialog, so it reads as different from Move/Upgrade at a glance. */
+  #demolish-btn {
+    background: rgba(194, 59, 59, 0.85);
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+
+  #demolish-btn:active {
+    background: rgba(169, 47, 47, 0.95);
   }
 }
 
