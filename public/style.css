@@ -251,7 +251,8 @@ body {
    drifting into a wide desktop window's empty centering margins. */
 #craft-btn,
 #build-btn,
-#fullscreen-btn {
+#fullscreen-btn,
+#refresh-btn {
   position: absolute;
   top: max(10px, env(safe-area-inset-top));
   width: 40px;
@@ -269,13 +270,15 @@ body {
    worked or didn't, with nothing on screen to confirm it registered. */
 #craft-btn:hover,
 #build-btn:hover,
-#fullscreen-btn:hover {
+#fullscreen-btn:hover,
+#refresh-btn:hover {
   background: rgba(255, 255, 255, 0.14);
 }
 
 #craft-btn:active,
 #build-btn:active,
-#fullscreen-btn:active {
+#fullscreen-btn:active,
+#refresh-btn:active {
   background: rgba(255, 255, 255, 0.22);
   transform: scale(0.92);
 }
@@ -288,10 +291,14 @@ body {
   right: calc(max(10px, env(safe-area-inset-right)) + 48px);
 }
 
-/* Sits to the left of Build, so left-to-right it reads Fullscreen, Build,
-   Craft. */
+/* Sits to the left of Build, so left-to-right it reads Refresh,
+   Fullscreen, Build, Craft. */
 #fullscreen-btn {
   right: calc(max(10px, env(safe-area-inset-right)) + 96px);
+}
+
+#refresh-btn {
+  right: calc(max(10px, env(safe-area-inset-right)) + 144px);
 }
 
 .btn-label {
