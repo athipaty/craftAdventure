@@ -38,7 +38,14 @@ let digDurationMs = 500; // recomputed per-swing in startDig() based on tool lev
 // jumped between the two values and could snag the character mid-stride.
 // Smooth, predictable movement matters more than that occlusion nicety.
 const PLAYER_RADIUS = 6;
-const RESOURCE_COLLISION_RADIUS = { wood: 14, stone: 12, ore: 12 };
+// Sized to fully cover each resource's actual drawn art at full scale (see
+// drawResource()) rather than just approximating it, the same reasoning as
+// structures' STRUCTURE_FOOTPRINT_HALF — a collision circle smaller than
+// the visual left the tree's canopy (drawTree's side canopies reach out to
+// 17px) poking a few pixels past where the player actually got stopped.
+// Rock/ore's blob art (max ~10.5px from center) was already comfortably
+// covered by 12.
+const RESOURCE_COLLISION_RADIUS = { wood: 17, stone: 12, ore: 12 };
 
 // Buildable structures — costs/levels are also enforced server-side (see
 // the backend's own STRUCTURES table) so a player can't skip payment or
@@ -521,12 +528,21 @@ function isTooCloseToOtherNodes(x, y, excludeNode) {
 }
 
 // A player-built structure claims its footprint — resources should never
-// spawn or respawn on top of a spot someone already built on.
+// spawn or respawn on top of a spot someone already built on, or close
+// enough to it to pinch an unwalkable-looking gap between the two (same
+// circle-vs-box reasoning, against the structure's real footprint
+// STRUCTURE_FOOTPRINT_HALF, as positionBlocked() uses for movement —
+// STRUCTURES[type].radius is deliberately smaller, just for keeping two
+// structures' own placements apart, so isn't wide enough a margin here).
 function isTooCloseToStructures(x, y, type) {
   const resourceRadius = RESOURCE_COLLISION_RADIUS[type] || 12;
   for (const s of player.structures) {
-    const minDist = (STRUCTURES[s.type]?.radius || 14) + resourceRadius;
-    if (Math.hypot(s.x - x, s.y - y) < minDist) return true;
+    const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
+    const closestX = Math.min(Math.max(x, s.x - half), s.x + half);
+    const closestY = Math.min(Math.max(y, s.y - half), s.y + half);
+    const dx = x - closestX;
+    const dy = y - closestY;
+    if (dx * dx + dy * dy < resourceRadius * resourceRadius) return true;
   }
   return false;
 }
