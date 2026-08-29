@@ -128,6 +128,10 @@ let movingStructure = null;
 // instead of the character while a structure is being lined up.
 let placeOffset = { x: 0, y: 0 };
 let nearbyStructure = null; // placed structure in range right now, if any
+// Mobile only: has the player tapped the main action button to reveal the
+// Move/Upgrade/Demolish branch buttons for nearbyStructure? Desktop's E/M/U
+// keys bypass this entirely — see handleActionTap().
+let structureMenuOpen = false;
 
 let player = null;
 let resources = [];
@@ -542,6 +546,7 @@ async function resetPlayer() {
     closeCraftPanel();
     closeBuildPanel();
     cancelDemolishConfirm();
+    structureMenuOpen = false;
     spawnResources();
     spawnEnemies();
     renderHud();
@@ -926,6 +931,31 @@ function performAction() {
   } else if (nearbyStructure) {
     requestDemolishConfirm(nearbyStructure);
   }
+}
+
+// Mobile only, used by the main action button in place of calling
+// performAction() directly: the first tap near a structure (and nothing
+// else is claiming the button — no dig/attack/placing/resource/enemy in
+// the way) reveals the Move/Upgrade/Demolish branch buttons instead of
+// acting immediately. Desktop's E/M/U keys go straight to performAction()/
+// startMovingStructure()/upgradeStructure(), unchanged — this is purely
+// about not dropping a scary "Demolish" confirmation on a bare tap.
+function handleActionTap() {
+  const structureIsNextAction =
+    !isDigging &&
+    !isAttacking &&
+    !placingType &&
+    !movingStructure &&
+    !nearbyNode &&
+    !nearbyEnemy &&
+    nearbyStructure &&
+    !isDemolishConfirmOpen();
+  if (structureIsNextAction && !structureMenuOpen) {
+    structureMenuOpen = true;
+    updateDigPrompt();
+    return;
+  }
+  performAction();
 }
 
 function renderHud() {
@@ -1495,6 +1525,7 @@ function update() {
     nearbyNode = null;
     nearbyStructure = null;
     nearbyEnemy = null;
+    structureMenuOpen = false;
     updateDigPrompt();
     return;
   }
@@ -1550,6 +1581,7 @@ function update() {
       nearbyStructure = s;
     }
   }
+  if (!nearbyStructure) structureMenuOpen = false; // walked away — collapse it for next time
 
   nearbyEnemy = null;
   let bestEnemyDist = Infinity;
@@ -1755,7 +1787,7 @@ function setupTouchControls() {
       const dist = Math.hypot(t.clientX - actionTouchStartX, t.clientY - actionTouchStartY);
       if (dist >= SWIPE_DISTANCE && Date.now() - actionTouchStartAt <= SWIPE_MAX_DURATION_MS) {
         actionSwipeTriggered = true;
-        performAction();
+        handleActionTap();
       }
     },
     { passive: false }
@@ -1763,7 +1795,7 @@ function setupTouchControls() {
   actionBtn.addEventListener("touchend", (e) => {
     const t = [...e.changedTouches].find((t) => t.identifier === actionTouchId);
     if (!t) return;
-    if (!actionSwipeTriggered) performAction(); // plain tap still works
+    if (!actionSwipeTriggered) handleActionTap(); // plain tap still works
     actionTouchId = null;
   });
   actionBtn.addEventListener("touchcancel", () => {
@@ -1771,14 +1803,21 @@ function setupTouchControls() {
   });
   actionBtn.addEventListener("click", (e) => {
     e.preventDefault();
-    performAction();
+    handleActionTap();
   });
   document.getElementById("cancel-place-btn").addEventListener("click", cancelPlacing);
 
+  // Branch buttons — only shown once handleActionTap() reveals them (see
+  // updateDigPrompt()). Each picks its action and immediately collapses the
+  // menu again, since the structure state is about to change out from under
+  // it either way (a placement ghost starts, a dialog opens, or the level
+  // just went up).
   const moveBtn = document.getElementById("move-btn");
   const triggerMove = (e) => {
     e.preventDefault();
-    if (nearbyStructure) startMovingStructure(nearbyStructure);
+    if (!nearbyStructure) return;
+    startMovingStructure(nearbyStructure);
+    structureMenuOpen = false;
   };
   moveBtn.addEventListener("touchstart", triggerMove, { passive: false });
   moveBtn.addEventListener("click", triggerMove);
@@ -1786,10 +1825,22 @@ function setupTouchControls() {
   const upgradeBtn = document.getElementById("upgrade-btn");
   const triggerUpgrade = (e) => {
     e.preventDefault();
-    if (nearbyStructure && !structureUpgradeInfo(nearbyStructure).maxed) upgradeStructure(nearbyStructure);
+    if (!nearbyStructure || structureUpgradeInfo(nearbyStructure).maxed) return;
+    upgradeStructure(nearbyStructure);
+    structureMenuOpen = false;
   };
   upgradeBtn.addEventListener("touchstart", triggerUpgrade, { passive: false });
   upgradeBtn.addEventListener("click", triggerUpgrade);
+
+  const demolishBtn = document.getElementById("demolish-btn");
+  const triggerDemolishRequest = (e) => {
+    e.preventDefault();
+    if (!nearbyStructure) return;
+    requestDemolishConfirm(nearbyStructure);
+    structureMenuOpen = false;
+  };
+  demolishBtn.addEventListener("touchstart", triggerDemolishRequest, { passive: false });
+  demolishBtn.addEventListener("click", triggerDemolishRequest);
 
   document.getElementById("craft-btn").addEventListener("click", toggleCraftPanel);
 }
@@ -1801,9 +1852,11 @@ function updateDigPrompt() {
   const cancelBtn = document.getElementById("cancel-place-btn");
   const moveBtn = document.getElementById("move-btn");
   const upgradeBtn = document.getElementById("upgrade-btn");
+  const demolishBtn = document.getElementById("demolish-btn");
   cancelBtn.classList.toggle("hidden", !(placingType || movingStructure));
   moveBtn.classList.add("hidden");
   upgradeBtn.classList.add("hidden");
+  demolishBtn.classList.add("hidden");
 
   if (isDemolishConfirmOpen()) {
     prompt.classList.add("hidden");
@@ -1825,7 +1878,7 @@ function updateDigPrompt() {
     const label = STRUCTURES[movingStructure.type]?.label || movingStructure.type;
     promptText.textContent = `Press E to set the ${label} down here`;
     prompt.classList.remove("hidden");
-    actionBtn.textContent = "Move";
+    actionBtn.textContent = "Drop";
     actionBtn.classList.remove("hidden");
   } else if (nearbyNode) {
     promptText.textContent = `Press E to gather ${nearbyNode.type}`;
@@ -1843,16 +1896,27 @@ function updateDigPrompt() {
     const { currentLevel, maxed, cost, canAfford } = structureUpgradeInfo(nearbyStructure);
     // Kept short on purpose (#dig-prompt is a nowrap pill) — the cost detail
     // lives in the upgrade button's title instead of cluttering this line.
+    // Desktop's E/M/U keys work directly regardless of structureMenuOpen —
+    // that state only governs the mobile branch buttons below.
     const upgradeHint = maxed ? "max" : "U upgrade";
     promptText.textContent = `${label} Lvl ${currentLevel} — E demolish · M move · ${upgradeHint}`;
     prompt.classList.remove("hidden");
-    actionBtn.textContent = "Demolish";
-    actionBtn.classList.remove("hidden");
-    moveBtn.classList.remove("hidden");
-    if (!maxed) {
-      upgradeBtn.disabled = !canAfford;
-      upgradeBtn.title = `Upgrade to Lvl ${currentLevel + 1} (${formatCostText(cost)})`;
-      upgradeBtn.classList.remove("hidden");
+
+    if (structureMenuOpen) {
+      // Branch revealed: the main button steps aside for Move/Upgrade/
+      // Demolish, same "one physical button, one job at a time" idea as
+      // Move -> Drop above.
+      actionBtn.classList.add("hidden");
+      moveBtn.classList.remove("hidden");
+      demolishBtn.classList.remove("hidden");
+      if (!maxed) {
+        upgradeBtn.disabled = !canAfford;
+        upgradeBtn.title = `Upgrade to Lvl ${currentLevel + 1} (${formatCostText(cost)})`;
+        upgradeBtn.classList.remove("hidden");
+      }
+    } else {
+      actionBtn.textContent = "Actions";
+      actionBtn.classList.remove("hidden");
     }
   } else {
     prompt.classList.add("hidden");
