@@ -3192,11 +3192,6 @@ function drawCharacter(x, y) {
   ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
   ctx.lineWidth = 1;
   ctx.strokeRect(healthBarX + 0.5, healthBarY + 0.5, healthBarW - 1, healthBarH - 1);
-
-  ctx.fillStyle = "white";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(player.name, x, y - 34);
 }
 
 let lastFrameTime = 0;
