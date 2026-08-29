@@ -372,12 +372,39 @@ body {
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
-    transition: background 0.12s ease, transform 0.08s ease;
+    transition: background 0.12s ease, transform 0.08s ease, opacity 0.15s ease;
   }
 
   #action-btn:active {
     background: rgba(76, 139, 245, 0.95);
     transform: scale(0.93);
+  }
+
+  /* Stays on screen instead of popping in/out — dim and inert whenever
+     there's nothing to do (nothing nearby, or an enemy you can't yet
+     fight), full opacity the moment updateDigPrompt() finds something
+     actionable. disabled=true also makes it a real no-op tap, not just a
+     visual dimming. */
+  #action-btn:disabled {
+    opacity: 0.32;
+    cursor: not-allowed;
+  }
+
+  /* One-shot ripple on a successful tap (see triggerActionPulse() in
+     game.js) — a expanding, fading ring layered on top of the resting
+     shadow. Re-adding the class (after a forced reflow) restarts it on
+     every tap the same way #damage-flash restarts its fade. */
+  #action-btn.tap-pulse {
+    animation: action-tap-pulse 0.35s ease-out;
+  }
+
+  @keyframes action-tap-pulse {
+    0% {
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(76, 139, 245, 0.55);
+    }
+    100% {
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35), 0 0 0 16px rgba(76, 139, 245, 0);
+    }
   }
 
   /* An invisible anchor placed exactly over the (circular) action button —
@@ -395,24 +422,58 @@ body {
     pointer-events: none;
   }
 
-  #move-btn,
-  #upgrade-btn,
-  #demolish-btn {
+  .branch-btn {
     position: absolute;
     pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 68px;
     height: 44px;
     border-radius: 999px;
     border: 2px solid rgba(255, 255, 255, 0.5);
     background: rgba(40, 44, 55, 0.8);
     color: white;
-    font-size: 0.8rem;
-    font-weight: 700;
     touch-action: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: background 0.12s ease, transform 0.08s ease;
+  }
+
+  .branch-btn-icon {
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  }
+
+  /* Hidden by default; a long-press (see setupBranchButton() in game.js)
+     adds .show-tooltip to the button and fades this in above it — the
+     icon alone doesn't say what the button does, this is the on-demand
+     answer. Anchored to each button's own top edge so it works the same
+     regardless of where that button sits in the fan. */
+  .branch-btn-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    margin-bottom: 8px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: rgba(18, 20, 26, 0.95);
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(4px) scale(0.9);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .branch-btn.show-tooltip .branch-btn-tooltip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 
   /* Fanned out around the action button's left/top sides only — its
