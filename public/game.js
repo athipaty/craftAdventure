@@ -648,6 +648,16 @@ async function savePlayer() {
   }
 }
 
+// Reload the page — position/exploredCells only autosave every 5s (see
+// savePlayer()'s setInterval), so this saves first to avoid throwing away
+// up to a few seconds of walking since the last tick. savePlayer() already
+// swallows its own fetch errors (see its try/catch above), so a save
+// failure here still falls through to the reload rather than blocking it.
+async function refreshGame() {
+  await savePlayer();
+  location.reload();
+}
+
 async function craftItem(key) {
   const res = await fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/craft`, {
     method: "POST",
@@ -1403,6 +1413,49 @@ function getFullscreenButtonIconUrl() {
 
   fullscreenButtonIconCache = iconCanvas.toDataURL();
   return fullscreenButtonIconCache;
+}
+
+let refreshButtonIconCache = null;
+function getRefreshButtonIconUrl() {
+  if (refreshButtonIconCache) return refreshButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 36;
+  iconCanvas.height = 36;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  // A near-full circular arrow — the standard "reload" glyph: a big arc
+  // with an arrowhead at one end, gapped at the other so it doesn't read
+  // as a plain closed circle.
+  const cx = 18, cy = 18, r = 9;
+  const startAngle = -Math.PI * 0.75;
+  const endAngle = Math.PI * 0.55;
+  ctx.strokeStyle = "#e8e8e8";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, startAngle, endAngle);
+  ctx.stroke();
+
+  const headX = cx + Math.cos(endAngle) * r;
+  const headY = cy + Math.sin(endAngle) * r;
+  ctx.save();
+  ctx.translate(headX, headY);
+  ctx.rotate(endAngle + Math.PI / 2); // point along the arc's direction of travel
+  ctx.fillStyle = "#e8e8e8";
+  ctx.beginPath();
+  ctx.moveTo(0, -5.5);
+  ctx.lineTo(6.5, 0);
+  ctx.lineTo(0, 5.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx = savedCtx;
+
+  refreshButtonIconCache = iconCanvas.toDataURL();
+  return refreshButtonIconCache;
 }
 
 // Mobile's structure branch buttons (Move/Upgrade/Demolish) — icons instead
@@ -3169,6 +3222,7 @@ function startGame() {
   document.getElementById("craft-btn-icon").src = getCraftButtonIconUrl();
   document.getElementById("build-btn-icon").src = getBuildButtonIconUrl();
   document.getElementById("fullscreen-btn-icon").src = getFullscreenButtonIconUrl();
+  document.getElementById("refresh-btn-icon").src = getRefreshButtonIconUrl();
   document.getElementById("move-btn-icon").src = getMoveButtonIconUrl();
   document.getElementById("upgrade-btn-icon").src = getUpgradeButtonIconUrl();
   document.getElementById("demolish-btn-icon").src = getDemolishButtonIconUrl();
@@ -3267,6 +3321,7 @@ function startGame() {
   document.getElementById("close-build").addEventListener("click", closeBuildPanel);
   document.getElementById("build-btn").addEventListener("click", toggleBuildPanel);
   document.getElementById("fullscreen-btn").addEventListener("click", toggleFullscreen);
+  document.getElementById("refresh-btn").addEventListener("click", refreshGame);
   document.getElementById("panel-backdrop").addEventListener("click", () => {
     closeCraftPanel();
     closeBuildPanel();
