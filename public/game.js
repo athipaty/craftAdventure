@@ -431,8 +431,29 @@ function drawGrid() {
   ctx.stroke();
 }
 
-function randomMapPoint() {
-  return { x: 40 + Math.random() * (WORLD_W - 80), y: 40 + Math.random() * (WORLD_H - 80) };
+// Deterministic PRNG (mulberry32) + a simple string hash, used to seed the
+// initial resource layout from the player's name — see spawnResources().
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randomMapPoint(rng = Math.random) {
+  return { x: 40 + rng() * (WORLD_W - 80), y: 40 + rng() * (WORLD_H - 80) };
 }
 
 function isTooCloseToOtherNodes(x, y, excludeNode) {
@@ -469,20 +490,30 @@ function pickRespawnPosition(node) {
   return randomMapPoint();
 }
 
-function pickSpawnPosition(type) {
+function pickSpawnPosition(type, rng = Math.random) {
   for (let attempt = 0; attempt < 40; attempt++) {
-    const { x, y } = randomMapPoint();
+    const { x, y } = randomMapPoint(rng);
     if (!isTooCloseToOtherNodes(x, y, null) && !isTooCloseToStructures(x, y, type)) return { x, y };
   }
-  return randomMapPoint();
+  return randomMapPoint(rng);
 }
 
+// The initial layout is seeded from the player's name rather than truly
+// random, so logging back in (or hitting Reset) regenerates the exact same
+// map instead of scattering resources somewhere new each time — structures
+// already persist server-side, but resources are session-only (see the
+// player-object docs), so without a seed the world looked "different" on
+// every login even though nothing the player built had moved.
+// Respawns after a node is depleted (pickRespawnPosition) stay truly
+// random — those happen mid-session and aren't expected to match a
+// previous session anyway.
 function spawnResources() {
   resources = [];
+  const rng = mulberry32(hashSeed(player.name));
   const counts = computeResourceSpawnCounts();
   for (const [type, count] of Object.entries(counts)) {
     for (let i = 0; i < count; i++) {
-      const { x, y } = pickSpawnPosition(type);
+      const { x, y } = pickSpawnPosition(type, rng);
       resources.push({ type, x, y, amount: NODE_START_AMOUNT, respawnAt: 0 });
     }
   }
