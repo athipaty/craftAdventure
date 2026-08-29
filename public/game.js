@@ -40,11 +40,11 @@ let digDurationMs = 500; // recomputed per-swing in startDig() based on tool lev
 const PLAYER_RADIUS = 6;
 // Sized to fully cover each resource's actual drawn art at full scale (see
 // drawResource()) rather than just approximating it, the same reasoning as
-// structures' STRUCTURE_FOOTPRINT_HALF — a collision circle smaller than
-// the visual left the tree's canopy (drawTree's side canopies reach out to
-// 17px) poking a few pixels past where the player actually got stopped.
-// Rock/ore's blob art (max ~10.5px from center) was already comfortably
-// covered by 12.
+// structures' STRUCTURE_COLLISION_FOOTPRINT below — a collision circle
+// smaller than the visual left the tree's canopy (drawTree's side
+// canopies reach out to 17px) poking a few pixels past where the player
+// actually got stopped. Rock/ore's blob art (max ~10.5px from center) was
+// already comfortably covered by 12.
 const RESOURCE_COLLISION_RADIUS = { wood: 17, stone: 12, ore: 12 };
 
 // Buildable structures — costs/levels are also enforced server-side (see
@@ -81,6 +81,21 @@ const STRUCTURES = {
 };
 const PLACE_DISTANCE = 30; // how far in front of the player a structure lands
 const PLACE_GRID = 16; // placement snaps to the same 16px grid the ground is drawn on
+
+// How far a built structure actually blocks movement from its stored
+// (x, y) — used by positionBlocked()/isTooCloseToStructures() below, kept
+// separate from STRUCTURES[type].radius (build-placement spacing) and
+// STRUCTURE_FOOTPRINT_HALF (the demolish-ring's cosmetic sizing).
+// A wall's is a plain one-block square, matching its art exactly. A
+// tower's is asymmetric on purpose: only its low, wide base — the part
+// actually resting on the ground, about one block — blocks; the tall
+// spire above it (see drawTower()) reads as height, not extra footprint,
+// so the player can walk through/behind it, the same as a tree's canopy
+// already doesn't block despite visually overlapping.
+const STRUCTURE_COLLISION_FOOTPRINT = {
+  wall: { halfW: PLACE_GRID / 2, top: PLACE_GRID / 2, bottom: PLACE_GRID / 2 },
+  tower: { halfW: PLACE_GRID / 2, top: 2, bottom: PLACE_GRID / 2 },
+};
 
 // --- Player/Tower vs. enemy combat --------------------------------------
 // "Knight" is player equipment (see RECIPES in recipes.js), same as the
@@ -309,20 +324,20 @@ function positionBlocked(x, y, excludeStructureId) {
   }
   for (const s of player.structures) {
     if (excludeStructureId && s._id === excludeStructureId) continue;
-    // Circle-vs-box (closest point on the structure's actual square
-    // footprint, STRUCTURE_FOOTPRINT_HALF, to the candidate position),
-    // not circle-vs-circle. STRUCTURES[type].radius is deliberately
-    // smaller than the real footprint so adjacent grid-cell placement
-    // stays allowed (see buildStructure()); using that same small radius
-    // for movement too left the corners of each wall's square art
-    // uncovered — just enough of a gap right at the seam between two
-    // walls for the player to wedge into and get stuck. This still lets
-    // adjacent placement through (the math below only blocks candidate
-    // points within PLAYER_RADIUS of the box itself), it just closes the
-    // gap once something's actually built there.
-    const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
-    const closestX = Math.min(Math.max(x, s.x - half), s.x + half);
-    const closestY = Math.min(Math.max(y, s.y - half), s.y + half);
+    // Circle-vs-box (closest point on the structure's actual collision
+    // footprint, STRUCTURE_COLLISION_FOOTPRINT, to the candidate
+    // position), not circle-vs-circle. STRUCTURES[type].radius is
+    // deliberately smaller than the real footprint so adjacent grid-cell
+    // placement stays allowed (see buildStructure()); using that same
+    // small radius for movement too left the corners of each wall's
+    // square art uncovered — just enough of a gap right at the seam
+    // between two walls for the player to wedge into and get stuck. This
+    // still lets adjacent placement through (the math below only blocks
+    // candidate points within PLAYER_RADIUS of the box itself), it just
+    // closes the gap once something's actually built there.
+    const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
+    const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
+    const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
     const dx = x - closestX;
     const dy = y - closestY;
     if (dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS) return true;
@@ -530,16 +545,17 @@ function isTooCloseToOtherNodes(x, y, excludeNode) {
 // A player-built structure claims its footprint — resources should never
 // spawn or respawn on top of a spot someone already built on, or close
 // enough to it to pinch an unwalkable-looking gap between the two (same
-// circle-vs-box reasoning, against the structure's real footprint
-// STRUCTURE_FOOTPRINT_HALF, as positionBlocked() uses for movement —
-// STRUCTURES[type].radius is deliberately smaller, just for keeping two
-// structures' own placements apart, so isn't wide enough a margin here).
+// circle-vs-box reasoning, against the structure's real collision
+// footprint STRUCTURE_COLLISION_FOOTPRINT, as positionBlocked() uses for
+// movement — STRUCTURES[type].radius is deliberately smaller, just for
+// keeping two structures' own placements apart, so isn't wide enough a
+// margin here).
 function isTooCloseToStructures(x, y, type) {
   const resourceRadius = RESOURCE_COLLISION_RADIUS[type] || 12;
   for (const s of player.structures) {
-    const half = STRUCTURE_FOOTPRINT_HALF[s.type] || 10;
-    const closestX = Math.min(Math.max(x, s.x - half), s.x + half);
-    const closestY = Math.min(Math.max(y, s.y - half), s.y + half);
+    const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
+    const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
+    const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
     const dx = x - closestX;
     const dy = y - closestY;
     if (dx * dx + dy * dy < resourceRadius * resourceRadius) return true;
