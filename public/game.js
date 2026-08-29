@@ -2452,14 +2452,35 @@ function drawOre(x, y, scale) {
   ctx.stroke();
 }
 
-function drawResource(node) {
+function drawResource(node, isTarget = false) {
   const scale = 0.55 + 0.45 * (node.amount / NODE_START_AMOUNT);
   const [sx, sy] = shakeOffset(node);
   const x = node.x + sx;
   const y = node.y + sy;
-  if (node.type === "wood") drawTree(x, y, scale);
-  else if (node.type === "stone") drawRock(x, y, scale);
-  else if (node.type === "ore") drawOre(x, y, scale);
+
+  let drawY = y;
+  if (isTarget) {
+    // In gather range (E gathers this one): pulse a ring on the ground and
+    // bob the node up off it — the same "unmistakably the one" treatment a
+    // nearby structure gets before a demolish (see drawStructure()), just
+    // gold instead of red since gathering isn't destructive.
+    const half = (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 210, 90, ${0.1 + pulse * 0.15})`;
+    ctx.strokeStyle = `rgba(255, 210, 90, ${0.4 + pulse * 0.5})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(x, y + half * 0.6, half + 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    drawY = y - (3 + pulse * 3);
+  }
+
+  if (node.type === "wood") drawTree(x, drawY, scale);
+  else if (node.type === "stone") drawRock(x, drawY, scale);
+  else if (node.type === "ore") drawOre(x, drawY, scale);
 }
 
 // Material tier per wall level — same shape at every level, just a
@@ -2684,7 +2705,7 @@ function draw() {
 
   for (const node of resources) {
     if (node.amount <= 0) continue;
-    drawResource(node);
+    drawResource(node, node === nearbyNode);
   }
 
   for (const s of player.structures) {
