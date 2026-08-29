@@ -226,6 +226,13 @@ function getNoiseBuffer() {
   return noiseBuffer;
 }
 
+// A single knob for overall sound effect loudness — every playThud() peak
+// is scaled by this, so bumping it raises footsteps/chops/hits together
+// instead of retuning each one's peakGain individually. Capped below 1.0
+// (full-scale) so it stays comfortably clear of clipping even when a few
+// sounds overlap (e.g. a footstep landing mid-swing).
+const SFX_VOLUME = 1.6;
+
 function playThud({ freq, peakGain, duration }) {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
@@ -239,7 +246,7 @@ function playThud({ freq, peakGain, duration }) {
 
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(peakGain, now + 0.005);
+  gain.gain.exponentialRampToValueAtTime(Math.min(0.9, peakGain * SFX_VOLUME), now + 0.005);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
   source.connect(filter).connect(gain).connect(audioCtx.destination);
