@@ -3051,6 +3051,24 @@ function drawCharacter(x, y) {
 
   ctx.restore();
 
+  // Small "blood level" bar right above the character's head — the HUD's
+  // corner health bar is easy to lose track of mid-fight since it's far
+  // from where the actual hit lands; this puts the same number right at
+  // the character instead. Always drawn (not just once damaged) so it
+  // doesn't suddenly appear out of nowhere on the first hit.
+  const healthBarW = 30;
+  const healthBarH = 4;
+  const healthBarX = x - healthBarW / 2;
+  const healthBarY = y - 44;
+  const healthFrac = Math.max(0, Math.min(1, playerHealth / PLAYER_MAX_HEALTH));
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(healthBarX, healthBarY, healthBarW, healthBarH);
+  ctx.fillStyle = healthFrac > 0.3 ? "#e6383f" : "#ff6a00";
+  ctx.fillRect(healthBarX, healthBarY, healthBarW * healthFrac, healthBarH);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(healthBarX + 0.5, healthBarY + 0.5, healthBarW - 1, healthBarH - 1);
+
   ctx.fillStyle = "white";
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
