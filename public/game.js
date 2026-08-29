@@ -704,12 +704,22 @@ function cancelPlacing() {
 function confirmPlacement() {
   const { x, y } = placementPosition();
   if (movingStructure) {
-    if (positionBlocked(x, y, movingStructure._id)) return;
+    if (positionBlocked(x, y, movingStructure._id)) {
+      showGameAlert("Can't place it there");
+      return;
+    }
     moveStructure(movingStructure, x, y);
     return;
   }
   if (!placingType) return;
-  if (!structureAfford(placingType) || positionBlocked(x, y)) return;
+  if (!structureAfford(placingType)) {
+    showGameAlert(missingResourceMessage(STRUCTURES[placingType].cost) || "Not enough resources");
+    return;
+  }
+  if (positionBlocked(x, y)) {
+    showGameAlert("Can't place it there");
+    return;
+  }
   buildStructure(placingType, x, y);
 }
 
@@ -1549,6 +1559,17 @@ function formatCostText(cost) {
     .join(", ");
 }
 
+// "Not enough wood" for whichever resource in cost falls short first — same
+// wording (and same "first insufficient one wins" rule) as the backend's
+// own craft/build/upgrade error, so a client-side pre-check reads no
+// differently from a rejected request would have.
+function missingResourceMessage(cost) {
+  for (const [res, amt] of Object.entries(cost)) {
+    if ((player.inventory[res] || 0) < amt) return `Not enough ${res}`;
+  }
+  return null;
+}
+
 // Maxed-out tools have nothing left to offer, so once a tool hits its cap it
 // drops out of the list entirely instead of sitting there as a dead "MAX" row.
 function visibleCraftKeys() {
@@ -1609,8 +1630,12 @@ function moveCraftSelection(delta) {
 function activateSelectedCraft() {
   const key = visibleCraftKeys()[selectedCraftIndex];
   if (!key) return;
-  const { canAfford } = craftEntryState(key);
-  if (canAfford) craftItem(key);
+  const { nextCost, canAfford } = craftEntryState(key);
+  if (canAfford) {
+    craftItem(key);
+  } else {
+    showGameAlert(missingResourceMessage(nextCost) || "Not enough resources");
+  }
 }
 
 // Shared dimmed backdrop behind whichever panel (craft/build/demolish
