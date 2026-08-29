@@ -1659,32 +1659,31 @@ function renderCraftPanel() {
     const recipe = RECIPES[key];
     const { currentLevel, nextCost, canAfford } = craftEntryState(key);
 
-    const row = document.createElement("div");
-    row.className =
-      "craft-item" + (index === selectedCraftIndex ? " selected" : "") + (canAfford ? " craftable" : "");
-    row.addEventListener("click", () => {
-      selectedCraftIndex = index;
-      renderCraftPanel();
-    });
-
-    // Just the essentials: current tool -> next tool, and what it costs.
-    row.innerHTML = `
-      <img class="tool-icon" src="${getToolIconUrl(key, currentLevel)}" alt="${recipe.label} current" />
-      <span class="upgrade-arrow">→</span>
-      <img class="tool-icon" src="${getToolIconUrl(key, currentLevel + 1)}" alt="${recipe.label} next" />
+    // One big icon per item — showing what you *have* right now — instead
+    // of a current -> next pair plus a separate Craft button. Tapping the
+    // card itself crafts it; on success craftItem() re-renders this panel,
+    // so the icon swaps straight to the new level's art.
+    const card = document.createElement("div");
+    card.className =
+      "craft-card" + (index === selectedCraftIndex ? " selected" : "") + (canAfford ? " craftable" : "");
+    const levelLabel = currentLevel > 0 ? `Lvl ${currentLevel}` : "New";
+    card.innerHTML = `
+      <img class="tool-icon" src="${getToolIconUrl(key, currentLevel)}" alt="${recipe.label} ${levelLabel}" />
+      <div class="craft-card-label">${recipe.label}</div>
+      <div class="craft-card-level">${levelLabel}</div>
       <div class="cost-row">${buildCostPillsHtml(nextCost)}</div>
     `;
-
-    const btn = document.createElement("button");
-    btn.textContent = "Craft";
-    btn.disabled = !canAfford;
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      craftItem(key);
+    card.addEventListener("click", () => {
+      selectedCraftIndex = index;
+      if (canAfford) {
+        craftItem(key);
+      } else {
+        showGameAlert(missingResourceMessage(nextCost) || "Not enough resources");
+        renderCraftPanel();
+      }
     });
-    row.appendChild(btn);
 
-    list.appendChild(row);
+    list.appendChild(card);
   });
 }
 
