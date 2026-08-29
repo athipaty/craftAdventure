@@ -617,7 +617,7 @@ async function craftItem(key) {
   });
   const data = await res.json();
   if (!res.ok) {
-    alert(data.error || "Craft failed");
+    showGameAlert(data.error || "Craft failed");
     return;
   }
   player.inventory = data.inventory;
@@ -687,7 +687,7 @@ async function buildStructure(key, x, y) {
   });
   const data = await res.json();
   if (!res.ok) {
-    alert(data.error || "Build failed");
+    showGameAlert(data.error || "Build failed");
     return;
   }
   player.inventory = data.inventory;
@@ -706,7 +706,7 @@ async function moveStructure(structure, x, y) {
   });
   const data = await res.json();
   if (!res.ok) {
-    alert(data.error || "Move failed");
+    showGameAlert(data.error || "Move failed");
     return;
   }
   player.structures = data.structures;
@@ -723,7 +723,7 @@ async function upgradeStructure(structure) {
   });
   const data = await res.json();
   if (!res.ok) {
-    alert(data.error || "Upgrade failed");
+    showGameAlert(data.error || "Upgrade failed");
     return;
   }
   player.inventory = data.inventory;
@@ -741,7 +741,7 @@ async function demolishStructure(structure) {
   });
   const data = await res.json();
   if (!res.ok) {
-    alert(data.error || "Demolish failed");
+    showGameAlert(data.error || "Demolish failed");
     return;
   }
   player.inventory = data.inventory;
@@ -1016,6 +1016,20 @@ function updateCraftBadge() {
   const count = visibleCraftKeys().filter((key) => craftEntryState(key).canAfford).length;
   badge.textContent = count;
   badge.classList.toggle("hidden", count === 0);
+}
+
+// In-game replacement for the native alert() previously used for API
+// errors (can't craft/build/move/upgrade/demolish) — alert() drops iOS out
+// of fullscreen and blocks the page until dismissed, which flashDamage()'s
+// restart trick avoids: remove .active, force a reflow, re-add it, so a
+// second error while the first is still fading restarts the animation
+// instead of getting lost.
+function showGameAlert(message) {
+  const el = document.getElementById("game-alert");
+  el.textContent = message;
+  el.classList.remove("active");
+  void el.offsetWidth;
+  el.classList.add("active");
 }
 
 // Brief full-screen red flash on taking damage — the "blood" feedback
