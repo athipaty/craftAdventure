@@ -685,6 +685,77 @@ body {
   gap: 10px;
 }
 
+/* Craft panel: a grid of big-icon cards (see renderCraftPanel() in
+   game.js) — one tap both selects and crafts, rather than a row per item
+   with a separate Craft button (that layout's still used by the Build
+   panel below, via .craft-item). */
+#craft-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.craft-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 92px;
+  padding: 12px 8px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.craft-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.craft-card:active {
+  transform: scale(0.95);
+}
+
+.craft-card.selected {
+  outline: 2px solid #4c8bf5;
+  outline-offset: -2px;
+}
+
+.craft-card.craftable {
+  border-color: #4caf50;
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.craft-card.craftable.selected {
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.craft-card-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.craft-card-level {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.craft-card .cost-row {
+  justify-content: center;
+  gap: 6px;
+}
+
+.craft-card .cost-pill {
+  font-size: 0.75rem;
+}
+
+.craft-card .cost-pill img {
+  width: 14px;
+  height: 14px;
+}
+
 .craft-item {
   display: flex;
   justify-content: space-between;
@@ -728,15 +799,11 @@ body {
   border-bottom: none;
 }
 
+/* Exclusively the Craft panel's big per-card icon now (see .craft-card
+   below) — the Build panel has no icon of its own. */
 .tool-icon {
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-}
-
-.upgrade-arrow {
-  opacity: 0.6;
-  font-size: 1.1rem;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
 }
 
@@ -922,8 +989,17 @@ body {
   }
 
   .tool-icon {
-    width: 26px;
-    height: 26px;
+    width: 40px;
+    height: 40px;
+  }
+
+  #craft-list {
+    gap: 8px;
+  }
+
+  .craft-card {
+    width: 76px;
+    padding: 8px 6px;
   }
 
   .craft-item {
