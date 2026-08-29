@@ -1291,6 +1291,115 @@ function getFullscreenButtonIconUrl() {
   return fullscreenButtonIconCache;
 }
 
+// Mobile's structure branch buttons (Move/Upgrade/Demolish) — icons instead
+// of text, same hand-drawn canvas-to-dataURL approach as the buttons above.
+let moveButtonIconCache = null;
+function getMoveButtonIconUrl() {
+  if (moveButtonIconCache) return moveButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 28;
+  iconCanvas.height = 28;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  // Four-way move glyph: a cross with an arrowhead on each end.
+  const x = 14, y = 14;
+  const arm = 8;
+  const head = 4;
+  ctx.strokeStyle = "#e8e8e8";
+  ctx.fillStyle = "#e8e8e8";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x, y - arm);
+  ctx.lineTo(x, y + arm);
+  ctx.moveTo(x - arm, y);
+  ctx.lineTo(x + arm, y);
+  ctx.stroke();
+  for (const [dx, dy] of [
+    [arm, 0],
+    [-arm, 0],
+    [0, arm],
+    [0, -arm],
+  ]) {
+    ctx.save();
+    ctx.translate(x + dx, y + dy);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath();
+    ctx.moveTo(head, 0);
+    ctx.lineTo(-head * 0.6, head * 0.7);
+    ctx.lineTo(-head * 0.6, -head * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx = savedCtx;
+  moveButtonIconCache = iconCanvas.toDataURL();
+  return moveButtonIconCache;
+}
+
+let upgradeButtonIconCache = null;
+function getUpgradeButtonIconUrl() {
+  if (upgradeButtonIconCache) return upgradeButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 28;
+  iconCanvas.height = 28;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  // Double chevron pointing up — the common "level up" glyph.
+  const x = 14, y = 14;
+  ctx.strokeStyle = "#ffd23f";
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y + 1);
+  ctx.lineTo(x, y - 8);
+  ctx.lineTo(x + 7, y + 1);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y + 8);
+  ctx.lineTo(x, y - 1);
+  ctx.lineTo(x + 7, y + 8);
+  ctx.stroke();
+
+  ctx = savedCtx;
+  upgradeButtonIconCache = iconCanvas.toDataURL();
+  return upgradeButtonIconCache;
+}
+
+let demolishButtonIconCache = null;
+function getDemolishButtonIconUrl() {
+  if (demolishButtonIconCache) return demolishButtonIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 28;
+  iconCanvas.height = 28;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  // Plain X — reads as "remove" against the button's own red background,
+  // so it doesn't need to look like a hammer/wrecking-ball to be clear.
+  const x = 14, y = 14, r = 7;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - r, y - r);
+  ctx.lineTo(x + r, y + r);
+  ctx.moveTo(x + r, y - r);
+  ctx.lineTo(x - r, y + r);
+  ctx.stroke();
+
+  ctx = savedCtx;
+  demolishButtonIconCache = iconCanvas.toDataURL();
+  return demolishButtonIconCache;
+}
+
 function toggleFullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen?.().catch(() => {});
@@ -1769,6 +1878,7 @@ function setupTouchControls() {
     "touchstart",
     (e) => {
       e.preventDefault();
+      if (actionBtn.disabled) return;
       const t = e.changedTouches[0];
       actionTouchId = t.identifier;
       actionTouchStartX = t.clientX;
@@ -1787,6 +1897,7 @@ function setupTouchControls() {
       const dist = Math.hypot(t.clientX - actionTouchStartX, t.clientY - actionTouchStartY);
       if (dist >= SWIPE_DISTANCE && Date.now() - actionTouchStartAt <= SWIPE_MAX_DURATION_MS) {
         actionSwipeTriggered = true;
+        triggerActionPulse();
         handleActionTap();
       }
     },
@@ -1795,7 +1906,11 @@ function setupTouchControls() {
   actionBtn.addEventListener("touchend", (e) => {
     const t = [...e.changedTouches].find((t) => t.identifier === actionTouchId);
     if (!t) return;
-    if (!actionSwipeTriggered) handleActionTap(); // plain tap still works
+    if (!actionSwipeTriggered) {
+      // plain tap still works
+      triggerActionPulse();
+      handleActionTap();
+    }
     actionTouchId = null;
   });
   actionBtn.addEventListener("touchcancel", () => {
@@ -1803,6 +1918,8 @@ function setupTouchControls() {
   });
   actionBtn.addEventListener("click", (e) => {
     e.preventDefault();
+    if (actionBtn.disabled) return;
+    triggerActionPulse();
     handleActionTap();
   });
   document.getElementById("cancel-place-btn").addEventListener("click", cancelPlacing);
@@ -1811,38 +1928,85 @@ function setupTouchControls() {
   // updateDigPrompt()). Each picks its action and immediately collapses the
   // menu again, since the structure state is about to change out from under
   // it either way (a placement ghost starts, a dialog opens, or the level
-  // just went up).
-  const moveBtn = document.getElementById("move-btn");
-  const triggerMove = (e) => {
+  // just went up). Wired through setupBranchButton() so holding one down
+  // shows its tooltip instead of firing immediately.
+  setupBranchButton(document.getElementById("move-btn"), (e) => {
     e.preventDefault();
     if (!nearbyStructure) return;
     startMovingStructure(nearbyStructure);
     structureMenuOpen = false;
-  };
-  moveBtn.addEventListener("touchstart", triggerMove, { passive: false });
-  moveBtn.addEventListener("click", triggerMove);
+  });
 
-  const upgradeBtn = document.getElementById("upgrade-btn");
-  const triggerUpgrade = (e) => {
+  setupBranchButton(document.getElementById("upgrade-btn"), (e) => {
     e.preventDefault();
     if (!nearbyStructure || structureUpgradeInfo(nearbyStructure).maxed) return;
     upgradeStructure(nearbyStructure);
     structureMenuOpen = false;
-  };
-  upgradeBtn.addEventListener("touchstart", triggerUpgrade, { passive: false });
-  upgradeBtn.addEventListener("click", triggerUpgrade);
+  });
 
-  const demolishBtn = document.getElementById("demolish-btn");
-  const triggerDemolishRequest = (e) => {
+  setupBranchButton(document.getElementById("demolish-btn"), (e) => {
     e.preventDefault();
     if (!nearbyStructure) return;
     requestDemolishConfirm(nearbyStructure);
     structureMenuOpen = false;
-  };
-  demolishBtn.addEventListener("touchstart", triggerDemolishRequest, { passive: false });
-  demolishBtn.addEventListener("click", triggerDemolishRequest);
+  });
 
   document.getElementById("craft-btn").addEventListener("click", toggleCraftPanel);
+}
+
+// A held-down branch button (Move/Upgrade/Demolish) reveals its tooltip
+// instead of firing — released early enough, it's a normal tap and runs
+// onTap as before. Long-press is the only way to see what an icon-only
+// button does, so this has to not fire the action while the tooltip's up.
+function setupBranchButton(btn, onTap) {
+  const LONG_PRESS_MS = 450;
+  let pressTimer = null;
+  let longPressed = false;
+
+  const showTooltip = () => {
+    longPressed = true;
+    btn.classList.add("show-tooltip");
+  };
+  const clearPressTimer = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+  const start = (e) => {
+    e.preventDefault();
+    longPressed = false;
+    clearPressTimer();
+    pressTimer = setTimeout(showTooltip, LONG_PRESS_MS);
+  };
+  const end = (e) => {
+    clearPressTimer();
+    btn.classList.remove("show-tooltip");
+    if (!longPressed) onTap(e);
+  };
+  const cancel = () => {
+    clearPressTimer();
+    btn.classList.remove("show-tooltip");
+  };
+
+  btn.addEventListener("touchstart", start, { passive: false });
+  btn.addEventListener("touchend", end);
+  btn.addEventListener("touchcancel", cancel);
+  // Preventing default on touchstart/touchend above suppresses the
+  // synthetic click a real touch would otherwise also fire, so this only
+  // runs for genuine mouse clicks (desktop testing) — no long-press there.
+  btn.addEventListener("click", (e) => {
+    if (!longPressed) onTap(e);
+  });
+}
+
+// Restarts the action button's tap ripple (see @keyframes action-tap-pulse)
+// the same way flashDamage() restarts #damage-flash: force a reflow between
+// removing and re-adding the class so back-to-back taps each get a fresh
+// animation instead of the browser coalescing them into one.
+function triggerActionPulse() {
+  const actionBtn = document.getElementById("action-btn");
+  actionBtn.classList.remove("tap-pulse");
+  void actionBtn.offsetWidth;
+  actionBtn.classList.add("tap-pulse");
 }
 
 function updateDigPrompt() {
@@ -1857,6 +2021,11 @@ function updateDigPrompt() {
   moveBtn.classList.add("hidden");
   upgradeBtn.classList.add("hidden");
   demolishBtn.classList.add("hidden");
+  // Default to the dim "nothing to do" look; branches below turn it back
+  // on wherever there's a real action. Left as-is (not hidden) so the
+  // button stays put and only fades — see #action-btn:disabled.
+  actionBtn.disabled = true;
+  actionBtn.textContent = "";
 
   if (isDemolishConfirmOpen()) {
     prompt.classList.add("hidden");
@@ -1873,24 +2042,31 @@ function updateDigPrompt() {
     promptText.textContent = `Press E to place ${STRUCTURES[placingType].label}`;
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Place";
+    actionBtn.disabled = false;
     actionBtn.classList.remove("hidden");
   } else if (movingStructure) {
     const label = STRUCTURES[movingStructure.type]?.label || movingStructure.type;
     promptText.textContent = `Press E to set the ${label} down here`;
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Drop";
+    actionBtn.disabled = false;
     actionBtn.classList.remove("hidden");
   } else if (nearbyNode) {
     promptText.textContent = `Press E to gather ${nearbyNode.type}`;
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Hit";
+    actionBtn.disabled = false;
     actionBtn.classList.remove("hidden");
   } else if (nearbyEnemy) {
     const armed = player.upgrades.knightLevel >= 1;
     promptText.textContent = armed ? "Press E to attack" : "Craft a Knight to fight";
     prompt.classList.remove("hidden");
     actionBtn.textContent = "Attack";
-    actionBtn.classList.toggle("hidden", !armed);
+    // Shown either way — dim and inert while unarmed, rather than gone,
+    // so the prompt text ("Craft a Knight to fight") has a visible button
+    // to explain instead of floating with nothing to point at.
+    actionBtn.disabled = !armed;
+    actionBtn.classList.remove("hidden");
   } else if (nearbyStructure) {
     const label = STRUCTURES[nearbyStructure.type]?.label || nearbyStructure.type;
     const { currentLevel, maxed, cost, canAfford } = structureUpgradeInfo(nearbyStructure);
@@ -1916,11 +2092,14 @@ function updateDigPrompt() {
       }
     } else {
       actionBtn.textContent = "Actions";
+      actionBtn.disabled = false;
       actionBtn.classList.remove("hidden");
     }
   } else {
+    // Nothing nearby at all — keep the button on screen, just dim, rather
+    // than popping it out of existence (see #action-btn:disabled).
     prompt.classList.add("hidden");
-    actionBtn.classList.add("hidden");
+    actionBtn.classList.remove("hidden");
   }
 }
 
@@ -2775,6 +2954,9 @@ function startGame() {
   document.getElementById("craft-btn-icon").src = getCraftButtonIconUrl();
   document.getElementById("build-btn-icon").src = getBuildButtonIconUrl();
   document.getElementById("fullscreen-btn-icon").src = getFullscreenButtonIconUrl();
+  document.getElementById("move-btn-icon").src = getMoveButtonIconUrl();
+  document.getElementById("upgrade-btn-icon").src = getUpgradeButtonIconUrl();
+  document.getElementById("demolish-btn-icon").src = getDemolishButtonIconUrl();
   // iOS Safari has no element Fullscreen API at all — a button that can
   // never do anything is worse than no button, so hide it there.
   if (!document.documentElement.requestFullscreen) {
