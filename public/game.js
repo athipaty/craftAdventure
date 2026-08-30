@@ -353,7 +353,11 @@ function totalCarried(inv) {
   return inv.wood + inv.stone + inv.ore;
 }
 
-const TOTAL_RESOURCE_NODES = 100; // scaled up for WORLD_W x WORLD_H instead of one screen
+// Was 100 — dense enough across WORLD_W x WORLD_H that everything was
+// craftable from nodes near spawn, with no real need to explore. Cut
+// roughly in half so gathering what a full set of upgrades costs actually
+// takes covering real ground.
+const TOTAL_RESOURCE_NODES = 55;
 
 // Map density follows demand: sum every recipe's cost across all levels, turn
 // that into a % share per material, then hand out TOTAL_RESOURCE_NODES nodes
