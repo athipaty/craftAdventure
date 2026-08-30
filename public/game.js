@@ -408,14 +408,138 @@ function nearestBlockingStructure(x, y, radius) {
   return nearest;
 }
 
-// Lightweight steer-around-obstacles for a chasing enemy: try stepping
+// Real (if coarse) pathfinding for a chasing enemy that's been blocked for
+// a bit — a BFS over PLACE_GRID-sized cells, 8-directional, from the
+// enemy's cell to the player's. findEnemyStep()'s local fan-search alone
+// can't route around anything bigger than a single obstacle: it only ever
+// samples one small step from wherever the enemy currently is, always
+// biased toward whatever's instantaneously closest to the direct line to
+// the player, so it tends to hover near a wall's middle instead of
+// committing to travel its full length out to an open end. A real search
+// finds that route directly. Bounded on two fronts so it can't ever eat a
+// frame: the search window is padded only PATH_SEARCH_PAD_CELLS past the
+// start/goal bounding box, and PATH_BFS_NODE_CAP hard-stops the search
+// (falling back to local avoidance) if no path turns up within that budget
+// — e.g. the player genuinely unreachable, or too far for the window.
+const PATH_CELL = PLACE_GRID;
+const PATH_SEARCH_PAD_CELLS = 20;
+const PATH_BFS_NODE_CAP = 3000;
+const PATH_RECALC_MS = 1500;
+const PATH_WAYPOINT_REACHED_DIST = 10;
+const PATH_DIRS = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+
+function pathCellBlocked(cx, cy) {
+  const x = cx * PATH_CELL + PATH_CELL / 2;
+  const y = cy * PATH_CELL + PATH_CELL / 2;
+  if (x < 0 || y < 0 || x > WORLD_W || y > WORLD_H) return true;
+  return structureBlocksAt(x, y, ENEMY_RADIUS);
+}
+
+// Returns an array of {x, y} world-space waypoints (cell centers) from the
+// first step after (startX, startY) through the goal cell, or null if no
+// route was found within the search budget.
+function findPathAround(startX, startY, goalX, goalY) {
+  const startCx = Math.floor(startX / PATH_CELL);
+  const startCy = Math.floor(startY / PATH_CELL);
+  const goalCx = Math.floor(goalX / PATH_CELL);
+  const goalCy = Math.floor(goalY / PATH_CELL);
+
+  const minCx = Math.min(startCx, goalCx) - PATH_SEARCH_PAD_CELLS;
+  const maxCx = Math.max(startCx, goalCx) + PATH_SEARCH_PAD_CELLS;
+  const minCy = Math.min(startCy, goalCy) - PATH_SEARCH_PAD_CELLS;
+  const maxCy = Math.max(startCy, goalCy) + PATH_SEARCH_PAD_CELLS;
+
+  const key = (cx, cy) => cx + "," + cy;
+  const startKey = key(startCx, startCy);
+  const goalKey = key(goalCx, goalCy);
+  const cameFrom = new Map();
+  const visited = new Set([startKey]);
+  const queue = [[startCx, startCy]];
+  let head = 0;
+  let found = startKey === goalKey;
+
+  while (!found && head < queue.length) {
+    const [cx, cy] = queue[head++];
+    for (const [dx, dy] of PATH_DIRS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < minCx || nx > maxCx || ny < minCy || ny > maxCy) continue;
+      const k = key(nx, ny);
+      if (visited.has(k) || pathCellBlocked(nx, ny)) continue;
+      visited.add(k);
+      cameFrom.set(k, cx + "," + cy);
+      if (k === goalKey) {
+        found = true;
+        break;
+      }
+      queue.push([nx, ny]);
+    }
+    if (visited.size > PATH_BFS_NODE_CAP) break;
+  }
+
+  if (!found) return null;
+
+  const waypoints = [];
+  let curKey = goalKey;
+  while (curKey !== startKey) {
+    const [cx, cy] = curKey.split(",").map(Number);
+    waypoints.push({ x: cx * PATH_CELL + PATH_CELL / 2, y: cy * PATH_CELL + PATH_CELL / 2 });
+    curKey = cameFrom.get(curKey);
+    if (!curKey) break;
+  }
+  waypoints.reverse();
+  return waypoints;
+}
+
+function stepEnemyToward(enemy, targetX, targetY, speed) {
+  const dx = targetX - enemy.x;
+  const dy = targetY - enemy.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.001) return { x: enemy.x, y: enemy.y };
+  const stepLen = Math.min(speed, dist);
+  const x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / dist) * stepLen));
+  const y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / dist) * stepLen));
+  return { x, y };
+}
+
+// Advances an enemy one step along its current planned route (enemy.path,
+// set by findPathAround()), popping a waypoint once reached. Invalidates
+// the route (rather than trying to route around it locally) if the world
+// changed enough underneath it that the next waypoint is now blocked —
+// updateCombat() will plan a fresh one on a later frame. Returns whether
+// it actually moved.
+function followEnemyPath(enemy, speed) {
+  if (!enemy.path || enemy.path.length === 0) return false;
+  if (Math.hypot(enemy.path[0].x - enemy.x, enemy.path[0].y - enemy.y) <= PATH_WAYPOINT_REACHED_DIST) {
+    enemy.path.shift();
+  }
+  if (enemy.path.length === 0) {
+    enemy.path = null;
+    return false;
+  }
+  const next = enemy.path[0];
+  const step = stepEnemyToward(enemy, next.x, next.y, speed);
+  if (structureBlocksAt(step.x, step.y, ENEMY_RADIUS)) {
+    enemy.path = null;
+    return false;
+  }
+  enemy.x = step.x;
+  enemy.y = step.y;
+  return true;
+}
+
+// Last-resort fallback for a chasing enemy, used only for the one frame
+// between getting blocked and findPathAround() producing a real route (or
+// while genuinely no route exists within its search window): try stepping
 // straight toward the player first, then fan outward (20°, 40°, ... up to
-// 180°) until an unblocked step is found. Far more capable of actually
-// walking around a wall — including a gap too narrow to fit through (see
-// ENEMY_RADIUS) — than only ever trying the two world axes, which could
-// leave an enemy standing frozen right at a corner or a pinch point
-// between two structures with no open axis-aligned move even though a
-// diagonal one nearby is wide open.
+// 180°) until an unblocked step is found. This alone can't cover the
+// distance needed to walk all the way out to the open end of a long wall
+// — it only ever samples one small step from wherever the enemy currently
+// is — which is what findPathAround() is for; this is just there so the
+// enemy is never fully idle while a plan isn't available.
 //
 // enemy.avoidSign remembers which way (left/right of the direct line) it
 // last had to detour, and that side is tried first on every subsequent
@@ -425,10 +549,6 @@ function nearestBlockingStructure(x, y, radius) {
 // from one frame to the next — the enemy would visibly vibrate against
 // the wall instead of committing to going around it. Cleared the moment
 // the direct line opens back up.
-//
-// Not real pathfinding — an enemy fully boxed in on every side still
-// won't find a route out — but it handles the common case of routing
-// around a wall or a narrow gap.
 const ENEMY_AVOID_ANGLE_STEP = Math.PI / 9; // 20°
 function tryEnemyStep(enemy, angle, speed) {
   const x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(angle) * speed));
@@ -811,6 +931,8 @@ function spawnEnemies() {
       stuckSince: null, // set once fully blocked chasing the player — see updateCombat()
       lastStructureAttackAt: 0,
       avoidSign: 0, // which side it's currently detouring around an obstacle — see findEnemyStep()
+      path: null, // planned route around an obstacle, if any — see findPathAround()
+      pathRecalcAt: 0,
     });
   }
 }
@@ -1262,20 +1384,54 @@ function updateCombat(now) {
       const speed = ENEMY_APPROACH_SPEED * frameScale;
       // A built wall/tower blocks a chasing enemy the same way it blocks
       // the player (structureBlocksAt(), ENEMY_RADIUS) — resources don't,
-      // enemies walk straight through/over those. findEnemyStep() fans out
-      // from the direct line to the player until it finds an open step, so
-      // an enemy actually walks around a wall (or a gap too narrow to fit
-      // through) instead of freezing the instant the direct path — or even
-      // both world axes — happen to be blocked.
-      const step = findEnemyStep(enemy, towardAngle, speed);
-      if (step) {
-        enemy.x = step.x;
-        enemy.y = step.y;
+      // enemies walk straight through/over those.
+      //
+      // Already on a planned route (enemy.path, from a previous blocked
+      // frame — see findPathAround()) — keep following it rather than
+      // re-deciding every frame, so the enemy commits to the route
+      // instead of second-guessing it each tick.
+      let moved = followEnemyPath(enemy, speed);
+
+      if (!moved) {
+        // No route in progress — try heading straight for the player
+        // first, the common case where nothing's actually in the way.
+        const direct = tryEnemyStep(enemy, towardAngle, speed);
+        if (direct) {
+          enemy.x = direct.x;
+          enemy.y = direct.y;
+          enemy.path = null;
+          moved = true;
+        }
+      }
+
+      if (!moved && now - enemy.pathRecalcAt >= PATH_RECALC_MS) {
+        // Blocked — plan a real route around whatever's in the way. The
+        // local fan-search below can't cover the distance needed to walk
+        // all the way out to the open end of a long wall on its own; a
+        // proper (if coarse) BFS over the build grid can.
+        enemy.pathRecalcAt = now;
+        enemy.path = findPathAround(enemy.x, enemy.y, player.x, player.y);
+        moved = followEnemyPath(enemy, speed);
+      }
+
+      if (!moved) {
+        // Either no route exists within the search window, or we're
+        // between recompute attempts — fall back to a small local nudge
+        // so the enemy is never fully idle in the meantime.
+        const step = findEnemyStep(enemy, towardAngle, speed);
+        if (step) {
+          enemy.x = step.x;
+          enemy.y = step.y;
+          moved = true;
+        }
+      }
+
+      if (moved) {
         enemy.stuckSince = null;
       } else {
-        // Every direction around it is blocked — well and truly boxed in,
-        // not just a wall in the way. Sustained for a while means no route
-        // is coming; start tearing down whatever's actually closest along
+        // Nothing worked at all — well and truly boxed in, not just a
+        // wall in the way. Sustained for a while means no route is
+        // coming; start tearing down whatever's actually closest along
         // the direct line to the player instead of pacing forever.
         if (enemy.stuckSince === null) enemy.stuckSince = now;
         if (now - enemy.stuckSince >= ENEMY_STUCK_ATTACK_DELAY_MS) {
@@ -1311,6 +1467,8 @@ function updateCombat(now) {
       enemy.health = enemy.maxHealth;
       enemy.stuckSince = null;
       enemy.avoidSign = 0;
+      enemy.path = null;
+      enemy.pathRecalcAt = 0;
     }
   }
 
