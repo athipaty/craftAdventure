@@ -116,6 +116,12 @@ const TOWER_STATS = {
 const TOWER_BEAM_DURATION_MS = 150;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
+// Used against STRUCTURE_COLLISION_FOOTPRINT (see structureBlocksAt())
+// so a built wall/tower actually stops an enemy instead of it walking
+// straight through — enemies still walk over/through resources freely,
+// only structures block them, same as the roughly-body-sized radius
+// (~8px) drawEnemy() draws them at.
+const ENEMY_RADIUS = 7;
 const ENEMY_WANDER_SPEED = 0.2;
 // Enemies notice the player within this range and approach instead of
 // wandering; once within ENEMY_STOP_DISTANCE they stop and attack instead
@@ -313,6 +319,32 @@ const DIR_TABLE = [
   { flip: 1, face: "backQuarter" }, // 7 NE
 ];
 
+// Circle-vs-box (closest point on a structure's actual collision footprint,
+// STRUCTURE_COLLISION_FOOTPRINT, to (x, y)), not circle-vs-circle. Shared
+// by the player (positionBlocked(), PLAYER_RADIUS) and enemies (see
+// updateCombat(), ENEMY_RADIUS) so a built wall/tower blocks both the same
+// way — enemies still walk over/through resources freely, only structures
+// stop them. STRUCTURES[type].radius is deliberately smaller than the real
+// footprint so adjacent grid-cell placement stays allowed (see
+// buildStructure()); using that same small radius for movement too left
+// the corners of each wall's square art uncovered — just enough of a gap
+// right at the seam between two walls for an actor to wedge into and get
+// stuck. This still lets adjacent placement through (the math below only
+// blocks candidate points within radius of the box itself), it just closes
+// the gap once something's actually built there.
+function structureBlocksAt(x, y, radius, excludeStructureId) {
+  for (const s of player.structures) {
+    if (excludeStructureId && s._id === excludeStructureId) continue;
+    const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
+    const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
+    const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
+    const dx = x - closestX;
+    const dy = y - closestY;
+    if (dx * dx + dy * dy < radius * radius) return true;
+  }
+  return false;
+}
+
 // excludeStructureId lets a structure being moved skip colliding with its
 // own (pre-move) position while its ghost is placed elsewhere.
 function positionBlocked(x, y, excludeStructureId) {
@@ -322,27 +354,7 @@ function positionBlocked(x, y, excludeStructureId) {
     const minDist = PLAYER_RADIUS + (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
     if (Math.hypot(node.x - x, node.y - y) < minDist) return true;
   }
-  for (const s of player.structures) {
-    if (excludeStructureId && s._id === excludeStructureId) continue;
-    // Circle-vs-box (closest point on the structure's actual collision
-    // footprint, STRUCTURE_COLLISION_FOOTPRINT, to the candidate
-    // position), not circle-vs-circle. STRUCTURES[type].radius is
-    // deliberately smaller than the real footprint so adjacent grid-cell
-    // placement stays allowed (see buildStructure()); using that same
-    // small radius for movement too left the corners of each wall's
-    // square art uncovered — just enough of a gap right at the seam
-    // between two walls for the player to wedge into and get stuck. This
-    // still lets adjacent placement through (the math below only blocks
-    // candidate points within PLAYER_RADIUS of the box itself), it just
-    // closes the gap once something's actually built there.
-    const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
-    const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
-    const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
-    const dx = x - closestX;
-    const dy = y - closestY;
-    if (dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS) return true;
-  }
-  return false;
+  return structureBlocksAt(x, y, PLAYER_RADIUS, excludeStructureId);
 }
 
 function capacityFor(bagLevel) {
@@ -1057,12 +1069,33 @@ function updateCombat(now) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const len = Math.hypot(dx, dy) || 1;
-      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED * frameScale));
-      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED * frameScale));
+      const targetX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED * frameScale));
+      const targetY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED * frameScale));
+      // A built wall/tower blocks a chasing enemy the same way it blocks
+      // the player (structureBlocksAt(), ENEMY_RADIUS) — resources don't,
+      // enemies walk straight through/over those. Slide along whichever
+      // single axis is still open, same fallback the player's own
+      // movement uses, rather than freezing dead against the wall.
+      if (!structureBlocksAt(targetX, targetY, ENEMY_RADIUS)) {
+        enemy.x = targetX;
+        enemy.y = targetY;
+      } else if (!structureBlocksAt(targetX, enemy.y, ENEMY_RADIUS)) {
+        enemy.x = targetX;
+      } else if (!structureBlocksAt(enemy.x, targetY, ENEMY_RADIUS)) {
+        enemy.y = targetY;
+      }
     } else {
       enemy.wanderAngle += (Math.random() - 0.5) * 0.4 * frameScale;
-      enemy.x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
-      enemy.y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
+      const targetX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
+      const targetY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
+      if (!structureBlocksAt(targetX, targetY, ENEMY_RADIUS)) {
+        enemy.x = targetX;
+        enemy.y = targetY;
+      } else {
+        // Turn away instead of standing frozen against the wall until the
+        // next random nudge happens to point elsewhere.
+        enemy.wanderAngle += Math.PI + (Math.random() - 0.5) * 1.5;
+      }
     }
   }
 
