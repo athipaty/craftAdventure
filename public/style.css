@@ -139,6 +139,10 @@ body {
   vertical-align: middle;
 }
 
+#daynight-indicator.is-night b {
+  color: #a8b6ff;
+}
+
 #health-bar {
   position: relative;
   display: inline-flex;
