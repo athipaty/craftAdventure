@@ -136,6 +136,12 @@ const ENEMY_STOP_DISTANCE = 20;
 const ENEMY_ATTACK_DAMAGE = 2;
 const ENEMY_ATTACK_COOLDOWN_MS = 1000;
 const ENEMY_RESPAWN_MS = 20000;
+// How long a chasing enemy has to be fully unable to advance (not even a
+// slide along one axis) before it gives up finding a way around and starts
+// attacking whatever structure is blocking it — see updateCombat() and
+// damageStructure(). Long enough that briefly brushing past a wall corner
+// while sliding around it doesn't trigger an attack.
+const ENEMY_STUCK_ATTACK_DELAY_MS = 3000;
 
 // Day/night cycle — a simple local clock (not persisted, not synced across
 // logins/players) derived straight from Date.now(), so it's always
@@ -353,9 +359,21 @@ const DIR_TABLE = [
   { flip: 1, face: "backQuarter" }, // 7 NE
 ];
 
-// Circle-vs-box (closest point on a structure's actual collision footprint,
-// STRUCTURE_COLLISION_FOOTPRINT, to (x, y)), not circle-vs-circle. Shared
-// by the player (positionBlocked(), PLAYER_RADIUS) and enemies (see
+// Squared distance from (x, y) to the closest point on a structure's actual
+// collision footprint (STRUCTURE_COLLISION_FOOTPRINT) — the box, not a
+// circle. Shared by structureBlocksAt() (a yes/no check) and
+// nearestBlockingStructure() (which one) below.
+function structureDistSq(s, x, y) {
+  const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
+  const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
+  const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
+  const dx = x - closestX;
+  const dy = y - closestY;
+  return dx * dx + dy * dy;
+}
+
+// Circle-vs-box: is (x, y) within radius of any structure's real footprint?
+// Shared by the player (positionBlocked(), PLAYER_RADIUS) and enemies (see
 // updateCombat(), ENEMY_RADIUS) so a built wall/tower blocks both the same
 // way — enemies still walk over/through resources freely, only structures
 // stop them. STRUCTURES[type].radius is deliberately smaller than the real
@@ -363,20 +381,31 @@ const DIR_TABLE = [
 // buildStructure()); using that same small radius for movement too left
 // the corners of each wall's square art uncovered — just enough of a gap
 // right at the seam between two walls for an actor to wedge into and get
-// stuck. This still lets adjacent placement through (the math below only
+// stuck. This still lets adjacent placement through (the check below only
 // blocks candidate points within radius of the box itself), it just closes
 // the gap once something's actually built there.
 function structureBlocksAt(x, y, radius, excludeStructureId) {
   for (const s of player.structures) {
     if (excludeStructureId && s._id === excludeStructureId) continue;
-    const fp = STRUCTURE_COLLISION_FOOTPRINT[s.type] || { halfW: 10, top: 10, bottom: 10 };
-    const closestX = Math.min(Math.max(x, s.x - fp.halfW), s.x + fp.halfW);
-    const closestY = Math.min(Math.max(y, s.y - fp.top), s.y + fp.bottom);
-    const dx = x - closestX;
-    const dy = y - closestY;
-    if (dx * dx + dy * dy < radius * radius) return true;
+    if (structureDistSq(s, x, y) < radius * radius) return true;
   }
   return false;
+}
+
+// Which structure is actually stopping an enemy at (x, y) — used once an
+// enemy has been fully blocked for a while (see updateCombat()) to decide
+// what to start attacking. Picks the closest if more than one is in range.
+function nearestBlockingStructure(x, y, radius) {
+  let nearest = null;
+  let nearestDistSq = Infinity;
+  for (const s of player.structures) {
+    const distSq = structureDistSq(s, x, y);
+    if (distSq < radius * radius && distSq < nearestDistSq) {
+      nearest = s;
+      nearestDistSq = distSq;
+    }
+  }
+  return nearest;
 }
 
 // excludeStructureId lets a structure being moved skip colliding with its
@@ -704,6 +733,8 @@ function spawnEnemies() {
       wanderAngle: Math.random() * Math.PI * 2,
       lastAttackAt: 0,
       respawnAt: 0,
+      stuckSince: null, // set once fully blocked chasing the player — see updateCombat()
+      lastStructureAttackAt: 0,
     });
   }
 }
@@ -736,6 +767,7 @@ async function resetPlayer() {
     playerHealth = PLAYER_MAX_HEALTH;
     playerInvulnerableUntil = 0;
     unpackExploredCells(player.exploredCells);
+    structureHealth.clear(); // every structure is gone after a reset
     closeCraftPanel();
     closeBuildPanel();
     cancelDemolishConfirm();
@@ -944,6 +976,7 @@ async function demolishStructure(structure) {
   }
   player.inventory = data.inventory;
   player.structures = data.structures;
+  structureHealth.delete(structure._id); // tidy up any damage tracked against it (see damageStructure())
   const label = STRUCTURES[structure.type]?.label || structure.type;
   spawnFloatingText(structure.x, structure.y - 20, `-${label}`, "#ff8a8a");
   renderHud();
@@ -1018,6 +1051,50 @@ function damageEnemy(enemy, amount) {
     enemy.respawnAt = Date.now() + ENEMY_RESPAWN_MS;
     spawnFloatingText(enemy.x, enemy.y - 14, "Goblin slain", "#ffd23f");
   }
+}
+
+// HP a structure has against a blocked, attacking enemy (see
+// updateCombat()) — session-only, never persisted or sent to the server
+// (same "combat state resets each login" pattern enemies already use), so
+// keyed by _id in a side map rather than stored on the structure object
+// itself: player.structures gets wholesale-replaced by every build/move/
+// upgrade/demolish response, and a Map survives that without needing to
+// re-seed a field on every fresh array. No entry = full health.
+const structureHealth = new Map();
+const ENEMY_STRUCTURE_DAMAGE = 3;
+
+function structureMaxHealth(s) {
+  const base = s.type === "tower" ? 30 : 20;
+  return base + ((s.level || 1) - 1) * 10;
+}
+
+function damageStructure(s, amount) {
+  const maxHealth = structureMaxHealth(s);
+  const current = structureHealth.has(s._id) ? structureHealth.get(s._id) : maxHealth;
+  const next = Math.max(0, current - amount);
+  structureHealth.set(s._id, next);
+  spawnFloatingText(s.x, s.y - 20, `-${amount}`, "#ff8a8a");
+  playHit("stone"); // any non-"wood" type gets the sharper clink — reads as impact, not chopping
+  if (next <= 0) destroyStructureByEnemy(s);
+}
+
+// Optimistic: removed from player.structures immediately (the enemy that
+// just finished it off shouldn't keep "attacking" a structure that's
+// already gone), with the no-refund /structure-destroyed call firing in
+// the background. Not awaited — this runs from inside the per-frame
+// updateCombat() loop, and the game keeps going regardless of how that
+// request lands; a failure just means the structure reappears next login,
+// the same tradeoff every other best-effort save in this game accepts.
+function destroyStructureByEnemy(s) {
+  structureHealth.delete(s._id);
+  player.structures = player.structures.filter((st) => st._id !== s._id);
+  const label = STRUCTURES[s.type]?.label || s.type;
+  spawnFloatingText(s.x, s.y - 20, `${label} destroyed!`, "#ff3b3b");
+  fetch(`${API_BASE}/player/${encodeURIComponent(player.name)}/structure-destroyed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structureId: s._id }),
+  }).catch(() => {});
 }
 
 // Ignored entirely during the brief invulnerability window after the last
@@ -1113,6 +1190,7 @@ function updateCombat(now) {
       // enemies walk straight through/over those. Slide along whichever
       // single axis is still open, same fallback the player's own
       // movement uses, rather than freezing dead against the wall.
+      let moved = true;
       if (!structureBlocksAt(targetX, targetY, ENEMY_RADIUS)) {
         enemy.x = targetX;
         enemy.y = targetY;
@@ -1120,6 +1198,24 @@ function updateCombat(now) {
         enemy.x = targetX;
       } else if (!structureBlocksAt(enemy.x, targetY, ENEMY_RADIUS)) {
         enemy.y = targetY;
+      } else {
+        moved = false;
+      }
+
+      // Fully unable to advance (not even a slide) toward the player for a
+      // sustained stretch — no path around, so start tearing down whatever
+      // structure is actually in the way instead of pacing at it forever.
+      if (moved) {
+        enemy.stuckSince = null;
+      } else {
+        if (enemy.stuckSince === null) enemy.stuckSince = now;
+        if (now - enemy.stuckSince >= ENEMY_STUCK_ATTACK_DELAY_MS) {
+          const blocker = nearestBlockingStructure(targetX, targetY, ENEMY_RADIUS);
+          if (blocker && now - enemy.lastStructureAttackAt >= ENEMY_ATTACK_COOLDOWN_MS) {
+            enemy.lastStructureAttackAt = now;
+            damageStructure(blocker, ENEMY_STRUCTURE_DAMAGE);
+          }
+        }
       }
     } else {
       enemy.wanderAngle += (Math.random() - 0.5) * 0.4 * frameScale;
@@ -1142,6 +1238,7 @@ function updateCombat(now) {
       enemy.x = x;
       enemy.y = y;
       enemy.health = enemy.maxHealth;
+      enemy.stuckSince = null;
     }
   }
 
@@ -2817,6 +2914,9 @@ function draw() {
   for (const s of player.structures) {
     if (movingStructure && s._id === movingStructure._id) continue; // shown as the ghost instead
     drawStructure(s, s === nearbyStructure);
+    if (structureHealth.has(s._id)) {
+      drawHealthBar(s.x, s.y - (STRUCTURE_FOOTPRINT_HALF[s.type] || 10) - 8, structureHealth.get(s._id), structureMaxHealth(s));
+    }
   }
   drawPlacementGhost();
 
