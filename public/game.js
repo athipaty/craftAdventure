@@ -469,6 +469,18 @@ function findPathAround(startX, startY, goalX, goalY) {
       if (nx < minCx || nx > maxCx || ny < minCy || ny > maxCy) continue;
       const k = key(nx, ny);
       if (visited.has(k) || pathCellBlocked(nx, ny)) continue;
+      // Diagonal move: also require both flanking orthogonal cells to be
+      // open. Without this, the BFS treats a diagonal step as clear as long
+      // as the two cell *centers* it connects are unblocked, even when that
+      // straight-line step would clip a wall's corner — exactly the "wall
+      // corner" case a real actor (checked via structureBlocksAt's circle-
+      // vs-box math in followEnemyPath()) can't actually cut through. That
+      // mismatch produced a route the enemy could plan but never walk: each
+      // frame it reached that diagonal segment, the real collision check
+      // rejected it, the path got invalidated, and the next recalculation
+      // proposed the exact same corner-cutting route — an enemy stuck
+      // orbiting a wall corner instead of routing around it.
+      if (dx !== 0 && dy !== 0 && (pathCellBlocked(cx + dx, cy) || pathCellBlocked(cx, cy + dy))) continue;
       visited.add(k);
       cameFrom.set(k, cx + "," + cy);
       if (k === goalKey) {
@@ -1446,15 +1458,27 @@ function updateCombat(now) {
       }
     } else {
       enemy.wanderAngle += (Math.random() - 0.5) * 0.4 * frameScale;
-      const targetX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
-      const targetY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * ENEMY_WANDER_SPEED * frameScale));
+      const wanderSpeed = ENEMY_WANDER_SPEED * frameScale;
+      const targetX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(enemy.wanderAngle) * wanderSpeed));
+      const targetY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(enemy.wanderAngle) * wanderSpeed));
       if (!structureBlocksAt(targetX, targetY, ENEMY_RADIUS)) {
         enemy.x = targetX;
         enemy.y = targetY;
+        enemy.avoidSign = 0;
       } else {
-        // Turn away instead of standing frozen against the wall until the
-        // next random nudge happens to point elsewhere.
-        enemy.wanderAngle += Math.PI + (Math.random() - 0.5) * 1.5;
+        // Same local avoidance the chase branch uses (fan out around the
+        // blocked direction, remembering which side via avoidSign) instead
+        // of just re-aiming and standing frozen until the next random nudge
+        // happens to point elsewhere — a wandering enemy that settles right
+        // next to a wall corner could otherwise sit there for many frames
+        // in a row before a lucky re-aim finally cleared it.
+        const step = findEnemyStep(enemy, enemy.wanderAngle, wanderSpeed);
+        if (step) {
+          enemy.x = step.x;
+          enemy.y = step.y;
+        } else {
+          enemy.wanderAngle += Math.PI + (Math.random() - 0.5) * 1.5;
+        }
       }
     }
   }
