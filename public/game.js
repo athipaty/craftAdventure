@@ -1428,6 +1428,79 @@ function getResourceIconUrl(type) {
   return resourceIconCache[type];
 }
 
+// HUD day/night countdown icon (see updateDayNightHud()) — a plain sun or
+// crescent moon, cached once each since neither ever changes appearance.
+let sunIconCache = null;
+let moonIconCache = null;
+function getDayNightIconUrl(night) {
+  if (night && moonIconCache) return moonIconCache;
+  if (!night && sunIconCache) return sunIconCache;
+
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 24;
+  iconCanvas.height = 24;
+  const savedCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+
+  if (night) {
+    ctx.fillStyle = "#cfd6ff";
+    ctx.beginPath();
+    ctx.arc(12, 12, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(16, 9, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  } else {
+    ctx.fillStyle = "#ffd23f";
+    ctx.beginPath();
+    ctx.arc(12, 12, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffd23f";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const x1 = 12 + Math.cos(angle) * 8;
+      const y1 = 12 + Math.sin(angle) * 8;
+      const x2 = 12 + Math.cos(angle) * 11;
+      const y2 = 12 + Math.sin(angle) * 11;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+
+  ctx = savedCtx;
+  const url = iconCanvas.toDataURL();
+  if (night) moonIconCache = url;
+  else sunIconCache = url;
+  return url;
+}
+
+// Keeps the HUD's day/night countdown (see index.html's #daynight-text)
+// in sync — called every frame from update() but only touches the DOM
+// when the displayed second or phase actually changes, same "don't churn
+// the DOM more than the display needs" idea as everywhere else in the HUD.
+let lastDayNightLabel = null;
+function updateDayNightHud() {
+  const night = isNight();
+  const t = dayNightCycleTime();
+  const remainingMs = night ? DAY_NIGHT_CYCLE_MS - t : DAY_MS - t;
+  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  const mm = Math.floor(remainingSec / 60);
+  const ss = String(remainingSec % 60).padStart(2, "0");
+  const label = `${night ? "Night" : "Day"} ${mm}:${ss}`;
+  if (label === lastDayNightLabel) return;
+  lastDayNightLabel = label;
+
+  document.getElementById("daynight-icon").src = getDayNightIconUrl(night);
+  document.getElementById("daynight-text").textContent = `${mm}:${ss}`;
+  document.getElementById("daynight-indicator").classList.toggle("is-night", night);
+}
+
 function drawAxeIcon(x, y, scale, level = 1) {
   const upgraded = level >= 2;
   const bladeScale = upgraded ? scale * 1.2 : scale;
@@ -2088,6 +2161,7 @@ function toggleBuildPanel() {
 function update() {
   updateCamera();
   updateFog();
+  updateDayNightHud();
 
   const now = Date.now();
   for (const node of resources) {
