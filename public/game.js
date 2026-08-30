@@ -21,7 +21,7 @@ const WORLD_W = 2400;
 const WORLD_H = 1600;
 const ZOOM = 1.8; // >1 shows less world per screen pixel, i.e. "closer in"
 const GATHER_RADIUS = 32;
-const RESPAWN_MS = 15000;
+const RESPAWN_MS = 150000;
 const BASE_SPEED = 1.0; // lower than before ZOOM went 1.5 -> 1.8, since the higher zoom alone made the same speed look faster on screen
 const NODE_START_AMOUNT = 8;
 let digDurationMs = 500; // recomputed per-swing in startDig() based on tool level
@@ -392,7 +392,7 @@ function computeResourceSpawnCounts() {
   return counts;
 }
 
-const RESPAWN_MIN_DISTANCE = 150;
+const RESPAWN_MIN_DISTANCE = 400;
 const MIN_NODE_SPACING = 55; // no two nodes' "own area" may overlap closer than this
 
 // Centers the camera on the player, clamped so it never scrolls past the
