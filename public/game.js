@@ -408,12 +408,60 @@ function nearestBlockingStructure(x, y, radius) {
   return nearest;
 }
 
+// Lightweight steer-around-obstacles for a chasing enemy: try stepping
+// straight toward the player first, then fan outward in both directions
+// (20°, 40°, 60°, ... up to 180°) until an unblocked step is found. Far
+// more capable of actually walking around a wall — including a gap too
+// narrow to fit through (see ENEMY_RADIUS) — than only ever trying the two
+// world axes, which could leave an enemy standing frozen right at a corner
+// or a pinch point between two structures with no open axis-aligned move
+// even though a diagonal one nearby is wide open. Not real pathfinding —
+// an enemy fully boxed in on every side still won't find a route out —
+// but it handles the common case of routing around a wall or narrow gap.
+const ENEMY_AVOID_ANGLE_STEP = Math.PI / 9; // 20°
+function findEnemyStep(enemy, towardAngle, speed) {
+  for (let i = 0; i <= 9; i++) {
+    const offsets = i === 0 ? [0] : [i * ENEMY_AVOID_ANGLE_STEP, -i * ENEMY_AVOID_ANGLE_STEP];
+    for (const offset of offsets) {
+      const angle = towardAngle + offset;
+      const x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(angle) * speed));
+      const y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(angle) * speed));
+      if (!structureBlocksAt(x, y, ENEMY_RADIUS)) return { x, y };
+    }
+  }
+  return null;
+}
+
+// A tree's canopy (drawTree's side canopies reach ±17px) visually dwarfs
+// its actual trunk — same "tall sprite, small footprint" situation as a
+// tower's spire (see STRUCTURE_COLLISION_FOOTPRINT's tower entry), so it
+// gets the same asymmetric treatment: only a small one-block-ish area
+// around the trunk's base blocks, shallow on top, so the player can walk
+// through/behind the overhanging canopy instead of it acting like a solid
+// 17px-radius circle. Scales with the node's own depletion scale like the
+// rest of its collision. Stone/ore keep the plain circle below — their
+// blob art doesn't overhang like this.
+function treeTrunkBlocksAt(node, scale, x, y) {
+  const halfW = 8 * scale;
+  const top = 2 * scale;
+  const bottom = 8 * scale;
+  const closestX = Math.min(Math.max(x, node.x - halfW), node.x + halfW);
+  const closestY = Math.min(Math.max(y, node.y - top), node.y + bottom);
+  const dx = x - closestX;
+  const dy = y - closestY;
+  return dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS;
+}
+
 // excludeStructureId lets a structure being moved skip colliding with its
 // own (pre-move) position while its ghost is placed elsewhere.
 function positionBlocked(x, y, excludeStructureId) {
   for (const node of resources) {
     if (node.amount <= 0) continue;
     const scale = 0.55 + 0.45 * (node.amount / NODE_START_AMOUNT);
+    if (node.type === "wood") {
+      if (treeTrunkBlocksAt(node, scale, x, y)) return true;
+      continue;
+    }
     const minDist = PLAYER_RADIUS + (RESOURCE_COLLISION_RADIUS[node.type] || 12) * scale;
     if (Math.hypot(node.x - x, node.y - y) < minDist) return true;
   }
@@ -1182,35 +1230,30 @@ function updateCombat(now) {
     } else if (isNight() || distToPlayer <= ENEMY_AGGRO_RANGE) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const targetX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + (dx / len) * ENEMY_APPROACH_SPEED * frameScale));
-      const targetY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + (dy / len) * ENEMY_APPROACH_SPEED * frameScale));
+      const towardAngle = Math.atan2(dy, dx);
+      const speed = ENEMY_APPROACH_SPEED * frameScale;
       // A built wall/tower blocks a chasing enemy the same way it blocks
       // the player (structureBlocksAt(), ENEMY_RADIUS) — resources don't,
-      // enemies walk straight through/over those. Slide along whichever
-      // single axis is still open, same fallback the player's own
-      // movement uses, rather than freezing dead against the wall.
-      let moved = true;
-      if (!structureBlocksAt(targetX, targetY, ENEMY_RADIUS)) {
-        enemy.x = targetX;
-        enemy.y = targetY;
-      } else if (!structureBlocksAt(targetX, enemy.y, ENEMY_RADIUS)) {
-        enemy.x = targetX;
-      } else if (!structureBlocksAt(enemy.x, targetY, ENEMY_RADIUS)) {
-        enemy.y = targetY;
-      } else {
-        moved = false;
-      }
-
-      // Fully unable to advance (not even a slide) toward the player for a
-      // sustained stretch — no path around, so start tearing down whatever
-      // structure is actually in the way instead of pacing at it forever.
-      if (moved) {
+      // enemies walk straight through/over those. findEnemyStep() fans out
+      // from the direct line to the player until it finds an open step, so
+      // an enemy actually walks around a wall (or a gap too narrow to fit
+      // through) instead of freezing the instant the direct path — or even
+      // both world axes — happen to be blocked.
+      const step = findEnemyStep(enemy, towardAngle, speed);
+      if (step) {
+        enemy.x = step.x;
+        enemy.y = step.y;
         enemy.stuckSince = null;
       } else {
+        // Every direction around it is blocked — well and truly boxed in,
+        // not just a wall in the way. Sustained for a while means no route
+        // is coming; start tearing down whatever's actually closest along
+        // the direct line to the player instead of pacing forever.
         if (enemy.stuckSince === null) enemy.stuckSince = now;
         if (now - enemy.stuckSince >= ENEMY_STUCK_ATTACK_DELAY_MS) {
-          const blocker = nearestBlockingStructure(targetX, targetY, ENEMY_RADIUS);
+          const aheadX = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(towardAngle) * speed));
+          const aheadY = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(towardAngle) * speed));
+          const blocker = nearestBlockingStructure(aheadX, aheadY, ENEMY_RADIUS);
           if (blocker && now - enemy.lastStructureAttackAt >= ENEMY_ATTACK_COOLDOWN_MS) {
             enemy.lastStructureAttackAt = now;
             damageStructure(blocker, ENEMY_STRUCTURE_DAMAGE);
