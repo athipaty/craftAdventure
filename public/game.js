@@ -611,6 +611,30 @@ function spawnResources() {
   }
 }
 
+// The seeded initial layout above reproduces the same starting positions
+// every login, but not what happened to it mid-session — a depleted node,
+// or one that respawned to a new (truly random, see pickRespawnPosition)
+// spot. The server keeps a full snapshot of that (player.resources) on
+// the same autosave as everything else, so restore straight from it for
+// a returning player instead of reseeding a pristine map. A brand-new
+// player (or right after a Reset, which clears it server-side) has
+// nothing to restore, so falls back to spawnResources() as before.
+function restoreResources(saved) {
+  if (!Array.isArray(saved) || saved.length === 0) {
+    spawnResources();
+    return;
+  }
+  resources = saved
+    .filter((n) => n && typeof n.type === "string" && typeof n.x === "number" && typeof n.y === "number")
+    .map((n) => ({
+      type: n.type,
+      x: n.x,
+      y: n.y,
+      amount: typeof n.amount === "number" ? n.amount : NODE_START_AMOUNT,
+      respawnAt: typeof n.respawnAt === "number" ? n.respawnAt : 0,
+    }));
+}
+
 // Just needs to stay clear of the player's own starting spot — unlike
 // resources, enemies don't need strict spacing from each other or from
 // structures; a little visual overlap between wandering monsters is fine.
@@ -691,6 +715,14 @@ async function savePlayer() {
         y: player.y,
         inventory: player.inventory,
         exploredCells: packExploredCells(),
+        health: playerHealth,
+        resources: resources.map((n) => ({
+          type: n.type,
+          x: n.x,
+          y: n.y,
+          amount: n.amount,
+          respawnAt: n.respawnAt,
+        })),
       }),
     });
     statusEl.textContent = "Saved " + new Date().toLocaleTimeString();
@@ -3325,9 +3357,10 @@ function startGame() {
     document.getElementById("fullscreen-btn").classList.add("hidden");
   }
 
-  spawnResources();
+  restoreResources(player.resources);
   spawnEnemies();
   unpackExploredCells(player.exploredCells);
+  playerHealth = typeof player.health === "number" ? player.health : PLAYER_MAX_HEALTH;
   renderHud();
 
   window.addEventListener("keydown", (e) => {
