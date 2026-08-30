@@ -2253,9 +2253,20 @@ function handleDigging(now) {
   if (!node || node.amount <= 0) return;
   const cap = capacityFor(player.upgrades.bagLevel);
   const remainingCapacity = cap - totalCarried(player.inventory);
-  if (remainingCapacity <= 0) return;
+  const potential = Math.min(1 + toolLevelFor(node), node.amount);
 
-  const gained = Math.min(1 + toolLevelFor(node), node.amount, remainingCapacity);
+  if (remainingCapacity <= 0) {
+    // Bag's completely full — the swing still connects and uses up the
+    // node (no free pass on depletion just because there's nowhere to put
+    // it), it just doesn't add anything to the inventory.
+    node.amount -= potential;
+    if (node.amount <= 0) node.respawnAt = Date.now() + RESPAWN_MS;
+    spawnFloatingText(node.x, node.y - 20, "Bag full", "#ff8a8a");
+    renderHud();
+    return;
+  }
+
+  const gained = Math.min(potential, remainingCapacity);
   player.inventory[node.type] += gained;
   node.amount -= gained;
   if (node.amount <= 0) node.respawnAt = Date.now() + RESPAWN_MS;
