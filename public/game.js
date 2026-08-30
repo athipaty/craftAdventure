@@ -409,24 +409,51 @@ function nearestBlockingStructure(x, y, radius) {
 }
 
 // Lightweight steer-around-obstacles for a chasing enemy: try stepping
-// straight toward the player first, then fan outward in both directions
-// (20°, 40°, 60°, ... up to 180°) until an unblocked step is found. Far
-// more capable of actually walking around a wall — including a gap too
-// narrow to fit through (see ENEMY_RADIUS) — than only ever trying the two
-// world axes, which could leave an enemy standing frozen right at a corner
-// or a pinch point between two structures with no open axis-aligned move
-// even though a diagonal one nearby is wide open. Not real pathfinding —
-// an enemy fully boxed in on every side still won't find a route out —
-// but it handles the common case of routing around a wall or narrow gap.
+// straight toward the player first, then fan outward (20°, 40°, ... up to
+// 180°) until an unblocked step is found. Far more capable of actually
+// walking around a wall — including a gap too narrow to fit through (see
+// ENEMY_RADIUS) — than only ever trying the two world axes, which could
+// leave an enemy standing frozen right at a corner or a pinch point
+// between two structures with no open axis-aligned move even though a
+// diagonal one nearby is wide open.
+//
+// enemy.avoidSign remembers which way (left/right of the direct line) it
+// last had to detour, and that side is tried first on every subsequent
+// blocked frame. Without it, towardAngle shifts a little every frame as
+// the enemy (and player) move, so a spot equidistant between two open
+// detour directions could flip which one comes up "closest to direct"
+// from one frame to the next — the enemy would visibly vibrate against
+// the wall instead of committing to going around it. Cleared the moment
+// the direct line opens back up.
+//
+// Not real pathfinding — an enemy fully boxed in on every side still
+// won't find a route out — but it handles the common case of routing
+// around a wall or a narrow gap.
 const ENEMY_AVOID_ANGLE_STEP = Math.PI / 9; // 20°
+function tryEnemyStep(enemy, angle, speed) {
+  const x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(angle) * speed));
+  const y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(angle) * speed));
+  return structureBlocksAt(x, y, ENEMY_RADIUS) ? null : { x, y };
+}
+
 function findEnemyStep(enemy, towardAngle, speed) {
-  for (let i = 0; i <= 9; i++) {
-    const offsets = i === 0 ? [0] : [i * ENEMY_AVOID_ANGLE_STEP, -i * ENEMY_AVOID_ANGLE_STEP];
-    for (const offset of offsets) {
-      const angle = towardAngle + offset;
-      const x = Math.min(WORLD_W - 14, Math.max(14, enemy.x + Math.cos(angle) * speed));
-      const y = Math.min(WORLD_H - 14, Math.max(14, enemy.y + Math.sin(angle) * speed));
-      if (!structureBlocksAt(x, y, ENEMY_RADIUS)) return { x, y };
+  const direct = tryEnemyStep(enemy, towardAngle, speed);
+  if (direct) {
+    enemy.avoidSign = 0;
+    return direct;
+  }
+
+  const preferredSign = enemy.avoidSign || 1;
+  for (let i = 1; i <= 9; i++) {
+    const primary = tryEnemyStep(enemy, towardAngle + i * ENEMY_AVOID_ANGLE_STEP * preferredSign, speed);
+    if (primary) {
+      enemy.avoidSign = preferredSign;
+      return primary;
+    }
+    const secondary = tryEnemyStep(enemy, towardAngle - i * ENEMY_AVOID_ANGLE_STEP * preferredSign, speed);
+    if (secondary) {
+      enemy.avoidSign = -preferredSign;
+      return secondary;
     }
   }
   return null;
@@ -783,6 +810,7 @@ function spawnEnemies() {
       respawnAt: 0,
       stuckSince: null, // set once fully blocked chasing the player — see updateCombat()
       lastStructureAttackAt: 0,
+      avoidSign: 0, // which side it's currently detouring around an obstacle — see findEnemyStep()
     });
   }
 }
@@ -1282,6 +1310,7 @@ function updateCombat(now) {
       enemy.y = y;
       enemy.health = enemy.maxHealth;
       enemy.stuckSince = null;
+      enemy.avoidSign = 0;
     }
   }
 
