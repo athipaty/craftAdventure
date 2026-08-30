@@ -116,12 +116,16 @@ const TOWER_STATS = {
 const TOWER_BEAM_DURATION_MS = 150;
 const ENEMY_COUNT = 8;
 const ENEMY_MAX_HEALTH = 14;
-// Used against STRUCTURE_COLLISION_FOOTPRINT (see structureBlocksAt())
-// so a built wall/tower actually stops an enemy instead of it walking
+// Used against STRUCTURE_COLLISION_FOOTPRINT (see structureBlocksAt()) so
+// a built wall/tower actually stops an enemy instead of it walking
 // straight through — enemies still walk over/through resources freely,
-// only structures block them, same as the roughly-body-sized radius
-// (~8px) drawEnemy() draws them at.
-const ENEMY_RADIUS = 7;
+// only structures block them. Set well above their ~8px drawn body size
+// on purpose: two structures with only a single 16px grid cell of open
+// ground between them (STRUCTURE_COLLISION_FOOTPRINT's halfW is 8, one
+// block, per structure) need combined clearance under 2*ENEMY_RADIUS to
+// stay impassable, forcing enemies to path around rather than squeeze
+// through — a real 2-cell gap (32px) still comfortably fits them.
+const ENEMY_RADIUS = 10;
 const ENEMY_WANDER_SPEED = 0.2;
 // Enemies notice the player within this range and approach instead of
 // wandering; once within ENEMY_STOP_DISTANCE they stop and attack instead
@@ -132,6 +136,36 @@ const ENEMY_STOP_DISTANCE = 20;
 const ENEMY_ATTACK_DAMAGE = 2;
 const ENEMY_ATTACK_COOLDOWN_MS = 1000;
 const ENEMY_RESPAWN_MS = 20000;
+
+// Day/night cycle — a simple local clock (not persisted, not synced across
+// logins/players) derived straight from Date.now(), so it's always
+// consistent within a single running session without needing a server-side
+// clock. Daytime is exactly today's behavior (enemies only aggro within
+// ENEMY_AGGRO_RANGE, see updateCombat()); at night every enemy on the map
+// beelines for the player regardless of distance. isNight() is a hard
+// cutoff for that — no "half aggroed" state — while nightVisualAmount()
+// (used for the screen tint in draw()) ramps smoothly across
+// NIGHT_TRANSITION_MS at each boundary so the switch doesn't just snap.
+const DAY_MS = 120000; // 2 minutes
+const NIGHT_MS = 60000; // 1 minute
+const DAY_NIGHT_CYCLE_MS = DAY_MS + NIGHT_MS;
+const NIGHT_TRANSITION_MS = 4000;
+
+function dayNightCycleTime() {
+  return Date.now() % DAY_NIGHT_CYCLE_MS;
+}
+
+function isNight() {
+  return dayNightCycleTime() >= DAY_MS;
+}
+
+function nightVisualAmount() {
+  const t = dayNightCycleTime();
+  if (t < DAY_MS - NIGHT_TRANSITION_MS) return 0;
+  if (t < DAY_MS) return (t - (DAY_MS - NIGHT_TRANSITION_MS)) / NIGHT_TRANSITION_MS;
+  if (t < DAY_NIGHT_CYCLE_MS - NIGHT_TRANSITION_MS) return 1;
+  return 1 - (t - (DAY_NIGHT_CYCLE_MS - NIGHT_TRANSITION_MS)) / NIGHT_TRANSITION_MS;
+}
 
 const PLAYER_MAX_HEALTH = 30;
 // Brief invulnerability after any hit (including a fresh respawn) — without
@@ -1065,7 +1099,10 @@ function updateCombat(now) {
         enemy.lastAttackAt = now;
         damagePlayer(ENEMY_ATTACK_DAMAGE);
       }
-    } else if (distToPlayer <= ENEMY_AGGRO_RANGE) {
+      // At night every enemy on the map beelines for the player regardless
+      // of distance instead of only the ones within ENEMY_AGGRO_RANGE —
+      // see isNight().
+    } else if (isNight() || distToPlayer <= ENEMY_AGGRO_RANGE) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const len = Math.hypot(dx, dy) || 1;
@@ -2805,6 +2842,15 @@ function draw() {
   drawFog();
 
   ctx.restore();
+
+  // Screen-space (not camera-transformed, so it uniformly tints the whole
+  // view regardless of zoom/pan), drawn before the minimap so that stays
+  // crisp rather than darkening along with the game world.
+  const night = nightVisualAmount();
+  if (night > 0) {
+    ctx.fillStyle = `rgba(10, 15, 45, ${night * 0.55})`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
 
   drawMinimap();
 }
