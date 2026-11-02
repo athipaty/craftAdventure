@@ -417,7 +417,12 @@ function drawGearCell(ctx, cx, cy, size, cell, scale, highlighted) {
 }
 
 function drawBoard() {
-  if (!boardCtx || boardCssW <= 0) return;
+  // grid isn't populated until startNewRun()/createBoard() runs (on Play).
+  // A stray resize event before that — the address bar collapsing, a
+  // rotation, anything — can still set up boardCtx/boardCssW via
+  // layoutBoardCanvas() while the title screen is still showing, so guard
+  // on the grid itself too rather than just the canvas being ready.
+  if (!boardCtx || boardCssW <= 0 || grid.length < ROWS) return;
   const ctx = boardCtx;
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#3a2414");
