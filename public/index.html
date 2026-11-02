@@ -12,45 +12,42 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
-  <div id="rotate-overlay">
-    <div class="rotate-icon">📱</div>
-    <p>Rotate your phone to portrait to play</p>
-  </div>
-
-  <div id="title-screen">
-    <h1>Gear <span class="accent">Fight!</span></h1>
-    <p>Tap a gear to tick it forward — same-number gears mesh together and tick too. Fire gears to grow your army and push the enemy back before they push you.</p>
-    <button id="play-btn">Play game</button>
-    <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
-  </div>
-
-  <div id="game-screen" class="hidden">
-    <div id="hud">
-      <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
-      <span id="score-indicator">Army <b id="army-score">0</b></span>
-      <button id="restart-btn" title="Restart from wave 1">Restart</button>
+  <div id="app-frame">
+    <div id="title-screen">
+      <h1>Gear <span class="accent">Fight!</span></h1>
+      <p>Tap a gear to tick it forward — same-number gears mesh together and tick too. Fire gears to grow your army and push the enemy back before they push you.</p>
+      <button id="play-btn">Play game</button>
+      <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
 
-    <div id="battle-lane">
-      <canvas id="battle-canvas"></canvas>
+    <div id="game-screen" class="hidden">
+      <div id="hud">
+        <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
+        <span id="score-indicator">Army <b id="army-score">0</b></span>
+        <button id="restart-btn" title="Restart from wave 1">Restart</button>
+      </div>
+
+      <div id="battle-lane">
+        <canvas id="battle-canvas"></canvas>
+      </div>
+
+      <div id="board-wrap">
+        <canvas id="board-canvas"></canvas>
+        <div id="combo-toast" class="hidden"></div>
+      </div>
+
+      <p class="hint">Tap a gear to tick it &nbsp;|&nbsp; Same-number gears mesh and tick together &nbsp;|&nbsp; A full ring fires the gear</p>
     </div>
 
-    <div id="board-wrap">
-      <canvas id="board-canvas"></canvas>
-      <div id="combo-toast" class="hidden"></div>
+    <div id="wave-banner" class="hidden">
+      <span id="wave-banner-text"></span>
     </div>
 
-    <p class="hint">Tap a gear to tick it &nbsp;|&nbsp; Same-number gears mesh and tick together &nbsp;|&nbsp; A full ring fires the gear</p>
-  </div>
-
-  <div id="wave-banner" class="hidden">
-    <span id="wave-banner-text"></span>
-  </div>
-
-  <div id="gameover-screen" class="hidden">
-    <h2>Overrun!</h2>
-    <p>Your army reached wave <b id="final-wave">1</b>.</p>
-    <button id="retry-btn">Try again</button>
+    <div id="gameover-screen" class="hidden">
+      <h2>Overrun!</h2>
+      <p>Your army reached wave <b id="final-wave">1</b>.</p>
+      <button id="retry-btn">Try again</button>
+    </div>
   </div>
 
   <script src="game.js"></script>
