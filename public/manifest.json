@@ -1,11 +1,11 @@
 {
-  "name": "Craft Adventure",
-  "short_name": "Craft Adventure",
+  "name": "Gear Fight!",
+  "short_name": "Gear Fight",
   "start_url": "./index.html",
   "display": "fullscreen",
-  "orientation": "landscape",
-  "background_color": "#1b1f2a",
-  "theme_color": "#1b1f2a",
+  "orientation": "portrait",
+  "background_color": "#2b1a0f",
+  "theme_color": "#2b1a0f",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
