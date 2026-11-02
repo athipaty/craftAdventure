@@ -3,149 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Craft Adventure</title>
-  <!-- The backend lives on a different origin (Render) than this static
-       site, so the login/build/craft/... fetches each pay a fresh DNS +
-       TCP + TLS setup cost on top of the request itself. Hinting the
-       browser to open that connection now, while the page is still
-       loading, means it's already warm by the time Play is clicked. -->
-  <link rel="preconnect" href="https://center-kitchen-backend.onrender.com" crossorigin />
-  <link rel="dns-prefetch" href="https://center-kitchen-backend.onrender.com" />
+  <title>Gear Fight!</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.json" />
-  <!-- iOS ignores manifest display mode — these are what actually make
-       "Add to Home Screen" open without Safari's address bar there. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#1b1f2a" />
+  <meta name="theme-color" content="#2b1a0f" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <!-- Same reasoning as the script tags being at the end of body — the
-       parser won't discover recipes.js/game.js until it reaches them, so
-       preloading here lets the browser start fetching both in parallel
-       with everything above, instead of only once parsing gets there. -->
-  <link rel="preload" href="recipes.js" as="script" />
-  <link rel="preload" href="game.js" as="script" />
 </head>
 <body>
-  <div id="login-screen">
-    <h1>Craft Adventure</h1>
-    <p>Enter a name to start or continue your save</p>
-    <input id="name-input" type="text" maxlength="20" placeholder="Your name" />
-    <button id="start-btn">Play</button>
-    <p id="login-error" class="error"></p>
+  <div id="title-screen">
+    <h1>Gear <span class="accent">Fight!</span></h1>
+    <p>Drag across matching gears to clear them and grow your army — push the enemy back before they push you.</p>
+    <button id="play-btn">Play game</button>
+    <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
   </div>
 
   <div id="game-screen" class="hidden">
-    <div id="rotate-overlay">
-      <div class="rotate-icon">📱</div>
-      <p>Rotate your device to landscape to play</p>
-    </div>
-
     <div id="hud">
-      <span id="health-bar" title="Health">
-        <span id="health-fill"></span>
-        <b id="health-text">30/30</b>
-      </span>
-      <span id="daynight-indicator" title="Time until day/night switches">
-        <img class="hud-icon" id="daynight-icon" alt="" />
-        <b id="daynight-text"></b>
-      </span>
-      <span><img class="hud-icon" id="wood-icon" alt="wood" /> <b id="wood-count">0</b></span>
-      <span><img class="hud-icon" id="stone-icon" alt="stone" /> <b id="stone-count">0</b></span>
-      <span><img class="hud-icon" id="ore-icon" alt="ore" /> <b id="ore-count">0</b></span>
-      <span id="capacity"></span>
-      <span id="save-status"></span>
-      <button id="reset-btn" title="Testing only — wipes this save back to defaults">Reset</button>
+      <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
+      <span id="score-indicator">Army <b id="army-score">0</b></span>
+      <button id="restart-btn" title="Restart from wave 1">Restart</button>
     </div>
 
-    <div id="canvas-wrap">
-      <canvas id="game-canvas" width="800" height="600"></canvas>
-      <div id="damage-flash"></div>
-      <div id="game-alert"></div>
-      <div id="dig-prompt" class="hidden">
-        <span id="dig-prompt-text"></span>
-        <button id="cancel-place-btn" class="hidden panel-close" aria-label="Cancel">×</button>
-      </div>
-
-      <!-- Positioned absolute against canvas-wrap (not the HUD row) so they
-           float over the game area itself on every screen size. -->
-      <button id="craft-btn">
-        <span class="btn-label">Craft</span>
-        <img id="craft-btn-icon" class="btn-icon" alt="Craft" />
-        <span id="craft-btn-badge" class="btn-badge hidden"></span>
-      </button>
-      <button id="fullscreen-btn" title="Toggle fullscreen">
-        <span class="btn-label">Fullscreen</span>
-        <img id="fullscreen-btn-icon" class="btn-icon" alt="Fullscreen" />
-      </button>
-      <button id="refresh-btn" title="Reload the page">
-        <span class="btn-label">Refresh</span>
-        <img id="refresh-btn-icon" class="btn-icon" alt="Refresh" />
-      </button>
-      <button id="build-btn">
-        <span class="btn-label">Build</span>
-        <img id="build-btn-icon" class="btn-icon" alt="Build" />
-      </button>
-
-      <div id="touch-controls">
-        <div id="joystick-zone"></div>
-        <div id="joystick-base">
-          <div id="joystick-knob"></div>
-        </div>
-        <div id="structure-actions">
-          <button id="demolish-btn" class="hidden branch-btn" aria-label="Demolish">
-            <img class="branch-btn-icon" id="demolish-btn-icon" alt="" />
-            <span class="branch-btn-tooltip" aria-hidden="true">Demolish</span>
-          </button>
-          <button id="upgrade-btn" class="hidden branch-btn" aria-label="Upgrade">
-            <img class="branch-btn-icon" id="upgrade-btn-icon" alt="" />
-            <span class="branch-btn-tooltip" aria-hidden="true">Upgrade</span>
-          </button>
-          <button id="move-btn" class="hidden branch-btn" aria-label="Move">
-            <img class="branch-btn-icon" id="move-btn-icon" alt="" />
-            <span class="branch-btn-tooltip" aria-hidden="true">Move</span>
-          </button>
-        </div>
-        <button id="action-btn" class="hidden">Hit</button>
-      </div>
+    <div id="battle-lane">
+      <canvas id="battle-canvas"></canvas>
     </div>
 
-    <p class="hint">Move: WASD / Arrow keys &nbsp;|&nbsp; Gather: walk up to a resource, press E &nbsp;|&nbsp; Craft: press C &nbsp;|&nbsp; Build: press B &nbsp;|&nbsp; Near a structure: E demolish, M move, U upgrade</p>
-
-    <div id="panel-backdrop" class="hidden"></div>
-
-    <div id="craft-panel" class="hidden">
-      <div class="panel-header">
-        <h2>Crafting</h2>
-        <button id="close-craft" class="panel-close" aria-label="Close">×</button>
-      </div>
-      <div id="craft-list"></div>
-      <p class="hint">↑↓ to select &nbsp;|&nbsp; Enter to craft &nbsp;|&nbsp; Esc/C to close</p>
+    <div id="board-wrap">
+      <canvas id="board-canvas"></canvas>
+      <div id="combo-toast" class="hidden"></div>
     </div>
 
-    <div id="build-panel" class="hidden">
-      <div class="panel-header">
-        <h2>Build</h2>
-        <button id="close-build" class="panel-close" aria-label="Close">×</button>
-      </div>
-      <div id="build-list"></div>
-      <p class="hint">Places in front of you, facing the way you're walking</p>
-    </div>
-
-    <div id="demolish-confirm" class="hidden">
-      <div class="panel-header">
-        <h2>Demolish?</h2>
-      </div>
-      <p id="demolish-confirm-text"></p>
-      <div id="demolish-confirm-refund" class="cost-row"></div>
-      <div class="dialog-actions">
-        <button id="demolish-cancel-btn">Cancel</button>
-        <button id="demolish-confirm-btn" class="danger">Demolish</button>
-      </div>
-    </div>
+    <p class="hint">Drag through adjacent gears sharing the same number &nbsp;|&nbsp; Gold gears multiply the army you gain</p>
   </div>
 
-  <script src="recipes.js"></script>
+  <div id="wave-banner" class="hidden">
+    <span id="wave-banner-text"></span>
+  </div>
+
+  <div id="gameover-screen" class="hidden">
+    <h2>Overrun!</h2>
+    <p>Your army reached wave <b id="final-wave">1</b>.</p>
+    <button id="retry-btn">Try again</button>
+  </div>
+
   <script src="game.js"></script>
 </body>
 </html>
