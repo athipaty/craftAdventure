@@ -1,10 +1,14 @@
 "use strict";
 
 // =====================================================================
-// Gear Fight! — drag through adjacent same-number gears to clear them;
-// each clear feeds a tug-of-war army battle against a steadily-growing
-// enemy. Two independent systems tied together by one number:
-//   - the board (grid[][], chain[]) is a match-style puzzle
+// Gear Fight! — tap a gear to tick it forward one tooth; any same-number
+// gear it touches meshes with it and ticks too (alternating spin
+// direction with each hop through the connected cluster, like a real
+// gear train), so one tap can chain-react through a whole cluster at
+// once. A gear fires once it's been ticked enough times, paying out
+// into a tug-of-war army battle against a steadily-growing enemy.
+// Two independent systems tied together by one number:
+//   - the board (grid[][]) is the gear-mesh puzzle
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
@@ -16,9 +20,12 @@ const ROWS = 7;
 const BASE_POWER = 6;
 const WIN_RATIO = 0.82; // playerPower share of the total needed to take the wave
 const LOSE_RATIO = 0.12; // playerPower share at/below which the enemy overruns you
-const POP_DURATION = 0.22; // seconds a cleared gear takes to shrink away
+const POP_DURATION = 0.22; // seconds a firing gear takes to shrink away before respawning
 const JACKPOT_CHANCE = 0.025; // odds a freshly spawned gear is a star "jackpot" tile
 const MULT_CHANCE = 0.06; // odds a freshly spawned (non-jackpot) gear also carries a multiplier
+const JACKPOT_TICKS = 6; // ticks a jackpot gear needs to fire
+const TOOTH_COUNT = 10; // teeth drawn per gear — also one tick's worth of visual spin
+const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
 
 const VALUE_PALETTE = {
   1: { fill: "#5fb3e0", stroke: "#2f6f94", hub: "#89cdf0" },
@@ -34,9 +41,16 @@ function cellColor(cell) {
   return cell.value === "J" ? JACKPOT_PALETTE : VALUE_PALETTE[cell.value] || VALUE_PALETTE[1];
 }
 
+// How many ticks a gear needs to fire. Jackpots use a fixed count since
+// their "value" field is the non-numeric mesh key "J", not a tick count.
+function ticksRequired(cell) {
+  return cell.value === "J" ? JACKPOT_TICKS : cell.value;
+}
+
 // How many distinct gear values are in play — starts easy (lots of
-// matches) and widens as the wave climbs (harder to find a match, but
-// chains are worth more), capped at the size of VALUE_PALETTE.
+// mesh clusters) and widens as the wave climbs (smaller clusters, but
+// each gear takes more ticks to fire so it's worth more), capped at the
+// size of VALUE_PALETTE.
 function valuePoolSize(wave) {
   return Math.min(6, 3 + Math.floor((wave - 1) / 2));
 }
@@ -44,7 +58,7 @@ function valuePoolSize(wave) {
 // The enemy's own army grows on its own the whole time you're playing —
 // this is the "clock" that makes a wave eventually come to a head one
 // way or the other even if you stall. Scales up per wave so later waves
-// genuinely demand bigger/faster chains, not just more of the same.
+// genuinely demand faster/bigger chain reactions, not just more taps.
 function enemyGrowthPerSec(wave) {
   return 0.45 * Math.pow(1.13, wave - 1);
 }
@@ -61,16 +75,13 @@ function randomCellValue(wave) {
   return { value, mult };
 }
 
-// Reward for clearing a chain of `items` (all sharing the same value).
-// Longer chains pay off super-linearly so going out of your way to
-// extend one is worth it; jackpot ("J") chains pay a flat multiple on
-// top since they're rare; any multiplier badges in the chain stack.
-function computeReward(items) {
-  const n = items.length;
-  let base = Math.round(Math.pow(n, 1.3));
-  if (items[0].value === "J") base *= 4;
-  const multProduct = items.reduce((p, c) => p * (c.mult || 1), 1);
-  return Math.max(1, Math.round(base * multProduct));
+// Reward for one gear firing. Jackpots pay a flat multiple on top since
+// they're rare and slower to spin up; any multiplier badge stacks.
+function singleReward(cell) {
+  const req = ticksRequired(cell);
+  let base = Math.round(req * 1.3);
+  if (cell.value === "J") base *= 3;
+  return Math.max(1, Math.round(base * (cell.mult || 1)));
 }
 
 // =====================================================================
@@ -81,12 +92,11 @@ let boardCanvas, boardCtx, battleCanvas, battleCtx;
 let boardCssW = 0, boardCssH = 0, cellSize = 0;
 let battleCssW = 0, battleCssH = 0;
 
-let grid = []; // grid[row][col] = { value, mult, animRow, popping, popT } | null
-let chain = []; // [{row, col}, ...] currently being dragged out
-let dragging = false;
-let boardBusy = false; // true while a clear/fall animation is resolving — input ignored
-let pendingResolve = false; // waiting for all popping cells to finish before gravity runs
-let fallingActive = false;
+// grid[row][col] = { value, mult, ticks, ticksAnim, spinTarget, spinAnim,
+//                     flash, popping, popT } | null
+let grid = [];
+let boardBusy = false; // true while a fire/respawn animation is resolving — input ignored
+let pendingFireResolve = null; // [{row,col}, ...] cells popping after the current tap's cluster fired
 
 let gameState = "title"; // "title" | "playing" | "gameover"
 let wave = 1;
@@ -95,91 +105,96 @@ let enemyPower = BASE_POWER;
 let totalArmyScore = 0;
 let bestWave = Number(localStorage.getItem("gearfight_best_wave") || 1);
 
+function freshCell(wave) {
+  const cell = randomCellValue(wave);
+  cell.ticks = 0;
+  cell.ticksAnim = 0;
+  cell.spinTarget = 0;
+  cell.spinAnim = 0;
+  cell.flash = 0;
+  cell.popping = false;
+  cell.popT = 0;
+  return cell;
+}
+
 // =====================================================================
 // Board logic
 // =====================================================================
 
 function createBoard() {
   grid = [];
-  for (let row = 0; row < ROWS; row++) grid.push(new Array(COLS).fill(null));
   for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = randomCellValue(wave);
-      cell.animRow = row;
-      grid[row][col] = cell;
-    }
-  }
-  ensureSolvable();
-}
-
-function hasAnyMove() {
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = grid[row][col];
-      if (!cell) continue;
-      if (col + 1 < COLS && grid[row][col + 1] && grid[row][col + 1].value === cell.value) return true;
-      if (row + 1 < ROWS && grid[row + 1][col] && grid[row + 1][col].value === cell.value) return true;
-    }
-  }
-  return false;
-}
-
-function ensureSolvable() {
-  let attempts = 0;
-  while (!hasAnyMove() && attempts < 20) {
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        const cell = randomCellValue(wave);
-        cell.animRow = row;
-        grid[row][col] = cell;
-      }
-    }
-    attempts++;
+    const r = [];
+    for (let col = 0; col < COLS; col++) r.push(freshCell(wave));
+    grid.push(r);
   }
 }
 
-function isAdjacent(a, b) {
-  return (a.row === b.row && Math.abs(a.col - b.col) === 1) || (a.col === b.col && Math.abs(a.row - b.row) === 1);
+// Tapping (row, col) ticks it, and that tick meshes through every
+// orthogonally-connected gear sharing the same value — the whole
+// cluster moves together, alternating spin direction with each hop
+// away from the tapped gear, same as a real gear train.
+function tickCluster(row, col) {
+  const origin = grid[row][col];
+  if (!origin) return;
+  const key = origin.value;
+  const visited = new Map();
+  const queue = [{ row, col, depth: 0 }];
+  visited.set(`${row},${col}`, 0);
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const cell = grid[cur.row][cur.col];
+    const sign = cur.depth % 2 === 0 ? 1 : -1;
+    cell.ticks += 1;
+    cell.spinTarget += sign;
+    cell.flash = 1;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dr, dc] of dirs) {
+      const nr = cur.row + dr;
+      const nc = cur.col + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+      const k = `${nr},${nc}`;
+      if (visited.has(k)) continue;
+      const neighbor = grid[nr][nc];
+      if (!neighbor || neighbor.value !== key) continue;
+      visited.set(k, cur.depth + 1);
+      queue.push({ row: nr, col: nc, depth: cur.depth + 1 });
+    }
+  }
+  playTickSound(queue.length);
+  resolveFires(queue);
 }
 
-function commitChain(cells) {
-  const items = cells.map((p) => grid[p.row][p.col]);
-  const reward = computeReward(items);
-  playerPower += reward;
-  totalArmyScore += reward;
-  showToast(`+${reward}${items.length >= 5 ? " COMBO!" : ""}`);
-  playMatchSound(items.length);
-  for (const p of cells) {
-    grid[p.row][p.col].popping = true;
-    grid[p.row][p.col].popT = 0;
+// Only cells actually ticked this tap could have just reached their
+// threshold, so we only need to check those rather than the whole board.
+function resolveFires(tickedCells) {
+  const firing = [];
+  for (const p of tickedCells) {
+    const cell = grid[p.row][p.col];
+    if (cell.ticks >= ticksRequired(cell)) firing.push({ row: p.row, col: p.col, cell });
+  }
+  if (firing.length === 0) return;
+
+  let total = 0;
+  for (const f of firing) total += singleReward(f.cell);
+  if (firing.length >= 2) total = Math.round(total * (1 + 0.2 * (firing.length - 1)));
+
+  playerPower += total;
+  totalArmyScore += total;
+  showToast(`+${total}${firing.length >= 2 ? ` COMBO x${firing.length}!` : ""}`);
+  playMatchSound(firing.length);
+
+  for (const f of firing) {
+    f.cell.popping = true;
+    f.cell.popT = 0;
   }
   boardBusy = true;
-  pendingResolve = true;
-}
-
-function resolveGravity() {
-  for (let col = 0; col < COLS; col++) {
-    const existing = [];
-    for (let row = ROWS - 1; row >= 0; row--) {
-      if (grid[row][col]) existing.push(grid[row][col]);
-    }
-    let newAbove = 0;
-    for (let row = ROWS - 1, i = 0; row >= 0; row--, i++) {
-      if (i < existing.length) {
-        grid[row][col] = existing[i];
-      } else {
-        newAbove += 1;
-        const cell = randomCellValue(wave);
-        cell.animRow = -newAbove;
-        grid[row][col] = cell;
-      }
-    }
-  }
-  fallingActive = true;
+  pendingFireResolve = firing.map((f) => ({ row: f.row, col: f.col }));
 }
 
 // =====================================================================
-// Input — drag through adjacent same-value gears
+// Input — tap a gear to tick its mesh cluster
 // =====================================================================
 
 function cellAt(clientX, clientY) {
@@ -198,56 +213,11 @@ function onPointerDown(e) {
   const pos = cellAt(e.clientX, e.clientY);
   if (!pos || !grid[pos.row][pos.col]) return;
   e.preventDefault();
-  dragging = true;
-  chain = [pos];
-  if (boardCanvas.setPointerCapture) {
-    try { boardCanvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-  }
-}
-
-function onPointerMove(e) {
-  if (!dragging) return;
-  const pos = cellAt(e.clientX, e.clientY);
-  if (!pos) return;
-  const last = chain[chain.length - 1];
-  if (pos.row === last.row && pos.col === last.col) return;
-
-  // Dragging back onto the previous gear in the chain un-selects the tip —
-  // lets you correct course without having to release and start over.
-  if (chain.length > 1) {
-    const prev = chain[chain.length - 2];
-    if (pos.row === prev.row && pos.col === prev.col) {
-      chain.pop();
-      return;
-    }
-  }
-
-  const cell = grid[pos.row][pos.col];
-  if (!cell) return;
-  if (chain.some((c) => c.row === pos.row && c.col === pos.col)) return;
-  if (!isAdjacent(last, pos)) return;
-  const key = grid[chain[0].row][chain[0].col].value;
-  if (cell.value !== key) return;
-
-  chain.push(pos);
-  playTickSound();
-}
-
-function endDrag() {
-  if (!dragging) return;
-  dragging = false;
-  if (chain.length >= 2) commitChain(chain);
-  chain = [];
+  tickCluster(pos.row, pos.col);
 }
 
 function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
-  boardCanvas.addEventListener("pointermove", onPointerMove);
-  boardCanvas.addEventListener("pointerup", endDrag);
-  boardCanvas.addEventListener("pointercancel", endDrag);
-  boardCanvas.addEventListener("pointerleave", (e) => {
-    if (dragging && e.buttons === 0) endDrag();
-  });
   boardCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
@@ -256,52 +226,38 @@ function wireBoardInput() {
 // =====================================================================
 
 function updatePops(dt) {
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = grid[row][col];
-      if (cell && cell.popping) {
-        cell.popT += dt / POP_DURATION;
-        if (cell.popT >= 1) grid[row][col] = null;
-      }
+  if (!pendingFireResolve) return;
+  let stillPopping = false;
+  for (const p of pendingFireResolve) {
+    const cell = grid[p.row][p.col];
+    if (!cell || !cell.popping) continue;
+    cell.popT += dt / POP_DURATION;
+    if (cell.popT >= 1) {
+      grid[p.row][p.col] = freshCell(wave);
+    } else {
+      stillPopping = true;
     }
   }
-  if (pendingResolve) {
-    let stillPopping = false;
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        if (grid[row][col] && grid[row][col].popping) stillPopping = true;
-      }
-    }
-    if (!stillPopping) {
-      pendingResolve = false;
-      resolveGravity();
-    }
+  if (!stillPopping) {
+    pendingFireResolve = null;
+    boardBusy = false;
   }
 }
 
-function updateFalling(dt) {
-  let anyFalling = false;
+// Eases each gear's progress ring and decorative spin toward their
+// targets — frame-rate independent so the motion doesn't track
+// framerate (the whole reason the enemy in the old game sped up on a
+// stall was a per-frame-not-per-time increment; not repeating that here).
+function updateGearAnim(dt) {
+  const k = Math.min(1, 1 - Math.pow(0.00003, dt));
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = grid[row][col];
       if (!cell) continue;
-      if (cell.animRow === undefined) cell.animRow = row;
-      const diff = row - cell.animRow;
-      if (Math.abs(diff) > 0.01) {
-        // Exponential ease, driven by elapsed time rather than a fixed
-        // per-frame increment, so the fall speed doesn't track framerate.
-        const k = Math.min(1, 1 - Math.pow(0.00002, dt));
-        cell.animRow += diff * k;
-        anyFalling = true;
-      } else {
-        cell.animRow = row;
-      }
+      cell.ticksAnim += (cell.ticks - cell.ticksAnim) * k;
+      cell.spinAnim += (cell.spinTarget - cell.spinAnim) * k;
+      if (cell.flash > 0) cell.flash = Math.max(0, cell.flash - dt / 0.4);
     }
-  }
-  if (fallingActive && !anyFalling) {
-    fallingActive = false;
-    boardBusy = false;
-    ensureSolvable();
   }
 }
 
@@ -329,7 +285,7 @@ function gameOver() {
 function update(dt) {
   if (gameState !== "playing") return;
   updatePops(dt);
-  updateFalling(dt);
+  updateGearAnim(dt);
 
   enemyPower += enemyGrowthPerSec(wave) * dt;
   const total = playerPower + enemyPower;
@@ -378,41 +334,97 @@ function drawGearShape(ctx, cx, cy, rOuter, rInner, teeth, fill, stroke) {
   ctx.stroke();
 }
 
-function drawGearCell(ctx, cx, cy, size, cell, scale, highlighted) {
-  const r = size * 0.42 * scale;
+function drawGearCell(ctx, cx, cy, size, cell) {
+  const req = ticksRequired(cell);
+  const popScale = cell.popping ? Math.max(0, 1 - cell.popT) : 1;
+  const flashBoost = 1 + cell.flash * 0.12;
+  const r = size * 0.42 * popScale * flashBoost;
   if (r <= 0) return;
   const palette = cellColor(cell);
+
+  // The gear body itself visibly spins — alternating direction through a
+  // meshed cluster, same as real gear teeth — purely cosmetic; it never
+  // resets, so repeated taps keep it turning rather than snapping back.
   ctx.save();
-  if (highlighted) {
+  ctx.translate(cx, cy);
+  ctx.rotate(cell.spinAnim * TICK_ANGLE);
+  if (cell.flash > 0) {
     ctx.shadowColor = "#ffcc33";
-    ctx.shadowBlur = size * 0.3;
+    ctx.shadowBlur = size * 0.3 * cell.flash;
   }
-  drawGearShape(ctx, cx, cy, r, r * 0.8, 10, palette.fill, palette.stroke);
+  drawGearShape(ctx, 0, 0, r, r * 0.8, TOOTH_COUNT, palette.fill, palette.stroke);
   ctx.restore();
 
   ctx.beginPath();
   ctx.fillStyle = palette.hub;
-  ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r * 0.58, 0, Math.PI * 2);
   ctx.fill();
+
+  // Progress ring — how close this gear is to firing. Decoupled from the
+  // decorative spin above so "about to fire" always reads as "ring is
+  // nearly full," regardless of which way the gear has been spun.
+  const progress = Math.max(0, Math.min(1, cell.ticksAnim / req));
+  if (progress > 0) {
+    ctx.beginPath();
+    ctx.lineWidth = Math.max(2, size * 0.06);
+    ctx.strokeStyle = "#fff6c8";
+    ctx.lineCap = "round";
+    const start = -Math.PI / 2;
+    ctx.arc(cx, cy, r * 0.74, start, start + progress * Math.PI * 2);
+    ctx.stroke();
+  }
 
   if (cell.mult) {
     ctx.beginPath();
-    ctx.lineWidth = Math.max(2, size * 0.045);
-    ctx.strokeStyle = "#fff6c8";
-    ctx.arc(cx, cy, r * 0.72, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, size * 0.04);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   ctx.fillStyle = "#1c130a";
-  ctx.font = `800 ${Math.round(r * 0.78)}px system-ui, sans-serif`;
+  ctx.font = `800 ${Math.round(r * 0.72)}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(cell.value === "J" ? "★" : String(cell.value), cx, cy + 1);
+  const remaining = Math.max(0, req - cell.ticks);
+  ctx.fillText(cell.value === "J" ? "★" : String(remaining), cx, cy + 1);
 
   if (cell.mult) {
     ctx.font = `700 ${Math.round(size * 0.15)}px system-ui, sans-serif`;
     ctx.fillStyle = "#3a2414";
     ctx.fillText(`×${cell.mult}`, cx, cy + r + size * 0.14);
+  }
+}
+
+// Thin connecting rods between adjacent same-value gears — these are
+// what's actually meshed, so a tap on any one of them ticks the whole
+// connected group. Drawn under the gears, always visible (not just while
+// interacting), since this is the core thing the player needs to read.
+function drawMeshLines(ctx) {
+  ctx.strokeStyle = "rgba(255, 246, 200, 0.22)";
+  ctx.lineWidth = Math.max(2, cellSize * 0.07);
+  ctx.lineCap = "round";
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell) continue;
+      const cx = col * cellSize + cellSize / 2;
+      const cy = row * cellSize + cellSize / 2;
+      const right = col + 1 < COLS ? grid[row][col + 1] : null;
+      if (right && right.value === cell.value) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + cellSize, cy);
+        ctx.stroke();
+      }
+      const down = row + 1 < ROWS ? grid[row + 1][col] : null;
+      if (down && down.value === cell.value) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx, cy + cellSize);
+        ctx.stroke();
+      }
+    }
   }
 }
 
@@ -427,34 +439,16 @@ function drawBoard() {
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#3a2414");
 
+  drawMeshLines(ctx);
+
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = grid[row][col];
       if (!cell) continue;
       const cx = col * cellSize + cellSize / 2;
-      const cy = cell.animRow * cellSize + cellSize / 2;
-      const inChain = chain.some((c) => c.row === row && c.col === col);
-      let scale = 1;
-      if (cell.popping) scale = Math.max(0, 1 - cell.popT);
-      else if (inChain) scale = 1.12;
-      drawGearCell(ctx, cx, cy, cellSize, cell, scale, inChain);
+      const cy = row * cellSize + cellSize / 2;
+      drawGearCell(ctx, cx, cy, cellSize, cell);
     }
-  }
-
-  if (chain.length > 1) {
-    ctx.beginPath();
-    ctx.lineWidth = Math.max(4, cellSize * 0.12);
-    ctx.strokeStyle = "rgba(255,255,255,0.85)";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    chain.forEach((p, i) => {
-      const cell = grid[p.row][p.col];
-      const x = p.col * cellSize + cellSize / 2;
-      const y = (cell ? cell.animRow : p.row) * cellSize + cellSize / 2;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
   }
 }
 
@@ -547,8 +541,8 @@ function beep(freq, duration, type, gainPeak) {
   osc.stop(t0 + duration + 0.02);
 }
 
-function playTickSound() {
-  beep(700, 0.05, "square", 0.08);
+function playTickSound(clusterSize) {
+  beep(520 + Math.min(clusterSize, 8) * 30, 0.06, "square", 0.1);
 }
 
 function playMatchSound(n) {
@@ -644,11 +638,8 @@ function startNewRun() {
   playerPower = BASE_POWER;
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
-  chain = [];
-  dragging = false;
   boardBusy = false;
-  pendingResolve = false;
-  fallingActive = false;
+  pendingFireResolve = null;
   createBoard();
 
   document.getElementById("title-screen").classList.add("hidden");
