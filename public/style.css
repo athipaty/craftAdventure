@@ -120,24 +120,53 @@ button {
   min-width: 0;
 }
 
+#pause-btn {
+  padding: 7px 13px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+#pause-btn:active {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+#pause-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(10, 5, 2, 0.82);
+}
+
+#pause-screen h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  color: var(--accent);
+}
+
+#resume-btn {
+  padding: 14px 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.15rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
 #mute-btn {
   padding: 5px 9px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
   font-size: 0.95rem;
-}
-
-#restart-btn {
-  padding: 7px 14px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text);
-  font-size: 0.85rem;
-}
-
-#restart-btn:active {
-  background: rgba(255, 255, 255, 0.24);
 }
 
 #battle-lane {
@@ -318,6 +347,12 @@ button {
 #buy-gear-btn:active:not(:disabled) {
   transform: translateY(2px);
   box-shadow: 0 1px 0 #2f6d18;
+}
+
+#buy-gear-btn.risky {
+  background: linear-gradient(180deg, #ffd24d, #e08a1c);
+  color: #3a1f00;
+  box-shadow: 0 3px 0 #94570d;
 }
 
 #buy-gear-btn:disabled {

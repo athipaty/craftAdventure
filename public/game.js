@@ -110,7 +110,7 @@ const BOSS_KINDS = [
   { id: "shield", name: "Iron Guard", color: "#59606b" },
 ];
 const RALLY_FULL_SECONDS = 5; // how long to hold the army back to earn the charge bonus
-const RALLY_BONUS = 1.25; // charge size after a full rally
+const RALLY_BONUS = 1.5; // charge size after a full rally
 const RALLY_CHARGE_START = 0.4; // charges start part-way along the march
 const WAVE_EVENT_FIRST_WAVE = 3;
 const WAVE_EVENT_CHANCE = 0.4;
@@ -118,6 +118,8 @@ const EVENT_RUSH_SHARE = 0.2; // extra enemies per second, as a share of the mac
 const EVENT_STORM_SECONDS = 8; // time between rust attacks in a storm
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
+const TIP_GAP_SECONDS = 18; // play time between tips that aren't urgent
+const BUY_WARN_RATIO = 0.4; // warn when a purchase would leave the army's share below this
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
 const REINFORCEMENTS_REWARD = 0.2; // added to the player's lead for one wave
 
@@ -151,24 +153,19 @@ const WAVE_EVENTS = [
 ];
 
 // Shown once each, the first time `when` is true. Earlier entries go first.
+// Tips wait their turn so they don't pile up, unless they're urgent.
 const TIPS = [
-  { id: "start", text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
-  { id: "boss", text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
-  { id: "rust", text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
-  { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
+  { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
+  { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
+  { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
+  { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
-  { id: "big", text: "A big gear fills half as fast, then sends 5 soldiers.", when: () => boardHasGear("big") },
-  { id: "booster", text: "A booster sends no soldiers. Gears touching it fill faster, so put it in the middle of your best gears.", when: () => boardHasGear("booster") },
-  { id: "bomb", text: "A bomb gear fills half as fast, then blasts 2 enemies.", when: () => boardHasGear("bomb") },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
-  { id: "bossWall", text: "The Wall Maker blocks empty cells until it is beaten. Keep your machine compact, and scrap or merge to make room.", when: () => boss?.kind.id === "wall" },
-  { id: "bossScramble", text: "The Scrambler swaps your gears around, breaking up combos and booster spots. Drag them back where you want them.", when: () => boss?.kind.id === "scramble" },
-  { id: "bossShield", text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
-  { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 25% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
-  { id: "event", text: "Some waves have a twist, like an enemy rush or double soldiers. Its name shows at the top of the battle.", when: () => waveEvent },
+  { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
+  { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -210,6 +207,7 @@ let rewardOpenedAt = 0;
 let nextWaveBonus = 0; // extra lead for the next wave only
 let tipOpenedAt = 0;
 let openTip = null;
+let lastTipAt = 0; // play time when the last tip appeared
 let boss = null; // { kind, hp, maxHp, attackIn, hitFlash, reinforcePerSec, shield } during a boss wave
 let bossesBeaten = 0;
 let enemiesBlasted = 0;
@@ -238,7 +236,7 @@ let flyers = []; // { fromX, fromY, side, t }
 let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
 let screenShake = 0; // pixels
 
-let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "gameover"
+let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "gameover"
 let wave = 1;
 let waveTime = 0; // seconds since the current wave began
 let playerPower = BASE_POWER;
@@ -509,11 +507,17 @@ function canBuyGear() {
   return gameState === "playing" && Boolean(bestEmptyCell()) && soldiersShortForGear() === 0;
 }
 
+function buyIsRisky() {
+  const left = playerPower - gearCost();
+  return canBuyGear() && left / (left + enemyPower) < BUY_WARN_RATIO;
+}
+
 function buyButtonLabel() {
   if (!bestEmptyCell()) return "Board full: scrap a gear";
   const label = `Buy gear: ${gearCost()} soldiers`;
   const short = soldiersShortForGear();
-  return short > 0 ? `${label} (need ${short} more)` : label;
+  if (short > 0) return `${label} (need ${short} more)`;
+  return buyIsRisky() ? `${label} (risky!)` : label;
 }
 
 function updateBuyButton() {
@@ -521,6 +525,7 @@ function updateBuyButton() {
   const label = buyButtonLabel();
   if (button.textContent !== label) button.textContent = label;
   button.disabled = !canBuyGear();
+  button.classList.toggle("risky", buyIsRisky());
 }
 
 function buyGear() {
@@ -1096,10 +1101,25 @@ function showRunSummary(coins) {
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
+function pauseGame() {
+  if (gameState !== "playing") return;
+  gameState = "paused";
+  drag = null;
+  document.getElementById("pause-screen").classList.remove("hidden");
+}
+
+function resumeGame() {
+  if (gameState !== "paused") return;
+  gameState = "playing";
+  document.getElementById("pause-screen").classList.add("hidden");
+}
+
 function maybeShowTip() {
   if (gameState !== "playing") return;
-  const tip = TIPS.find((t) => !save.tips[t.id] && t.when());
+  const canWait = runTime - lastTipAt < TIP_GAP_SECONDS;
+  const tip = TIPS.find((t) => !save.tips[t.id] && !(canWait && !t.urgent) && t.when());
   if (!tip) return;
+  lastTipAt = runTime;
   gameState = "tip";
   drag = null;
   openTip = tip;
@@ -1530,15 +1550,17 @@ function drawBoss(ctx, markerX, x1, y) {
   ctx.restore();
   if (boss.shield > 0) {
     ctx.beginPath();
+    ctx.fillStyle = "rgba(10, 40, 60, 0.8)";
+    ctx.arc(x, y, 24, 0, Math.PI * 2);
+    ctx.fill();
     ctx.lineWidth = 4;
     ctx.strokeStyle = "#8fe7ff";
-    ctx.arc(x, y, 24, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.font = "800 11px system-ui, sans-serif";
-    ctx.fillStyle = "#8fe7ff";
+    ctx.font = "800 12px system-ui, sans-serif";
+    ctx.fillStyle = "#d8f6ff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`TAP ${boss.shield}`, x, y + 6);
+    ctx.fillText(`TAP ${boss.shield}`, x, y);
   }
 }
 
@@ -1548,10 +1570,14 @@ function drawBossBar(ctx, x0, x1) {
   roundRectFill(ctx, barX, 4, barW, 12, 6, "#1c130a");
   roundRectFill(ctx, barX, 4, barW * (boss.hp / boss.maxHp), 12, 6, "#d8432f");
   ctx.font = "800 10px system-ui, sans-serif";
-  ctx.fillStyle = "#fdf6e8";
+  const label = `${boss.kind.name.toUpperCase()} ${Math.ceil(boss.hp)}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(`${boss.kind.name.toUpperCase()} ${Math.ceil(boss.hp)}`, barX + barW / 2, 10.5);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#1c130a";
+  ctx.strokeText(label, barX + barW / 2, 10.5);
+  ctx.fillStyle = "#fdf6e8";
+  ctx.fillText(label, barX + barW / 2, 10.5);
 }
 
 function drawBattle() {
@@ -2039,7 +2065,7 @@ function handleResize() {
 function startNewRun() {
   ensureAudio();
   // Restart ends a run in progress, which still earns its coins.
-  const restarted = gameState === "playing" || gameState === "choosing" || gameState === "tip";
+  const restarted = ["playing", "choosing", "tip", "paused"].includes(gameState);
   const coinsFromRestart = restarted ? bankRun() : 0;
   drag = null;
   gearsBought = 0;
@@ -2051,7 +2077,9 @@ function startNewRun() {
   waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
   gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
   nextWaveBonus = 0;
+  lastTipAt = 0;
   hideTip();
+  document.getElementById("pause-screen").classList.add("hidden");
   bossesBeaten = 0;
   enemiesBlasted = 0;
   runTime = 0;
@@ -2117,6 +2145,12 @@ function init() {
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
   document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
+  document.getElementById("pause-btn").addEventListener("click", pauseGame);
+  document.getElementById("resume-btn").addEventListener("click", resumeGame);
+  // A call or a switch to another app shouldn't lose the run.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseGame();
+  });
   document.getElementById("how-to-play-btn").addEventListener("click", replayTips);
   document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
