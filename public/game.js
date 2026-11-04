@@ -60,6 +60,13 @@ const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
 const RUN_SAVE_KEY = "gearfight_run";
+// Lifetime waves won before each feature appears, so a new player meets them one
+// at a time. Anyone past these numbers simply has them all.
+const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10 };
+const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!" };
+const TIP_FEATURES = { rally: "rally", train: "train" };
+const EASY_BOSS = 0.75; // boss health and reinforcements on Easy
+const MAX_STATUS_PARTS = 3; // rewards listed by name beside the effects happening now
 const COUNTER_HOLD_SECONDS = 0.5; // lightning must have been ready this long, so tapping nonstop can't counter
 const BUILD_SECONDS = 5; // the break between waves
 const BUILD_MIN_GEARS = 3; // smaller machines have nothing to rearrange
@@ -208,22 +215,22 @@ const ENEMY_TYPES = {
 // wave starts. clearCoins: paid the first time. theme: how the battlefield looks.
 const WORLDS = [
   {
-    id: "forest", name: "Green Forest", finalWave: 15, scale: 1.55, clearCoins: 100,
+    id: "forest", name: "Green Forest", finalHp: 1.5, finalWave: 15, scale: 1.55, clearCoins: 100,
     enemies: [["goblin", 1], ["runner", 6]],
     theme: { skyTop: "#58b8ee", skyBottom: "#c6ecfb", hillBack: "#8ed36a", hillFront: "#6fbf4e", ground: "#57a63a", groundDark: "#4a9231", deco: "trees" },
   },
   {
-    id: "desert", name: "Sun Desert", finalWave: 20, scale: 1.6, clearCoins: 200,
+    id: "desert", name: "Sun Desert", finalHp: 1.5, finalWave: 20, scale: 1.6, clearCoins: 200,
     enemies: [["goblin", 1], ["runner", 3], ["brute", 6]],
     theme: { skyTop: "#f0a64f", skyBottom: "#fbe6b0", hillBack: "#e8c27a", hillFront: "#d9a95c", ground: "#c9954a", groundDark: "#b5823c", deco: "cactus" },
   },
   {
-    id: "ice", name: "Frozen Peaks", finalWave: 25, scale: 1.66, clearCoins: 400,
+    id: "ice", name: "Frozen Peaks", finalHp: 1.25, finalWave: 25, scale: 1.66, clearCoins: 400,
     enemies: [["frost", 1], ["runner", 3], ["brute", 8], ["shaman", 12]],
     theme: { skyTop: "#8fb8e0", skyBottom: "#eaf6ff", hillBack: "#dcecf8", hillFront: "#c2dcef", ground: "#e8f2fa", groundDark: "#cfe2f0", deco: "snow" },
   },
   {
-    id: "lava", name: "Lava Core", finalWave: 25, scale: 1.7, clearCoins: 800,
+    id: "lava", name: "Lava Core", finalHp: 1, finalWave: 25, scale: 1.7, clearCoins: 800,
     enemies: [["imp", 1], ["shaman", 4], ["brute", 8], ["frost", 14]],
     theme: { skyTop: "#2a1020", skyBottom: "#a8381c", hillBack: "#4a2020", hillFront: "#301418", ground: "#3a2018", groundDark: "#2a1610", deco: "embers" },
   },
@@ -258,9 +265,28 @@ const RULES = {
 // grow during a wave.
 const WORLD_LEVELS = [
   { name: "Normal", scale: 0, waveSeconds: 1, growth: 1, coins: 1, clearCoins: 1 },
-  { name: "Hard", scale: 0.04, waveSeconds: 1.3, growth: 1.3, coins: 1.25, clearCoins: 1.5 },
-  { name: "Expert", scale: 0.08, waveSeconds: 1.6, growth: 1.6, coins: 1.5, clearCoins: 2 },
+  { name: "Hard", scale: 0.04, waveSeconds: 1.6, growth: 1.5, coins: 1.25, clearCoins: 1.5 },
+  { name: "Expert", scale: 0.08, waveSeconds: 2, growth: 2, coins: 1.5, clearCoins: 2 },
 ];
+// For anyone who'd rather see every world than be tested by them. Earns less, and
+// only the first star.
+const EASY_LEVEL = { name: "Easy", scale: -0.05, waveSeconds: 0.8, growth: 0.75, coins: 0.75 };
+const WORLD_STORIES = {
+  forest: { intro: "Goblins have overrun the Green Forest! Build a machine, send your soldiers, and drive them out.", outro: "The forest is safe. But the goblins left tracks heading for the desert..." },
+  desert: { intro: "The goblins fled to the Sun Desert, and armoured brutes have joined them. Your machine must grow.", outro: "The Sand Wyrm sinks beneath the dunes. Far away, the mountains have turned white." },
+  ice: { intro: "High in the Frozen Peaks, frost trolls freeze everything they touch. Keep your gears turning.", outro: "The Frost Queen falls and the ice begins to crack. Something burns below the world." },
+  lava: { intro: "All of this began at the Lava Core. Fire imps guard it, and the Magma King waits below. End it here.", outro: "The Magma King is beaten, and the machines fall silent. Peace, at last... for now." },
+};
+const BOSS_TAUNTS = {
+  rust: "Your gears will crumble to dust!",
+  wall: "You shall not build here!",
+  scramble: "Let's mix things up!",
+  shield: "Nothing gets through my shield!",
+  warlord: "This forest is mine! Attack!",
+  wyrm: "The sands will swallow your work!",
+  queen: "Everything freezes in the end.",
+  magma: "I will melt your machine to slag!",
+};
 const WORLD_LEVEL_RULES = {
   forest: [[], ["pricy"], ["pricy", "rusty"]],
   desert: [[], ["bossy"], ["bossy", "swarm"]],
@@ -561,6 +587,7 @@ const WAVE_EVENTS = [
 // Shown once each, the first time `when` is true. Earlier entries go first.
 // Tips wait their turn so they don't pile up, unless they're urgent.
 const TIPS = [
+  ...WORLDS.map((world, i) => ({ id: `story:${world.id}`, urgent: true, text: WORLD_STORIES[world.id].intro, when: () => !currentEvent && !currentDaily && currentWorld === i })),
   { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
@@ -638,6 +665,7 @@ let runEventWeek = 0; // the week this run's weekly challenge belongs to
 let savedRun = null; // a run left unfinished last time, until it's continued or given up
 let runSaveIn = RUN_SAVE_SECONDS;
 let rerollsLeft = REROLLS_PER_RUN;
+let runEasy = false;
 let strikeHeld = 0; // seconds lightning has been ready without being used
 let buildLeft = 0; // seconds left of the break between waves
 let dealAccepted = false; // the deal on offer has been taken
@@ -741,6 +769,11 @@ function loadSave() {
       vibrate: data?.vibrate !== false,
       speed: data?.speed === 2 ? 2 : 1,
       worldLevels: data?.worldLevels && typeof data.worldLevels === "object" ? data.worldLevels : {},
+      lang: typeof data?.lang === "string" ? data.lang : "",
+      easy: data?.easy === true,
+      bigText: data?.bigText === true,
+      colorBlind: data?.colorBlind === true,
+      lessMotion: typeof data?.lessMotion === "boolean" ? data.lessMotion : matchMedia("(prefers-reduced-motion: reduce)").matches,
       worldStars: data?.worldStars && typeof data.worldStars === "object" ? data.worldStars : {},
       startGear: typeof data?.startGear === "string" ? data.startGear : "none",
       heroWaves: data?.heroWaves && typeof data.heroWaves === "object" ? data.heroWaves : {},
@@ -752,7 +785,7 @@ function loadSave() {
       dailyChallengePaid: typeof data?.dailyChallengePaid === "string" ? data.dailyChallengePaid : "",
     };
   } catch {
-    return { worldStars: {}, startGear: "none", worldLevels: {}, heroWaves: {}, funnel: {}, playSeconds: 0, lastSeen: 0, dailyChallengeDay: "", dailyChallengeBest: 0, dailyChallengePaid: "", music: true, vibrate: true, speed: 1, coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
+    return { lang: "", easy: false, bigText: false, colorBlind: false, lessMotion: false, worldStars: {}, startGear: "none", worldLevels: {}, heroWaves: {}, funnel: {}, playSeconds: 0, lastSeen: 0, dailyChallengeDay: "", dailyChallengeBest: 0, dailyChallengePaid: "", music: true, vibrate: true, speed: 1, coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
   }
 }
 
@@ -1017,7 +1050,25 @@ function ruleOn(id) {
 
 // Daily and weekly challenges play at the normal level.
 function runLevel() {
+  if (runEasy) return EASY_LEVEL;
   return WORLD_LEVELS[currentDaily || currentEvent ? 0 : worldLevel];
+}
+
+// Whether a player has won enough waves to have met this feature.
+function featureOn(id) {
+  return statValue("waves") >= FEATURE_WAVES[id];
+}
+
+function updateFeatureButtons() {
+  document.getElementById("rally-btn").classList.toggle("hidden", !featureOn("rally"));
+  document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train"));
+  document.getElementById("speed-btn").classList.toggle("hidden", !featureOn("speed"));
+}
+
+function announceNewFeatures() {
+  for (const [id, waves] of Object.entries(FEATURE_WAVES)) {
+    if (statValue("waves") === waves) announce(FEATURE_NEWS[id]);
+  }
 }
 
 function levelRules(world, level) {
@@ -1050,7 +1101,7 @@ function weeklyEvent() {
 
 function worldScale() {
   if (currentDaily) return EVENT_BASE_SCALE;
-  return currentEvent ? EVENT_BASE_SCALE + (currentEvent.scaleBonus || 0) : WORLDS[currentWorld].scale + WORLD_LEVELS[worldLevel].scale;
+  return currentEvent ? EVENT_BASE_SCALE + (currentEvent.scaleBonus || 0) : WORLDS[currentWorld].scale + runLevel().scale;
 }
 
 function finalWaveNumber() {
@@ -1284,6 +1335,12 @@ function boostersTouching(row, col) {
   return count * (1 + partCount("turbo") * PART_BOOST);
 }
 
+// For text that's set every frame: only touches the page when it really changes.
+function setLabel(el, text) {
+  const value = t(text);
+  if (el.textContent !== value) el.textContent = value;
+}
+
 function partCount(id) {
   return runParts[id] || 0;
 }
@@ -1402,9 +1459,9 @@ function updateTrainButton() {
     const short = soldiersShortFor(trainCost());
     label = short > 0 ? `Train ${next.name}: need ${short} more` : `Train ${next.name}: ${trainCost()}`;
   }
-  if (button.textContent !== label) button.textContent = label;
+  setLabel(button, label);
   button.disabled = !canTrain();
-  document.getElementById("rank-label").textContent = ARMY_RANKS[armyRank].plural;
+  setLabel(document.getElementById("rank-label"), ARMY_RANKS[armyRank].plural);
 }
 
 function levelPayout(level) {
@@ -1514,7 +1571,7 @@ function buyButtonLabel() {
 function updateBuyButton() {
   const button = document.getElementById("buy-gear-btn");
   const label = buyButtonLabel();
-  if (button.textContent !== label) button.textContent = label;
+  setLabel(button, label);
   button.disabled = !canBuyGear();
   button.classList.toggle("risky", buyIsRisky());
 }
@@ -1557,7 +1614,7 @@ function updateScrapZone() {
   if (!showing) return;
   zone.classList.toggle("hover", Boolean(drag.overScrap));
   const label = `Drop here to scrap: +${scrapRefund()}`;
-  if (zone.textContent !== label) zone.textContent = label;
+  setLabel(zone, label);
 }
 
 function sendSoldiers(baseCount) {
@@ -1600,12 +1657,12 @@ function isFinalWave(forWave) {
 }
 
 function bossWeakening() {
-  return (1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL) * (heroIs("guardian") ? GUARDIAN_BOSS : 1);
+  return (1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL) * (heroIs("guardian") ? GUARDIAN_BOSS : 1) * (runEasy ? EASY_BOSS : 1);
 }
 
 function bossMaxHp(forWave) {
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
-  const finalScale = isFinalWave(forWave) ? FINAL_BOSS_HP : 1;
+  const finalScale = isFinalWave(forWave) ? (currentEvent ? FINAL_BOSS_HP : WORLDS[currentWorld].finalHp) : 1;
   return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening() * finalScale;
 }
 
@@ -1783,7 +1840,7 @@ function updateStrikeButton() {
   else if (blocked) label = "No lightning";
   else if (canCounter) label = "Strike now!";
   else if (!ready) label = `Lightning ${Math.ceil(strikeCooldown)}s`;
-  if (button.textContent !== label) button.textContent = label;
+  setLabel(button, label);
   button.disabled = gameState !== "playing" || (!shielded && (blocked || !ready));
   button.classList.toggle("ready", !shielded && !blocked && ready);
   button.classList.toggle("shield", Boolean(shielded));
@@ -1882,7 +1939,7 @@ function planWave(forWave) {
   }
   const pace = forWave >= PACE_FIRST_WAVE && random() < PACE_CHANCE ? (random() < 0.5 ? "rush" : "siege") : null;
   const deals = Object.keys(WAVE_DEALS);
-  const deal = forWave >= DEAL_FIRST_WAVE && random() < DEAL_CHANCE ? deals[Math.floor(random() * deals.length)] : null;
+  const deal = forWave >= DEAL_FIRST_WAVE && random() < DEAL_CHANCE && featureOn("deal") ? deals[Math.floor(random() * deals.length)] : null;
   return { enemy, event: null, pace, deal };
 }
 
@@ -1974,7 +2031,7 @@ function updateRallyButton() {
   const button = document.getElementById("rally-btn");
   const full = rallying && rallyHeld >= rallyFullSeconds();
   const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.round(rallyReserve)}`;
-  if (button.textContent !== label) button.textContent = label;
+  setLabel(button, label);
   button.disabled = gameState !== "playing";
   button.classList.toggle("holding", rallying);
   button.classList.toggle("full", full);
@@ -2017,7 +2074,7 @@ function updateOverdriveButton() {
   const button = document.getElementById("overdrive-btn");
   const seconds = Math.ceil(overdriveLeft > 0 ? overdriveLeft : overdriveCooldown);
   const label = overdriveReady() ? "Overdrive!" : `Overdrive ${seconds}s`;
-  if (button.textContent !== label) button.textContent = label;
+  setLabel(button, label);
   button.disabled = !overdriveReady() || gameState !== "playing";
   button.classList.toggle("ready", overdriveReady());
   button.classList.toggle("active", overdriveLeft > 0);
@@ -2097,12 +2154,44 @@ function updateDragPreview(e) {
   drag.previewRate = previewDropRate(target);
 }
 
+// What's helping or hurting right now, then the rewards collected this run.
+function statusChips() {
+  const chips = [];
+  if (overdriveLeft > 0) chips.push(["good", `Overdrive ${Math.ceil(overdriveLeft)}s`]);
+  if (frozenFor > 0) chips.push(["bad", `Frozen ${Math.ceil(frozenFor)}s`]);
+  if (rallying) chips.push(["good", "Rally ready"]);
+  if (activeDeal) chips.push(["bad", `Deal: ${activeDeal.text}`]);
+  if (wavePace) chips.push(["bad", wavePace.name]);
+  if (waveEvent?.id === "double") chips.push(["good", waveEvent.name]);
+  if (heroIs("guardian") && !rustBlocked) chips.push(["good", "Blocking rust"]);
+  if (partCount("secondWind") > 0) chips.push(["good", "Second wind"]);
+  const parts = runPartNames().filter((name) => name !== "Second wind");
+  for (const name of parts.slice(-MAX_STATUS_PARTS)) chips.push(["part", name]);
+  if (parts.length > MAX_STATUS_PARTS) chips.push(["part", `+${parts.length - MAX_STATUS_PARTS} more`]);
+  return chips;
+}
+
+let lastStatusKey = "";
+function updateStatusRow() {
+  const chips = statusChips();
+  const key = JSON.stringify(chips);
+  if (key === lastStatusKey) return;
+  lastStatusKey = key;
+  const row = document.getElementById("status-chips");
+  row.replaceChildren(...chips.map(([kind, text]) => {
+    const chip = document.createElement("span");
+    chip.className = `status-chip ${kind}`;
+    chip.textContent = text;
+    return chip;
+  }));
+}
+
 function updateRateReadout() {
   const el = document.getElementById("machine-rate");
   const now = machineRate();
   const preview = drag?.previewRate ?? null;
   const label = preview === null ? `${formatRate(now)} soldiers/s` : `${formatRate(now)} \u2192 ${formatRate(preview)} soldiers/s`;
-  if (el.textContent !== label) el.textContent = label;
+  setLabel(el, label);
   el.classList.toggle("up", preview !== null && preview > now + 0.001);
   el.classList.toggle("down", preview !== null && preview < now - 0.001);
 }
@@ -2252,6 +2341,7 @@ function winWave() {
     if (cell) cell.rusted = false;
   }
   questEvent("waves");
+  announceNewFeatures();
   questEvent("reachWave", wave + 1);
   if (!usedOverdrive) questEvent("cleanWave", wave + 1);
   if (bossBeaten) {
@@ -2379,6 +2469,8 @@ function canOfferSpecialGear() {
 }
 
 function rewardIsOpen(reward) {
+  if (reward.rarity && !featureOn("rare")) return false;
+  if ((reward.id === "farGear" || reward.id === "loneGear") && !featureOn("newGears")) return false;
   if (reward.gear) return canOfferSpecialGear();
   if (reward.max && partCount(reward.id) >= reward.max) return false;
   return !reward.available || reward.available();
@@ -2446,6 +2538,7 @@ function toggleDeal() {
 }
 
 function updateRewardActions() {
+  document.getElementById("reward-actions").classList.toggle("hidden", !featureOn("reroll"));
   const reroll = document.getElementById("reroll-btn");
   reroll.textContent = `Reroll (${rerollsLeft} left)`;
   reroll.disabled = rerollsLeft <= 0;
@@ -2546,7 +2639,7 @@ function clearedTier(world) {
 // for the first, since the other two are about how the whole machine was built.
 function starGoals() {
   const gears = grid.flat().filter((cell) => cell && !cell.driver).length;
-  const fullRun = runStartWave === 1;
+  const fullRun = runStartWave === 1 && !runEasy;
   return [
     { text: "Clear the world", done: true },
     { text: "No Overdrive", done: fullRun && !usedOverdrive },
@@ -2596,6 +2689,8 @@ function showWorldClear() {
   const next = currentEvent ? null : WORLDS[currentWorld + 1];
   document.getElementById("world-clear-title").textContent = `${currentEvent ? currentEvent.name : world.name}${!currentEvent && worldLevel ? ` (${WORLD_LEVELS[worldLevel].name})` : ""} ${currentEvent ? "complete" : "cleared"}!`;
   document.getElementById("world-clear-coins").textContent = `+${lastClear.coins} coins`;
+  const story = !currentEvent && lastClear.firstTime && worldLevel === 0 ? WORLD_STORIES[world.id].outro : "";
+  document.getElementById("world-clear-story").textContent = story;
   const fresh = lastClear.earned?.fresh ?? [];
   document.getElementById("world-clear-stars").textContent = lastClear.earned
     ? `${starsText(lastClear.earned.stars)}${fresh.length ? ` New: ${fresh.join(", ")} (+${fresh.length * STAR_COINS} coins)` : ""}`
@@ -2703,7 +2798,7 @@ function dailyCard() {
 }
 
 function shareText() {
-  return `Gear Fight! daily challenge ${currentDaily.day}: I reached wave ${wave}. Can you beat it? ${location.origin}${location.pathname}`;
+  return t(`Gear Fight! daily challenge ${currentDaily.day}: I reached wave ${wave}. Can you beat it? ${location.origin}${location.pathname}`);
 }
 
 async function shareRun() {
@@ -2741,7 +2836,15 @@ function weeklyCard() {
 function openWorlds() {
   const list = document.getElementById("worlds-list");
   list.replaceChildren();
-  list.append(dailyCard(), weeklyCard());
+  const easy = document.createElement("button");
+  easy.className = "world-easy-btn";
+  easy.textContent = `Easy mode: ${save.easy ? "on" : "off"}`;
+  easy.addEventListener("click", () => {
+    save.easy = !save.easy;
+    writeSave();
+    openWorlds();
+  });
+  list.append(easy, dailyCard(), weeklyCard());
   WORLDS.forEach((world, i) => {
     const unlocked = worldUnlocked(i);
     const button = document.createElement("button");
@@ -2829,7 +2932,7 @@ function startBuildBreak(seconds) {
 function updateBuildBar() {
   const label = `Rearrange your gears: ${Math.ceil(buildLeft)}`;
   const el = document.getElementById("build-text");
-  if (el.textContent !== label) el.textContent = label;
+  setLabel(el, label);
 }
 
 function updateBuildBreak(dt) {
@@ -2837,6 +2940,7 @@ function updateBuildBreak(dt) {
   updateCombos();
   updateGearAnim(dt);
   updateRateReadout();
+  updateStatusRow();
   updateBuildBar();
   if (buildLeft <= 0) beginWave();
 }
@@ -2845,6 +2949,8 @@ function beginWave() {
   document.getElementById("build-bar").classList.add("hidden");
   startWave();
   gameState = "playing";
+  if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
+  updateFeatureButtons();
   showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
   saveRun();
 }
@@ -2928,7 +3034,7 @@ function runSnapshot() {
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
       buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount,
     },
-    flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted },
+    flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy },
     activeDeal: activeDeal?.id ?? null,
     lastEventId,
   };
@@ -3013,6 +3119,7 @@ function restoreRun(data) {
   strikeCount = n.strikeCount ?? 0;
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
+  runEasy = Boolean(data.flags.runEasy);
   activeDeal = WAVE_DEALS[data.activeDeal] || null;
   dealPayout = n.dealPayout ?? 0;
   strikeHeld = n.strikeHeld ?? 0;
@@ -3051,6 +3158,7 @@ function continueRun() {
   updateRallyButton();
   updateTrainButton();
   updateStrikeButton();
+  updateFeatureButtons();
   if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
@@ -3062,7 +3170,7 @@ function continueRun() {
 }
 
 function runDescription(data) {
-  const level = data.numbers.worldLevel ? ` (${WORLD_LEVELS[data.numbers.worldLevel].name})` : "";
+  const level = data.flags.runEasy ? ` (${EASY_LEVEL.name})` : data.numbers.worldLevel ? ` (${WORLD_LEVELS[data.numbers.worldLevel].name})` : "";
   const name = data.daily ? "Daily challenge" : data.event !== null ? WEEKLY_EVENTS.find((e) => e.id === data.event).name : `${WORLDS[data.world].name}${level}`;
   return `${name}, wave ${data.numbers.wave}`;
 }
@@ -3283,7 +3391,7 @@ function resumeGame() {
 function maybeShowTip() {
   if (gameState !== "playing") return;
   const canWait = runTime - lastTipAt < TIP_GAP_SECONDS;
-  const tip = TIPS.find((t) => !save.tips[t.id] && !(canWait && !t.urgent) && t.when());
+  const tip = TIPS.find((tip) => !save.tips[tip.id] && !(canWait && !tip.urgent) && (!TIP_FEATURES[tip.id] || featureOn(TIP_FEATURES[tip.id])) && tip.when());
   if (!tip) return;
   lastTipAt = runTime;
   gameState = "tip";
@@ -3311,6 +3419,7 @@ function closeTip() {
 
 // Shows every tip again from the start of a new run.
 function replayTips() {
+  document.getElementById("more-screen").classList.add("hidden");
   save.tips = {};
   writeSave();
   if (savedRun) continueRun();
@@ -3382,6 +3491,7 @@ function update(dt) {
   updateTrainButton();
   updateStrikeButton();
   updateRateReadout();
+  updateStatusRow();
   maybeShowTip();
   runSaveIn -= dt;
   if (runSaveIn <= 0) saveRun();
@@ -4399,7 +4509,7 @@ function drawBattle() {
 
   roundRectFill(ctx, x0, barY, x1 - x0, barH, barH / 2, "#1c130a");
   roundRectFill(ctx, x0, barY, markerX - x0, barH, barH / 2, "#3a7ddb");
-  roundRectFill(ctx, markerX, barY, x1 - markerX, barH, barH / 2, "#d8432f");
+  roundRectFill(ctx, markerX, barY, x1 - markerX, barH, barH / 2, save.colorBlind ? "#f0a020" : "#d8432f");
 
   ctx.beginPath();
   ctx.fillStyle = "#ffcc33";
@@ -4631,6 +4741,7 @@ function spawnFrontLineHit(marcher) {
 }
 
 function spawnConfetti() {
+  if (save.lessMotion) return;
   if (REDUCED_MOTION) return;
   const colors = ["#ffcc33", "#3a7ddb", "#8bd65a", "#ff8a3d", "#fdf6e8"];
   for (let i = 0; i < 70; i++) {
@@ -5223,7 +5334,8 @@ function startNewRun() {
     currentWorld = currentDaily.world;
   }
   runRules = currentDaily ? currentDaily.rules : currentEvent ? [] : levelRules(currentWorld, worldLevel);
-  runCoinScale = currentDaily || currentEvent ? 1 : WORLD_LEVELS[worldLevel].coins;
+  runEasy = save.easy && !currentDaily && !currentEvent && worldLevel === 0;
+  runCoinScale = currentDaily || currentEvent ? 1 : runLevel().coins;
   runBonusCoins = 0;
   runKey = runKeyFor(currentWorld, currentEvent, currentDaily);
   wavePace = null;
@@ -5287,9 +5399,10 @@ function startNewRun() {
   clearTimeout(rewardTimer);
   document.getElementById("game-screen").classList.remove("hidden");
   gameState = "playing";
+  updateFeatureButtons();
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
-  showWaveBanner(currentDaily ? "Daily challenge" : currentEvent ? currentEvent.name : worldLevel ? `${WORLDS[currentWorld].name}: ${WORLD_LEVELS[worldLevel].name}` : WORLDS[currentWorld].name);
+  showWaveBanner(currentDaily ? "Daily challenge" : currentEvent ? currentEvent.name : runEasy ? `${WORLDS[currentWorld].name}: ${EASY_LEVEL.name}` : worldLevel ? `${WORLDS[currentWorld].name}: ${WORLD_LEVELS[worldLevel].name}` : WORLDS[currentWorld].name);
   saveRun();
 }
 
@@ -5297,6 +5410,10 @@ let lastTime = 0;
 function loop(now) {
   const dt = lastTime ? Math.min(0.05, (now - lastTime) / 1000) : 0;
   lastTime = now;
+  if (save.lessMotion) {
+    screenShake = 0;
+    hitStop = 0;
+  }
   // Big hits freeze the game for a moment; effects keep moving through it.
   if (hitStop > 0) hitStop -= dt;
   else {
@@ -5313,7 +5430,179 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+function setupLanguage() {
+  const lang = save.lang || (navigator.language?.toLowerCase().startsWith("th") ? "th" : "en");
+  if (lang === "th") installTranslation(document.body);
+}
+
+function applyDisplaySettings() {
+  document.documentElement.classList.toggle("big-text", save.bigText);
+  document.documentElement.classList.toggle("less-motion", save.lessMotion);
+}
+
+function updateMoreButtons() {
+  document.getElementById("language-btn").textContent = `Language: ${currentLang === "th" ? "Thai" : "English"}`;
+  document.getElementById("big-text-btn").textContent = `Bigger text: ${save.bigText ? "on" : "off"}`;
+  document.getElementById("color-blind-btn").textContent = `Colour-blind colours: ${save.colorBlind ? "on" : "off"}`;
+  document.getElementById("less-motion-btn").textContent = `Less motion: ${save.lessMotion ? "on" : "off"}`;
+}
+
+function toggleSetting(name) {
+  save[name] = !save[name];
+  writeSave();
+  applyDisplaySettings();
+  updateMoreButtons();
+  handleResize();
+}
+
+function switchLanguage() {
+  save.lang = currentLang === "th" ? "en" : "th";
+  writeSave();
+  location.reload();
+}
+
+function openMore() {
+  updateMoreButtons();
+  document.getElementById("more-screen").classList.remove("hidden");
+}
+
+function guideRow(name, text, swatch, tag) {
+  const row = document.createElement("div");
+  row.className = "guide-row";
+  const title = document.createElement("b");
+  title.textContent = name;
+  if (swatch) {
+    const mark = document.createElement("i");
+    mark.className = "swatch";
+    mark.style.background = swatch;
+    title.prepend(mark);
+  }
+  if (tag) {
+    const label = document.createElement("small");
+    label.className = tag.toLowerCase();
+    label.textContent = tag;
+    title.append(" ", label);
+  }
+  const detail = document.createElement("span");
+  detail.textContent = text;
+  row.append(title, detail);
+  return row;
+}
+
+// The guide is built from the same tables as the game, so it can't fall behind.
+function guideSections() {
+  const gearRewards = REWARDS.filter((reward) => reward.gear);
+  return [
+    ["Gears", [
+      ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", DRIVER_PALETTE.mid],
+      ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", GEAR_PALETTE.mid],
+      ...gearRewards.map((reward) => [reward.name, reward.text, GEAR_TYPES[reward.gear].palette.mid]),
+      ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", RUST_PALETTE.mid],
+    ]],
+    ["Abilities", [
+      ["Lightning", "Hits the enemy for free. Press it during a boss's glow, after holding it ready, to cancel the attack. It also thaws freezes."],
+      ["Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge."],
+      ["Rally", "Holds arriving soldiers back. After 5 seconds, press again to charge with 50% more."],
+      ["Train", "Moves your army up a rank, so every new soldier counts for more."],
+    ]],
+    ["Rewards", REWARDS.filter((reward) => !reward.gear).map((reward) => [reward.name, reward.text, null, reward.rarity === "epic" ? "Epic" : reward.rarity === "rare" ? "Rare" : ""])],
+    ["Enemies", [
+      [ENEMY_TYPES.runner.name, "Goblin runners bring extra enemies, so win quickly."],
+      [ENEMY_TYPES.brute.name, "Soldiers do less, but lightning and bombs hit at full strength."],
+      [ENEMY_TYPES.shaman.name, "Keep rusting your gears, so tap them to fix them."],
+      [ENEMY_TYPES.frost.name, "Freeze the main gear to half speed. Lightning thaws it."],
+      [ENEMY_TYPES.imp.name, "Burn away gear progress, so win fast."],
+    ]],
+    ["Bosses", [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => [kind.name, NEXT_WAVE_HINTS[kind.id], kind.color])],
+    ["Words to know", [
+      ["Rank", "How strong each soldier is. Prices count in soldiers of your current rank."],
+      ["Merge", "Drag a gear onto a matching one. Each level pays about 2.5x as much."],
+      ["Combo", "Three matching gears in a row, or four in a square, work better. Plain level 1 gears don't count."],
+      ["Chain", "A line of connected gears. Hits get weaker along it, and a Booster brings them back to full."],
+      ["Scrap", "Drag a gear onto the bar that appears to remove it and get some soldiers back."],
+    ]],
+  ];
+}
+
+function openGuide() {
+  const list = document.getElementById("guide-list");
+  list.replaceChildren();
+  for (const [title, rows] of guideSections()) {
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    list.append(heading, ...rows.map((row) => guideRow(...row)));
+  }
+  list.scrollTop = 0;
+  document.getElementById("guide-screen").classList.remove("hidden");
+}
+
+function playedText(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+function openTrophies() {
+  const list = document.getElementById("trophy-list");
+  list.replaceChildren();
+  const stars = WORLDS.reduce((total, world) => total + worldStars(world).filter(Boolean).length, 0);
+  const tier = Math.max(0, ...WORLDS.map(clearedTier));
+  const rows = [
+    ["Best wave", bestWave],
+    ["World stars", `${stars} / ${WORLDS.length * 3}`],
+    ["Worlds cleared", `${clearedWorldCount()} / ${WORLDS.length}`],
+    ["Hardest clear", tier ? WORLD_LEVELS[tier - 1].name : "None yet"],
+    ["Waves won", statValue("waves")],
+    ["Bosses beaten", statValue("bosses")],
+    ["Attacks countered", statValue("counters")],
+    ["Deals won", statValue("deals")],
+    ["Gears merged", statValue("merges")],
+    ["Combos made", statValue("combos")],
+    ["Daily goals reached", statValue("dailyGoals")],
+    ["Achievements", `${Object.keys(save.achievements).length} / ${ACHIEVEMENTS.length}`],
+    ["Time played", playedText(save.playSeconds)],
+  ];
+  for (const [name, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "trophy-row";
+    const label = document.createElement("span");
+    label.textContent = name;
+    const number = document.createElement("b");
+    number.textContent = String(value);
+    row.append(label, number);
+    list.append(row);
+  }
+  const heading = document.createElement("h3");
+  heading.textContent = "Heroes";
+  list.append(heading);
+  for (const hero of HEROES.filter((h) => ownsItem("hero", h))) {
+    const row = document.createElement("div");
+    row.className = "trophy-row";
+    const label = document.createElement("span");
+    label.textContent = hero.name;
+    const number = document.createElement("b");
+    number.textContent = `Level ${heroLevel(hero.id)}`;
+    row.append(label, number);
+    list.append(row);
+  }
+  const worldHeading = document.createElement("h3");
+  worldHeading.textContent = "Worlds";
+  list.append(worldHeading);
+  for (const world of WORLDS) {
+    const row = document.createElement("div");
+    row.className = "trophy-row";
+    const label = document.createElement("span");
+    label.textContent = world.name;
+    const number = document.createElement("b");
+    number.textContent = starsText(worldStars(world));
+    row.append(label, number);
+    list.append(row);
+  }
+  document.getElementById("trophy-screen").classList.remove("hidden");
+}
+
 function init() {
+  setupLanguage();
+  applyDisplaySettings();
   boardCanvas = document.getElementById("board-canvas");
   battleCanvas = document.getElementById("battle-canvas");
   fxCanvas = document.getElementById("fx-canvas");
@@ -5349,6 +5638,20 @@ function init() {
   document.getElementById("reroll-btn").addEventListener("click", rerollRewards);
   document.getElementById("skip-btn").addEventListener("click", skipReward);
   document.getElementById("deal-btn").addEventListener("click", toggleDeal);
+  const closeScreen = (id) => () => document.getElementById(id).classList.add("hidden");
+  document.getElementById("title-more-btn").addEventListener("click", openMore);
+  document.getElementById("more-close-btn").addEventListener("click", closeScreen("more-screen"));
+  document.getElementById("language-btn").addEventListener("click", switchLanguage);
+  document.getElementById("big-text-btn").addEventListener("click", () => toggleSetting("bigText"));
+  document.getElementById("color-blind-btn").addEventListener("click", () => toggleSetting("colorBlind"));
+  document.getElementById("less-motion-btn").addEventListener("click", () => toggleSetting("lessMotion"));
+  document.getElementById("guide-btn").addEventListener("click", openGuide);
+  document.getElementById("reward-guide-btn").addEventListener("click", openGuide);
+  document.getElementById("pause-guide-btn").addEventListener("click", openGuide);
+  document.getElementById("guide-close-btn").addEventListener("click", closeScreen("guide-screen"));
+  document.getElementById("trophy-btn").addEventListener("click", openTrophies);
+  document.getElementById("trophy-close-btn").addEventListener("click", closeScreen("trophy-screen"));
+  updateFeatureButtons();
   document.getElementById("build-start-btn").addEventListener("click", () => {
     if (gameState === "building") beginWave();
   });

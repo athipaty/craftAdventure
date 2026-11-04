@@ -3,8 +3,8 @@
 // Lets Gear Fight! open with a weak connection or none. The network comes first
 // so that updates arrive straight away, and the saved copy is used when the
 // network fails or takes too long.
-const CACHE = "gearfight-v1";
-const FILES = ["./", "index.html", "game.js", "style.css", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
+const CACHE = "gearfight-v2";
+const FILES = ["./", "index.html", "game.js", "i18n.js", "style.css", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 const NETWORK_WAIT_MS = 3000;
 
 self.addEventListener("install", (event) => {

@@ -253,7 +253,7 @@ button {
 
 #combo-toast {
   position: absolute;
-  top: 10px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--panel);
@@ -894,6 +894,7 @@ button {
   font-weight: 700;
 }
 
+.world-easy-btn,
 .world-head-start {
   flex-shrink: 0;
   margin-top: -2px;
@@ -1593,10 +1594,7 @@ button {
 
 /* How much the machine makes, and what a drag would change it to. */
 #machine-rate {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 2;
+  flex-shrink: 0;
   padding: 3px 9px;
   border-radius: 999px;
   background: rgba(28, 19, 10, 0.72);
@@ -1782,4 +1780,172 @@ button {
   #side-actions > button {
     font-size: 0.76rem;
   }
+}
+
+/* Over the top of the board, and never in the way of dragging a gear. */
+#status-row {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 3px;
+  max-height: 46px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#status-chips {
+  display: contents;
+}
+
+.status-chip {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(28, 19, 10, 0.72);
+  color: #e4d3b8;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-chip.good {
+  background: #2f6b18;
+  color: #ffffff;
+}
+
+.status-chip.bad {
+  background: #8c1d10;
+  color: #ffffff;
+}
+
+#more-screen,
+#guide-screen,
+#trophy-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-bottom);
+}
+
+#more-screen h2,
+#guide-screen h2,
+#trophy-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#more-list,
+#guide-list,
+#trophy-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#more-list .workshop-btn {
+  flex-shrink: 0;
+}
+
+#more-list h3,
+#guide-list h3,
+#trophy-list h3 {
+  flex-shrink: 0;
+  margin: 8px 0 0;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.guide-row,
+.trophy-row {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #3a2414;
+  color: var(--text);
+}
+
+.guide-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+}
+
+.guide-row b {
+  color: var(--accent);
+  font-size: 0.92rem;
+}
+
+.guide-row small {
+  margin-left: 4px;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.guide-row small.rare {
+  color: #8fcbff;
+}
+
+.guide-row small.epic {
+  color: #e2c4ff;
+}
+
+.trophy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+
+.trophy-row b {
+  color: var(--accent);
+}
+
+#reward-guide-btn {
+  padding: 5px 14px;
+  font-size: 0.76rem;
+}
+
+#pause-guide-btn {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+
+#world-clear-story {
+  max-width: 340px;
+  color: #e4d3b8;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+html.big-text {
+  font-size: 112%;
+}
+
+html.less-motion *,
+html.less-motion *::before,
+html.less-motion *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Opened from the More menu, so it has to sit above it. */
+#backup-screen {
+  z-index: 39;
 }
