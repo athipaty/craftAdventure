@@ -48,6 +48,7 @@
       <div id="board-wrap">
         <canvas id="board-canvas"></canvas>
         <div id="combo-toast" class="hidden"></div>
+        <div id="machine-rate"></div>
       </div>
 
       <div id="action-row">
@@ -60,6 +61,10 @@
           <button id="rally-btn">Rally</button>
         </div>
         <div id="scrap-zone" class="hidden"></div>
+        <div id="build-bar" class="hidden">
+          <span id="build-text"></span>
+          <button id="build-start-btn">Start wave</button>
+        </div>
       </div>
 
       <p class="hint">Each hit fills connected gears &nbsp;|&nbsp; Full gears pay out &nbsp;|&nbsp; Drag a gear to move or scrap it</p>
@@ -96,6 +101,7 @@
       <h2 id="reward-title"></h2>
       <p id="reward-next"></p>
       <div id="reward-options"></div>
+      <button id="deal-btn" class="hidden"></button>
       <div id="reward-actions">
         <button id="reroll-btn" class="workshop-btn"></button>
         <button id="skip-btn" class="workshop-btn"></button>
@@ -157,6 +163,7 @@
     <div id="world-clear-screen" class="hidden">
       <h2 id="world-clear-title">World cleared!</h2>
       <p id="world-clear-coins"></p>
+      <p id="world-clear-stars"></p>
       <p id="world-clear-next"></p>
       <button id="next-world-btn">Next world</button>
       <button id="keep-going-btn" class="workshop-btn">Keep going (endless)</button>
