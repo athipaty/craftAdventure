@@ -726,7 +726,7 @@ button {
   gap: 2px;
 }
 
-#gameover-goals p {
+#gameover-screen #gameover-goals p {
   color: #bff29a;
   font-size: 0.9rem;
   font-weight: 700;

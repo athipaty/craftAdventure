@@ -184,7 +184,7 @@ const UPGRADES = [
 // a running total. max: the hardest target that makes sense.
 const QUEST_KINDS = [
   { kind: "waves", base: 10, coins: 15, text: (n) => `Win ${n} waves` },
-  { kind: "bosses", base: 2, coins: 25, text: (n) => `Beat ${n} bosses` },
+  { kind: "bosses", base: 2, coins: 25, text: (n) => `Beat ${n} ${n === 1 ? "boss" : "bosses"}` },
   { kind: "merges", base: 8, coins: 15, text: (n) => `Merge gears ${n} times` },
   { kind: "strikes", base: 15, coins: 10, text: (n) => `Use ${n} lightning strikes` },
   { kind: "blasted", base: 20, coins: 15, text: (n) => `Blast ${n} enemies with bombs` },
