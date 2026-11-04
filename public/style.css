@@ -404,6 +404,35 @@ button {
   padding: 6px 10px 10px;
 }
 
+/* ---------- Announcements ---------- */
+
+#announcement {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 38;
+  width: max-content;
+  max-width: 92%;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-align: center;
+  pointer-events: none;
+  animation: announcement-pop 1.6s ease forwards;
+}
+
+@keyframes announcement-pop {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* ---------- Wave banner ---------- */
 
 #wave-banner {

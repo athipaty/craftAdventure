@@ -66,8 +66,10 @@ const XP_PER_BOSS = 40;
 const XP_PER_QUEST = 20;
 const XP_LEVEL_BASE = 100; // experience needed for level 2
 const XP_LEVEL_STEP = 50; // how much more each level after that needs
-const LEVEL_COINS_BASE = 20;
-const LEVEL_COINS_STEP = 5;
+const LEVEL_COINS_BASE = 10;
+const LEVEL_COINS_STEP = 3;
+const UPGRADE_PRICE_SCALE = 1.5;
+const ANNOUNCEMENT_MS = 1600;
 const COUNTED_RUN_SECONDS = 30; // restarting at once doesn't count as a run
 const PLAYER_TITLES = [
   { fromLevel: 1, name: "Apprentice" },
@@ -231,7 +233,7 @@ const UPGRADES = [
   { id: "rustGuard", name: "Oil can", text: "Rust attacks hit 5% fewer of your gears", costs: [50, 120, 240] },
   { id: "specials", name: "Spare parts", text: "Rewards can offer 1 more special gear", costs: [60, 150, 300] },
   { id: "drillSergeant", name: "Drill sergeant", text: "Training costs 10% less", costs: [40, 100, 200] },
-];
+].map((upgrade) => ({ ...upgrade, costs: upgrade.costs.map((cost) => Math.round(cost * UPGRADE_PRICE_SCALE)) }));
 
 // kind: what counts toward it. best: progress is the highest value reached, not
 // a running total. max: the hardest target that makes sense.
@@ -454,7 +456,7 @@ function unlockAchievement(achievement) {
   save.achievements[achievement.id] = true;
   save.coins += achievement.coins;
   writeSave();
-  showToast(`Achievement: ${achievement.name}! +${achievement.coins}`);
+  announce(`Achievement: ${achievement.name}! +${achievement.coins}`);
   playClankSound();
 }
 
@@ -534,7 +536,7 @@ function completeDailyQuest(quest) {
   save.coins += quest.reward;
   runQuestCoins += quest.reward;
   writeSave();
-  showToast(`Daily quest done! +${quest.reward} coins`);
+  announce(`Daily quest done! +${quest.reward} coins`);
   playClankSound();
 }
 
@@ -615,7 +617,7 @@ function completeQuest(quest) {
   gainXp(XP_PER_QUEST);
   fillQuests();
   writeSave();
-  showToast(`Quest done! +${quest.reward} coins`);
+  announce(`Quest done! +${quest.reward} coins`);
   playClankSound();
 }
 
@@ -3135,6 +3137,29 @@ function showToast(text) {
   showToast._t = setTimeout(() => el.classList.add("hidden"), 650);
 }
 
+// Quests and achievements can finish together, so these queue up instead of
+// replacing each other.
+let announcements = [];
+let announcing = false;
+
+function announce(text) {
+  announcements.push(text);
+  if (!announcing) nextAnnouncement();
+}
+
+function nextAnnouncement() {
+  const el = document.getElementById("announcement");
+  const text = announcements.shift();
+  announcing = text !== undefined;
+  el.classList.toggle("hidden", !announcing);
+  if (!announcing) return;
+  el.textContent = text;
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
+  setTimeout(nextAnnouncement, ANNOUNCEMENT_MS);
+}
+
 function showWaveBanner(text) {
   const el = document.getElementById("wave-banner");
   const txt = document.getElementById("wave-banner-text");
@@ -3369,7 +3394,7 @@ function init() {
   fillQuests();
   refreshDailyQuests();
   writeSave();
-  showDailyReward();
+  if (save.dailyStreak > 0 || statValue("runs") > 0) showDailyReward();
   document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("workshop-close-btn").addEventListener("click", closeWorkshop);
