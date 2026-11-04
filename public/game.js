@@ -109,6 +109,9 @@ const BOSS_KINDS = [
   { id: "scramble", name: "Scrambler", color: "#1d6e6a" },
   { id: "shield", name: "Iron Guard", color: "#59606b" },
 ];
+const RALLY_FULL_SECONDS = 5; // how long to hold the army back to earn the charge bonus
+const RALLY_BONUS = 1.25; // charge size after a full rally
+const RALLY_CHARGE_START = 0.4; // charges start part-way along the march
 const WAVE_EVENT_FIRST_WAVE = 3;
 const WAVE_EVENT_CHANCE = 0.4;
 const EVENT_RUSH_PRESSURE = 0.06; // enemies per second, as a share of the wave's starting army
@@ -164,6 +167,7 @@ const TIPS = [
   { id: "bossWall", text: "The Wall Maker blocks empty cells until it is beaten. Keep your machine compact, and scrap or merge to make room.", when: () => boss?.kind.id === "wall" },
   { id: "bossScramble", text: "The Scrambler moves your gears around. Drag them back to reconnect the chain.", when: () => boss?.kind.id === "scramble" },
   { id: "bossShield", text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
+  { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 25% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "event", text: "Some waves have a twist, like an enemy rush or double soldiers. Its name shows at the top of the battle.", when: () => waveEvent },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
@@ -213,6 +217,9 @@ let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
+let rallying = false;
+let rallyReserve = 0; // soldiers waiting for the charge
+let rallyHeld = 0; // seconds held so far
 let comboCounts = { line: 0, block: 0, ring: 0 };
 let waveEvent = null; // the twist on this wave, from WAVE_EVENTS
 let lastEventId = null; // so the same twist doesn't come twice in a row
@@ -732,6 +739,39 @@ function updateBoss(dt) {
   }
 }
 
+function toggleRally() {
+  if (gameState !== "playing") return;
+  if (!rallying) {
+    rallying = true;
+    rallyHeld = 0;
+    return;
+  }
+  rallying = false;
+  if (rallyReserve > 0) {
+    const bonus = rallyHeld >= RALLY_FULL_SECONDS ? RALLY_BONUS : 1;
+    marchers.push({ side: "player", value: rallyReserve * bonus, t: RALLY_CHARGE_START, charge: true });
+    rallyReserve = 0;
+    screenShake = Math.max(screenShake, BOMB_SHAKE);
+    playBoomSound();
+  }
+}
+
+function resetRally() {
+  rallying = false;
+  rallyReserve = 0;
+  rallyHeld = 0;
+}
+
+function updateRallyButton() {
+  const button = document.getElementById("rally-btn");
+  const full = rallying && rallyHeld >= RALLY_FULL_SECONDS;
+  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * RALLY_BONUS)}` : `Charge ${Math.round(rallyReserve)}`;
+  if (button.textContent !== label) button.textContent = label;
+  button.disabled = gameState !== "playing";
+  button.classList.toggle("holding", rallying);
+  button.classList.toggle("full", full);
+}
+
 function overdriveSeconds() {
   return OVERDRIVE_BASE_SECONDS + upgradeLevel("overdrive") * OVERDRIVE_SECONDS_PER_LEVEL;
 }
@@ -884,8 +924,12 @@ function updateMarchers(dt) {
     m.t += dt / MARCH_SECONDS;
     if (m.t < 1) continue;
     if (m.side === "player") {
-      playerPower += m.value;
-      damageBoss(m.value);
+      if (rallying && !m.charge) {
+        rallyReserve += m.value;
+      } else {
+        playerPower += m.value;
+        damageBoss(m.value);
+      }
     }
     else if (m.side === "bomb") {
       enemyPower = Math.max(1, enemyPower - m.value);
@@ -930,6 +974,7 @@ function winWave() {
   waveEvent = null;
   eventReinforcePerSec = 0;
   blockedCells.clear();
+  resetRally();
   spawnConfetti();
   if (wave > bestWave) {
     bestWave = wave;
@@ -1093,6 +1138,7 @@ function update(dt) {
   runTime += dt;
   updateCombos();
   updateOverdrive(dt);
+  if (rallying) rallyHeld += dt;
   updateBoss(dt);
   updateWaveEvent(dt);
   updateDrivers(dt);
@@ -1117,6 +1163,7 @@ function update(dt) {
   document.getElementById("army-score").textContent = Math.round(totalArmyScore);
   updateBuyButton();
   updateOverdriveButton();
+  updateRallyButton();
   maybeShowTip();
 }
 
@@ -1539,7 +1586,11 @@ function drawBattle() {
     const x = m.side === "enemy" ? x1 - (x1 - markerX) * m.t : x0 + (markerX - x0) * m.t;
     const stride = Math.abs(Math.sin(m.t * Math.PI * 5)) * 3;
     if (m.side === "bomb") drawBombIcon(ctx, x, battleCssH * 0.6);
-    else drawArmyIcon(ctx, x, battleCssH * 0.6 - stride, m.side === "player" ? "#8fc0ff" : "#ff9a85");
+    else if (m.charge) {
+      for (const offset of [-14, 0, 14]) drawArmyIcon(ctx, x + offset, battleCssH * 0.6 - stride, "#ffcc33");
+    } else {
+      drawArmyIcon(ctx, x, battleCssH * 0.6 - stride, m.side === "player" ? "#8fc0ff" : "#ff9a85");
+    }
   }
   if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.5);
   for (const c of clashes) {
@@ -1557,6 +1608,12 @@ function drawBattle() {
   ctx.fillText(String(Math.round(playerPower)), x0, 14);
   ctx.textAlign = "right";
   ctx.fillText(String(Math.round(enemyPower)), x1, 14);
+  if (rallying) {
+    ctx.font = "800 12px system-ui, sans-serif";
+    ctx.fillStyle = "#ffcc33";
+    ctx.textAlign = "left";
+    ctx.fillText(`RALLY ${Math.round(rallyReserve)}`, x0, battleCssH * 0.7);
+  }
   if (boss) drawBossBar(ctx, x0, x1);
   else if (waveEvent) {
     ctx.font = "800 12px system-ui, sans-serif";
@@ -1998,6 +2055,7 @@ function startNewRun() {
   runBanked = false;
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
+  resetRally();
   waveEvent = null;
   lastEventId = null;
   eventReinforcePerSec = 0;
@@ -2052,6 +2110,7 @@ function init() {
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
+  document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
   document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
   document.getElementById("how-to-play-btn").addEventListener("click", replayTips);

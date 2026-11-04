@@ -198,14 +198,14 @@ button {
   align-items: stretch;
   gap: 8px;
   position: relative;
-  min-height: 60px; /* room for a two-line label, so the board never has to move */
+  min-height: 78px; /* room for a two-line label and both side buttons, so the board never has to move */
   margin-top: 4px;
   padding: 0 10px;
 }
 
 @media (max-width: 360px) {
   #action-row {
-    min-height: 80px;
+    min-height: 84px;
   }
 }
 
@@ -232,15 +232,42 @@ button {
   color: #ffffff;
 }
 
-#overdrive-btn {
+#side-actions {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#rally-btn {
+  flex: 1;
   min-width: 118px;
-  padding: 10px 12px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(58, 125, 219, 0.55);
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+#rally-btn.holding {
+  background: #3a7ddb;
+}
+
+#rally-btn.full {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #4a1a12;
+}
+
+#overdrive-btn {
+  flex: 1;
+  min-width: 118px;
+  padding: 6px 12px;
   border-radius: 10px;
   background: linear-gradient(90deg, #ff8a3d var(--charge, 100%), rgba(255, 255, 255, 0.12) var(--charge, 100%));
   color: #fdf6e8;
   font-weight: 800;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 #overdrive-btn.ready {
