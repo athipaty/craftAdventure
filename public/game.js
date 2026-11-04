@@ -75,7 +75,7 @@ const ENEMY_BASE_GROWTH = 0.08; // enemy army per second at the start of wave 1
 const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
 const ENEMY_DOUBLING_SECONDS = 30; // enemy growth doubles every this long within a wave
 const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
-const WAVE_START_SCALE = 1.45; // how much bigger both armies start each wave
+const WAVE_START_SCALE = 1.55; // how much bigger both armies start each wave
 const DRIVER_PALETTE = { light: "#dfe5ea", mid: "#8d99a6", dark: "#3f4a55", recess: "#6d7884", hub: "#c3ccd5" };
 
 const GEAR_PALETTE = { light: "#f3d98a", mid: "#c99a35", dark: "#7a5716", recess: "#a97f28", hub: "#f6e6ae" };
@@ -124,9 +124,9 @@ const EVENT_STORM_SECONDS = 8; // time between rust attacks in a storm
 // of the rank before it needed to reach this one.
 const ARMY_RANKS = [
   { name: "Recruit", plural: "Recruits", strength: 1, look: "r0" },
-  { name: "Knight", plural: "Knights", strength: 3, trainCost: 20, look: "r1" },
-  { name: "Champion", plural: "Champions", strength: 9, trainCost: 50, look: "r2" },
-  { name: "Hero", plural: "Heroes", strength: 27, trainCost: 120, look: "r3" },
+  { name: "Knight", plural: "Knights", strength: 3, trainCost: 30, look: "r1" },
+  { name: "Champion", plural: "Champions", strength: 9, trainCost: 100, look: "r2" },
+  { name: "Hero", plural: "Heroes", strength: 27, trainCost: 300, look: "r3" },
 ];
 // The enemy's rank only changes how its army looks and is counted.
 const ENEMY_RANKS = [
@@ -1276,12 +1276,9 @@ function roundRectFill(ctx, x, y, w, h, r, fill) {
   ctx.fill();
 }
 
+// Flat cartoon colour rather than shaded metal.
 function metalGradient(ctx, r, palette) {
-  const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r * 1.1);
-  g.addColorStop(0, palette.light);
-  g.addColorStop(0.55, palette.mid);
-  g.addColorStop(1, palette.dark);
-  return g;
+  return palette.mid;
 }
 
 // Machined details shared by both gear types, drawn around the origin: a
@@ -1352,20 +1349,30 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
   ctx.closePath();
   ctx.fillStyle = DRIVER_PALETTE.mid;
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = DRIVER_PALETTE.dark;
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = OUTLINE;
   ctx.stroke();
 
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fillStyle = metalGradient(ctx, r, DRIVER_PALETTE);
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = DRIVER_PALETTE.dark;
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = OUTLINE;
   ctx.stroke();
 
   drawGearFace(ctx, r * 0.78, r * 0.3, DRIVER_PALETTE);
   ctx.restore();
+
+  // The main gear is the hero of the machine, so it gets a happy face that
+  // stays upright while it turns.
+  drawCartoonEyes(ctx, cx - size * 0.02, cy - size * 0.05, size * 0.065, false);
+  ctx.beginPath();
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = Math.max(1.5, size * 0.03);
+  ctx.lineCap = "round";
+  ctx.arc(cx, cy + size * 0.06, size * 0.09, 0.25, Math.PI - 0.25);
+  ctx.stroke();
 }
 
 function drawGearCell(ctx, cx, cy, size, cell) {
@@ -1387,8 +1394,9 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.fillStyle = metalGradient(ctx, r, palette);
   ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = palette.dark;
+  ctx.lineWidth = Math.max(2, size * 0.045);
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = OUTLINE;
   ctx.stroke();
   drawGearFace(ctx, r * 0.72, r * 0.46, palette);
   ctx.restore();
@@ -1488,8 +1496,27 @@ function drawBoostLinks(ctx) {
 function drawEmptyCell(ctx, cx, cy, size) {
   ctx.beginPath();
   ctx.arc(cx, cy, size * 0.08, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255, 246, 200, 0.12)";
+  ctx.fillStyle = "rgba(70, 40, 15, 0.35)";
   ctx.fill();
+}
+
+// A cartoon wooden workbench under the gears.
+function drawWoodBoard(ctx) {
+  roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#a9743f");
+  ctx.strokeStyle = "#8a5a2c";
+  ctx.lineWidth = 2;
+  for (let row = 1; row < ROWS; row++) {
+    ctx.beginPath();
+    ctx.moveTo(4, row * cellSize);
+    ctx.lineTo(boardCssW - 4, row * cellSize);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#6d4520";
+  for (const [x, y] of [[9, 9], [boardCssW - 9, 9], [9, boardCssH - 9], [boardCssW - 9, boardCssH - 9]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawBlockedCell(ctx, cx, cy, size) {
@@ -1513,7 +1540,7 @@ function drawBoard() {
   if (!boardCtx || boardCssW <= 0 || grid.length < ROWS) return;
   const ctx = boardCtx;
   ctx.clearRect(0, 0, boardCssW, boardCssH);
-  roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#3a2414");
+  drawWoodBoard(ctx);
 
   // The one-tooth gear goes on top so its tooth overlaps the gears it touches.
   for (const drawDrivers of [false, true]) {
@@ -1564,125 +1591,208 @@ const SOLDIER_LOOKS = {
   e3: { tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
 };
 
-// A small soldier standing on `feetY`, facing +1 (right) or -1 (left).
-// state: "idle" sways, "walk" moves its legs, "fight" swings its weapon.
+const OUTLINE = "#22150b";
+
+function battleArtScale() {
+  return Math.max(0.85, Math.min(1.2, battleCssH / 92));
+}
+
+// Fills and outlines the current path, the look everything cartoon here shares.
+function inked(ctx, fill, width = 1.4) {
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = width;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+}
+
+function inkedCircle(ctx, x, y, r, fill, width) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  inked(ctx, fill, width);
+}
+
+// Big round eyes looking the way the character faces.
+function drawCartoonEyes(ctx, x, y, size, angry) {
+  for (const offset of [-size * 1.05, size * 1.05]) {
+    ctx.beginPath();
+    ctx.ellipse(x + offset, y, size * 0.85, size, 0, 0, Math.PI * 2);
+    inked(ctx, "#ffffff", 0.8);
+    ctx.beginPath();
+    ctx.fillStyle = OUTLINE;
+    ctx.arc(x + offset + size * 0.3, y + size * 0.1, size * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (angry) {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = size * 0.55;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + side * size * 2, y - size * 1.5);
+      ctx.lineTo(x + side * size * 0.3, y - size * 0.8);
+      ctx.stroke();
+    }
+  }
+}
+
+// A chunky cartoon soldier standing on `feetY`, facing +1 (right) or -1 (left).
+// state: "idle" bounces, "walk" moves its legs, "fight" swings its weapon.
 // `seed` keeps a crowd from moving in step.
 function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
   const colors = SOLDIER_LOOKS[look];
   const time = performance.now() / 1000 + seed * 0.37;
-  const stride = state === "walk" ? Math.sin(time * 14) * 3.5 : 0;
-  const sway = state === "idle" ? Math.sin(time * 2.4) * 0.8 : 0;
-  const swing = state === "fight" ? Math.sin(time * 11) * 1.1 : state === "walk" ? -0.4 + Math.sin(time * 14) * 0.25 : -0.6;
+  const stride = state === "walk" ? Math.sin(time * 14) * 2.6 : 0;
+  const hop = state === "walk" ? Math.abs(Math.sin(time * 14)) * 1.6 : 0;
+  // Squash and stretch: a soft bounce that makes them feel alive.
+  const squash = state === "idle" ? Math.sin(time * 3) * 0.04 : state === "fight" ? Math.sin(time * 11) * 0.06 : 0;
+  const swing = state === "fight" ? -0.5 + Math.sin(time * 11) * 1.1 : state === "walk" ? -0.3 + Math.sin(time * 14) * 0.3 : -0.5;
+  const scale = colors.size * battleArtScale();
   ctx.save();
-  ctx.translate(x, feetY + sway * 0.3);
-  ctx.scale(facing * colors.size, colors.size);
+  ctx.translate(x, feetY - hop);
+  ctx.scale(facing * scale * (1 - squash), scale * (1 + squash));
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   if (colors.glow) {
     ctx.shadowColor = colors.glow;
-    ctx.shadowBlur = 9;
+    ctx.shadowBlur = 8;
   }
   if (colors.cape) {
-    ctx.fillStyle = colors.cape;
     ctx.beginPath();
     ctx.moveTo(-3, -15);
-    ctx.lineTo(-8 - Math.abs(stride), -3);
+    ctx.quadraticCurveTo(-11 - Math.abs(stride), -8, -8 - Math.abs(stride), -2);
     ctx.lineTo(-1, -5);
     ctx.closePath();
-    ctx.fill();
+    inked(ctx, colors.cape);
   }
 
-  ctx.strokeStyle = colors.trim;
-  ctx.lineWidth = 2.4;
-  for (const offset of [-1, 1]) {
+  // Boots.
+  for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(offset * 1.5, -8);
-    ctx.lineTo(offset * 1.5 + offset * stride, 0);
-    ctx.stroke();
+    ctx.ellipse(side * 2.6 + side * stride, -1.6, 2.8, 1.9, 0, 0, Math.PI * 2);
+    inked(ctx, colors.trim);
   }
 
-  roundRectFill(ctx, -4.2, -15, 8.4, 8.5, 2.2, colors.tunic);
+  // Round body.
+  ctx.beginPath();
+  ctx.ellipse(0, -8, 5.8, 6, 0, 0, Math.PI * 2);
+  inked(ctx, colors.tunic);
 
   // Weapon arm.
   ctx.save();
-  ctx.translate(3, -12.5);
+  ctx.translate(4.2, -9);
   ctx.rotate(swing);
-  ctx.strokeStyle = colors.skin;
-  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(4, 0);
-  ctx.stroke();
-  ctx.strokeStyle = colors.blade;
-  ctx.lineWidth = colors.horns ? 3 : 1.8;
-  ctx.beginPath();
-  ctx.moveTo(4, 0);
-  ctx.lineTo(4, -9);
-  ctx.stroke();
+  if (colors.horns) {
+    // A knobbly club.
+    ctx.moveTo(3, 1.2);
+    ctx.lineTo(4.4, -6);
+    ctx.quadraticCurveTo(7, -12, 3.4, -12.5);
+    ctx.quadraticCurveTo(0.4, -12, 2, -6);
+    ctx.lineTo(1.6, 1);
+  } else {
+    // A big toy sword.
+    ctx.moveTo(1.8, 0);
+    ctx.lineTo(1.4, -11);
+    ctx.lineTo(3.2, -14);
+    ctx.lineTo(5, -11);
+    ctx.lineTo(4.4, 0);
+  }
+  ctx.closePath();
+  inked(ctx, colors.blade);
+  if (!colors.horns) {
+    ctx.beginPath();
+    ctx.rect(0.4, -1.5, 5.6, 2.2);
+    inked(ctx, colors.trim, 1);
+  }
+  inkedCircle(ctx, 3, 1, 2.3, colors.skin, 1.1);
   ctx.restore();
 
-  // Head.
-  ctx.beginPath();
-  ctx.fillStyle = colors.skin;
-  ctx.arc(0, -19, 4, 0, Math.PI * 2);
-  ctx.fill();
-  if (colors.helmet) {
-    ctx.beginPath();
-    ctx.fillStyle = colors.helmet;
-    ctx.arc(0, -19.5, 4.4, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    ctx.fill();
-    if (colors.plume) {
-      ctx.strokeStyle = colors.plume;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, -24);
-      ctx.quadraticCurveTo(-4, -27, -6, -22);
-      ctx.stroke();
-    }
-    // Shield on the front arm.
-    ctx.beginPath();
-    ctx.fillStyle = colors.helmet;
-    ctx.arc(-4.5, -11, 3.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.fillStyle = colors.trim;
-    ctx.arc(-4.5, -11, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.fillStyle = colors.horns;
+  // Big head.
+  const headY = -19;
+  if (colors.horns) {
+    // Pointed ears behind the head.
     for (const side of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(side * 1.5, -22.5);
-      ctx.lineTo(side * 4.5, -27);
-      ctx.lineTo(side * 4, -21);
+      ctx.moveTo(side * 5, headY - 2);
+      ctx.lineTo(side * 11, headY - 4);
+      ctx.lineTo(side * 5.5, headY + 2.5);
       ctx.closePath();
-      ctx.fill();
+      inked(ctx, colors.skin);
     }
   }
-  ctx.fillStyle = "#1c130a";
-  ctx.fillRect(1.2, -19.6, 1.3, 1.3);
+  inkedCircle(ctx, 0, headY, 7.6, colors.skin);
+  drawCartoonEyes(ctx, 1.6, headY - 0.4, 2.2, Boolean(colors.horns));
+
+  if (colors.helmet) {
+    // Helmet with a little crest.
+    ctx.beginPath();
+    ctx.arc(0, headY - 1, 8, Math.PI * 1.02, Math.PI * 1.98);
+    ctx.quadraticCurveTo(0, headY - 3.4, -8, headY - 1);
+    ctx.closePath();
+    inked(ctx, colors.helmet);
+    if (colors.plume) {
+      ctx.beginPath();
+      ctx.moveTo(-1.6, headY - 8.4);
+      ctx.quadraticCurveTo(-7, headY - 14, -9.4, headY - 7);
+      ctx.quadraticCurveTo(-5, headY - 9.4, 1.4, headY - 8);
+      ctx.closePath();
+      inked(ctx, colors.plume, 1.1);
+    }
+    // Smile.
+    ctx.beginPath();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1;
+    ctx.arc(2, headY + 2.6, 2, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    // Round shield.
+    inkedCircle(ctx, -4.8, -8, 4.4, colors.helmet, 1.2);
+    inkedCircle(ctx, -4.8, -8, 1.8, colors.trim, 0.8);
+  } else {
+    // Toothy grin.
+    ctx.beginPath();
+    ctx.moveTo(-1.5, headY + 3);
+    ctx.quadraticCurveTo(2.2, headY + 5.6, 6, headY + 2.6);
+    ctx.closePath();
+    inked(ctx, "#fff7e0", 0.9);
+    // Horns.
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 2, headY - 6.6);
+      ctx.quadraticCurveTo(side * 5, headY - 12, side * 5.6, headY - 12.6);
+      ctx.lineTo(side * 6, headY - 5.4);
+      ctx.closePath();
+      inked(ctx, colors.horns, 1.1);
+    }
+  }
   ctx.restore();
 }
 
 function drawBombIcon(ctx, x, y) {
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.fillStyle = "#1c130a";
-  ctx.arc(x, y, 7, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(x + 4, y - 6);
+  ctx.quadraticCurveTo(x + 7, y - 11, x + 10, y - 9);
+  ctx.stroke();
+  inkedCircle(ctx, x, y, 7.5, "#3a3a44", 1.6);
   ctx.beginPath();
-  ctx.fillStyle = "#ff8a3d";
-  ctx.arc(x + 5, y - 6, 3, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.ellipse(x - 2.6, y - 2.8, 1.8, 2.6, 0.6, 0, Math.PI * 2);
   ctx.fill();
+  const flicker = 2.6 + Math.sin(performance.now() / 50);
+  inkedCircle(ctx, x + 10.5, y - 9.5, flicker, "#ffcc33", 1);
+  ctx.restore();
 }
 
-// The army crowds up behind the front line, and the soldiers nearest it fight.
 function drawArmyRow(ctx, front, back, feetY, power, rank, facing) {
   const look = rank.look;
   const n = Math.min(10, Math.max(1, Math.round(power / (3 * rank.strength))));
   const room = Math.max(0, Math.abs(front - back) - 14);
-  const spacing = Math.min(20 * SOLDIER_LOOKS[look].size, room / n);
+  const spacing = Math.min(19 * SOLDIER_LOOKS[look].size * battleArtScale(), room / n);
   for (let i = n - 1; i >= 0; i--) {
-    const x = front - facing * (10 + i * spacing);
+    const x = front - facing * (13 + i * spacing);
     drawSoldier(ctx, x, feetY - (i % 2) * 2, facing, look, i < 2 ? "fight" : "idle", i);
   }
 }
@@ -1690,94 +1800,113 @@ function drawArmyRow(ctx, front, back, feetY, power, rank, facing) {
 // The boss stands just past the front line, glowing before each attack, and
 // flashes when soldiers hit it.
 function drawBoss(ctx, markerX, x1, feetY) {
-  const x = Math.min(x1 - 22, markerX + 30);
+  const x = Math.min(x1 - 22, markerX + 32);
   const warning = boss.attackIn < BOSS_WARNING_SECONDS;
   const time = performance.now() / 1000;
-  const body = boss.hitFlash > 0 ? "#ffd9cf" : boss.kind.color;
-  const armSwing = warning ? -1.5 + Math.sin(time * 18) * 0.15 : Math.sin(time * 4) * 0.5;
+  const body = boss.hitFlash > 0 ? "#ffffff" : boss.kind.color;
+  const armSwing = warning ? -1.7 + Math.sin(time * 18) * 0.15 : -0.5 + Math.sin(time * 4) * 0.4;
+  const breathe = Math.sin(time * 3) * 0.03;
   ctx.save();
+  ctx.translate(x, feetY);
+  ctx.scale(1 - breathe, 1 + breathe + (warning ? 0.05 : 0));
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   if (warning) {
     ctx.shadowColor = "#ff3b1f";
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 16;
   }
-  ctx.translate(x, feetY);
-  ctx.lineCap = "round";
-  // Legs, then a heavy body facing the player's army.
-  ctx.strokeStyle = "#1c130a";
-  ctx.lineWidth = 6;
+
+  // Stubby feet.
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(side * 6, -14);
-    ctx.lineTo(side * 7, -1);
-    ctx.stroke();
+    ctx.ellipse(side * 8, -3, 6.5, 3.6, 0, 0, Math.PI * 2);
+    inked(ctx, "#3d2a18", 1.8);
   }
-  roundRectFill(ctx, -14, -33, 28, 22, 8, body);
-  ctx.beginPath();
-  ctx.fillStyle = body;
-  ctx.arc(0, -36, 10, 0, Math.PI * 2);
-  ctx.fill();
 
   // Weapon arm, raised before an attack.
   ctx.save();
-  ctx.translate(-13, -27);
+  ctx.translate(-16, -23);
   ctx.rotate(armSwing);
-  ctx.strokeStyle = body;
-  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.rect(-10.5, -17, 3.4, 18);
+  inked(ctx, "#7a5430", 1.6);
+  ctx.beginPath();
+  ctx.ellipse(-8.8, -21, 8, 6, 0, 0, Math.PI * 2);
+  inked(ctx, boss.kind.id === "shield" ? "#c3ccd5" : "#8a5f36", 1.8);
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.lineTo(-9, 0);
+  ctx.lineTo(-8.8, 0);
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = OUTLINE;
   ctx.stroke();
-  ctx.strokeStyle = "#3a2414";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-9, 0);
-  ctx.lineTo(-9, -16);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = body;
   ctx.stroke();
-  roundRectFill(ctx, -15, -22, 12, 8, 2, boss.kind.id === "shield" ? "#c3ccd5" : "#59402a");
   ctx.restore();
 
-  // Each kind of boss has its own mark.
-  if (boss.kind.id === "rust") {
-    ctx.fillStyle = "#e0a92e";
+  // One big round monster.
+  ctx.beginPath();
+  ctx.ellipse(0, -22, 18, 20, 0, 0, Math.PI * 2);
+  inked(ctx, body, 2.2);
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.ellipse(-6, -32, 5, 7, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawCartoonEyes(ctx, -3, -27, 4.6, true);
+
+  // Wide toothy mouth, pointing at the player's army.
+  ctx.beginPath();
+  ctx.moveTo(-13, -16);
+  ctx.quadraticCurveTo(-3, -8, 8, -16);
+  ctx.closePath();
+  inked(ctx, "#3a0d06", 1.6);
+  ctx.fillStyle = "#fff7e0";
+  for (const toothX of [-10, -4, 2]) {
     ctx.beginPath();
-    ctx.moveTo(-9, -43);
-    ctx.lineTo(-9, -52);
-    ctx.lineTo(-4, -47);
-    ctx.lineTo(0, -54);
-    ctx.lineTo(4, -47);
-    ctx.lineTo(9, -52);
-    ctx.lineTo(9, -43);
+    ctx.moveTo(toothX, -15.6);
+    ctx.lineTo(toothX + 2, -12);
+    ctx.lineTo(toothX + 4, -15.8);
     ctx.closePath();
     ctx.fill();
-  } else if (boss.kind.id === "wall") {
-    ctx.fillStyle = "#c7b7e8";
-    for (const [bx, by] of [[-10, -30], [1, -30], [-5, -24], [6, -24], [-10, -18], [1, -18]]) ctx.fillRect(bx, by, 9, 4);
-  } else if (boss.kind.id === "scramble") {
-    ctx.save();
-    ctx.translate(0, -50);
-    ctx.rotate(time * 4);
-    traceToothedRim(ctx, 7, 5, 8);
-    ctx.fillStyle = "#8fe7ff";
-    ctx.fill();
-    ctx.restore();
-  } else {
-    ctx.fillStyle = "#c3ccd5";
-    ctx.beginPath();
-    ctx.arc(0, -38, 11, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillRect(-11, -38, 22, 3);
   }
 
-  ctx.fillStyle = warning ? "#ffe14d" : "#fdf6e8";
-  for (const side of [-1, 1]) {
+  // Each kind of boss has its own headgear.
+  if (boss.kind.id === "rust") {
     ctx.beginPath();
-    ctx.arc(side * 4 - 2, -36, 2.4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(-10, -40);
+    ctx.lineTo(-11, -50);
+    ctx.lineTo(-5, -45);
+    ctx.lineTo(0, -52);
+    ctx.lineTo(5, -45);
+    ctx.lineTo(11, -50);
+    ctx.lineTo(10, -40);
+    ctx.closePath();
+    inked(ctx, "#f2c23e", 1.8);
+  } else if (boss.kind.id === "wall") {
+    for (const [bx, by] of [[-11, -46], [-1, -46], [-6, -51]]) {
+      ctx.beginPath();
+      ctx.rect(bx, by, 11, 6);
+      inked(ctx, "#c98560", 1.5);
+    }
+  } else if (boss.kind.id === "scramble") {
+    ctx.save();
+    ctx.translate(0, -47);
+    ctx.rotate(time * 4);
+    traceToothedRim(ctx, 8.5, 6, 8);
+    inked(ctx, "#8fe7ff", 1.6);
+    inkedCircle(ctx, 0, 0, 2.4, "#1d6e6a", 1.2);
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(0, -35, 15, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.closePath();
+    inked(ctx, "#c3ccd5", 1.8);
   }
   ctx.restore();
   if (boss.shield > 0) {
-    const y = feetY - 26;
+    const y = feetY - 25;
     ctx.beginPath();
     ctx.fillStyle = "rgba(10, 40, 60, 0.8)";
     ctx.arc(x, y, 26, 0, Math.PI * 2);
@@ -1809,45 +1938,75 @@ function drawBossBar(ctx, x0, x1) {
   ctx.fillText(label, barX + barW / 2, 10.5);
 }
 
-// Dusk over a battlefield, with a banner at each army's camp.
+// A sunny cartoon battlefield, with a banner at each army's camp.
 function drawBattlefield(ctx, x0, x1, groundY) {
   const w = battleCssW;
   const h = battleCssH;
+  const time = performance.now() / 1000;
   const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-  sky.addColorStop(0, "#2d2a3e");
-  sky.addColorStop(1, "#8a5a3a");
+  sky.addColorStop(0, "#58b8ee");
+  sky.addColorStop(1, "#c6ecfb");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, groundY);
 
-  ctx.fillStyle = "#4f3a33";
-  ctx.beginPath();
-  ctx.moveTo(0, groundY);
-  for (let i = 0; i <= 8; i++) ctx.lineTo((w * i) / 8, groundY - 10 - Math.abs(Math.sin(i * 1.7)) * 12);
-  ctx.lineTo(w, groundY);
-  ctx.closePath();
-  ctx.fill();
+  // Fluffy clouds drifting by.
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  for (const [speed, start, y, r] of [[5, 0.15, 0.2, 7], [3, 0.55, 0.28, 9], [4, 0.85, 0.14, 6]]) {
+    const cx = ((start * w + time * speed) % (w + 60)) - 30;
+    for (const [dx, dy, size] of [[-r, 0, 0.8], [0, -r * 0.4, 1], [r, 0, 0.8]]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx, y * h + dy, r * size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
-  ctx.fillStyle = "#3d2a18";
-  ctx.fillRect(0, groundY, w, h - groundY);
-  ctx.fillStyle = "#4e3720";
-  ctx.fillRect(0, groundY, w, 2);
-
-  const flap = Math.sin(performance.now() / 300) * 2;
-  for (const [x, color, dir] of [[x0 - 8, "#3a7ddb", 1], [x1 + 8, "#d8432f", -1]]) {
-    ctx.strokeStyle = "#1c130a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x, groundY + 2);
-    ctx.lineTo(x, groundY - 24);
-    ctx.stroke();
+  // Round green hills.
+  for (const [color, baseUp, bumps, phase] of [["#8ed36a", 15, 3, 0.4], ["#6fbf4e", 8, 4, 1.8]]) {
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(x, groundY - 24);
-    ctx.lineTo(x + dir * 11, groundY - 20 + flap);
-    ctx.lineTo(x, groundY - 15);
+    ctx.moveTo(0, groundY);
+    for (let i = 0; i <= 40; i++) {
+      const px = (w * i) / 40;
+      ctx.lineTo(px, groundY - baseUp - Math.abs(Math.sin((i / 40) * Math.PI * bumps + phase)) * 12);
+    }
+    ctx.lineTo(w, groundY);
     ctx.closePath();
     ctx.fill();
   }
+
+  // Grass in front.
+  ctx.fillStyle = "#57a63a";
+  ctx.fillRect(0, groundY, w, h - groundY);
+  ctx.fillStyle = "#4a9231";
+  ctx.fillRect(0, groundY + 8, w, h - groundY - 8);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(w, groundY);
+  ctx.stroke();
+
+  const flap = Math.sin(time * 4) * 2.5;
+  for (const [x, color, dir] of [[x0 - 8, "#3a7ddb", 1], [x1 + 8, "#d8432f", -1]]) {
+    ctx.beginPath();
+    ctx.rect(x - 1.2, groundY - 28, 2.4, 30);
+    inked(ctx, "#8a5f36", 1);
+    ctx.beginPath();
+    ctx.moveTo(x, groundY - 28);
+    ctx.quadraticCurveTo(x + dir * 7, groundY - 26 + flap, x + dir * 13, groundY - 23 + flap);
+    ctx.lineTo(x, groundY - 17);
+    ctx.closePath();
+    inked(ctx, color, 1.2);
+  }
+}
+
+// White text with a dark edge, readable on the bright sky.
+function drawLaneText(ctx, text, x, y) {
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
 }
 
 function drawBattle() {
@@ -1923,21 +2082,21 @@ function drawBattle() {
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
   const playerCount = Math.round(playerPower / armyStrength());
   const enemyCount = Math.round(enemyPower / enemyRank().strength);
-  ctx.fillText(boss ? String(playerCount) : `${ARMY_RANKS[armyRank].plural} ${playerCount}`, x0, 14);
+  drawLaneText(ctx, boss ? String(playerCount) : `${ARMY_RANKS[armyRank].plural} ${playerCount}`, x0, 14);
   ctx.textAlign = "right";
-  ctx.fillText(boss ? String(enemyCount) : `${enemyRank().plural} ${enemyCount}`, x1, 14);
+  drawLaneText(ctx, boss ? String(enemyCount) : `${enemyRank().plural} ${enemyCount}`, x1, 14);
   if (rallying) {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
     ctx.textAlign = "left";
-    ctx.fillText(`RALLY ${Math.round(rallyReserve)}`, x0, battleCssH * 0.7);
+    drawLaneText(ctx, `RALLY ${Math.round(rallyReserve)}`, x0, battleCssH * 0.74);
   }
   if (boss) drawBossBar(ctx, x0, x1);
   else if (waveEvent) {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
     ctx.textAlign = "center";
-    ctx.fillText(waveEvent.name.toUpperCase(), (x0 + x1) / 2, 14);
+    drawLaneText(ctx, waveEvent.name.toUpperCase(), (x0 + x1) / 2, 30);
   }
 }
 
