@@ -49,7 +49,7 @@ const OVERDRIVE_SECONDS_PER_LEVEL = 1;
 const DISCOUNT_PER_LEVEL = 0.05; // gear price removed by each level
 const BOSS_EVERY_WAVES = 5;
 const BOSS_HP_SCALE = 1.5; // boss health vs the soldiers a normal wave would take to win
-const BOSS_PRESSURE = 0.12; // enemies the boss brings per second, as a share of the wave's starting army
+const BOSS_PRESSURE = 0.1; // enemies the boss brings per second, as a share of the wave's starting army
 const BOSS_FIRST_ATTACK_SECONDS = 5;
 const BOSS_ATTACK_SECONDS = 8; // time between rust attacks
 const BOSS_WARNING_SECONDS = 1; // the boss glows for this long before it attacks
@@ -101,7 +101,7 @@ const COMBO_LINE_PAYOUT = 1.25; // three matching gears in a row
 const COMBO_BLOCK_FILL = 1.25; // four matching gears in a square
 const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
 const BOSS_WALL_CELLS = 3; // empty cells blocked by each Wall Maker attack
-const BOSS_SCRAMBLE_SWAPS = 3; // gears moved by each Scrambler attack
+const BOSS_SCRAMBLE_SWAPS = 3; // pairs of gears swapped by each Scrambler attack
 const BOSS_SHIELD_TAPS = 5; // taps on the battle to break an Iron Guard shield
 const BOSS_KINDS = [
   { id: "rust", name: "Rust King", color: "#8c1d10" },
@@ -114,7 +114,7 @@ const RALLY_BONUS = 1.25; // charge size after a full rally
 const RALLY_CHARGE_START = 0.4; // charges start part-way along the march
 const WAVE_EVENT_FIRST_WAVE = 3;
 const WAVE_EVENT_CHANCE = 0.4;
-const EVENT_RUSH_PRESSURE = 0.06; // enemies per second, as a share of the wave's starting army
+const EVENT_RUSH_SHARE = 0.2; // extra enemies per second, as a share of the machine's best soldiers per second
 const EVENT_STORM_SECONDS = 8; // time between rust attacks in a storm
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
@@ -165,7 +165,7 @@ const TIPS = [
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "bossWall", text: "The Wall Maker blocks empty cells until it is beaten. Keep your machine compact, and scrap or merge to make room.", when: () => boss?.kind.id === "wall" },
-  { id: "bossScramble", text: "The Scrambler moves your gears around. Drag them back to reconnect the chain.", when: () => boss?.kind.id === "scramble" },
+  { id: "bossScramble", text: "The Scrambler swaps your gears around, breaking up combos and booster spots. Drag them back where you want them.", when: () => boss?.kind.id === "scramble" },
   { id: "bossShield", text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 25% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "event", text: "Some waves have a twist, like an enemy rush or double soldiers. Its name shows at the top of the battle.", when: () => waveEvent },
@@ -653,21 +653,23 @@ function wallAttack() {
   playRustSound();
 }
 
+// Gears only swap with each other, so the machine keeps its shape and stays
+// connected: moving them onto empty cells could cut off most of the machine
+// faster than anyone could drag it back.
 function scrambleAttack() {
-  const cells = [];
+  const gears = [];
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (!grid[row][col]?.driver && !isBlocked(row, col)) cells.push({ row, col });
+      if (grid[row][col] && !grid[row][col].driver) gears.push({ row, col });
     }
   }
-  const gears = cells.filter(({ row, col }) => grid[row][col]);
-  for (let i = 0; i < BOSS_SCRAMBLE_SWAPS && gears.length; i++) {
+  if (gears.length < 2) return;
+  for (let i = 0; i < BOSS_SCRAMBLE_SWAPS; i++) {
     const a = gears[Math.floor(Math.random() * gears.length)];
-    const b = cells[Math.floor(Math.random() * cells.length)];
+    const b = gears[Math.floor(Math.random() * gears.length)];
     [grid[a.row][a.col], grid[b.row][b.col]] = [grid[b.row][b.col], grid[a.row][a.col]];
-    if (grid[a.row][a.col]) spawnRustBurst(a.row, a.col, "#8fe7ff", "#1d6e6a");
-    if (grid[b.row][b.col]) spawnRustBurst(b.row, b.col, "#8fe7ff", "#1d6e6a");
-    gears.splice(0, gears.length, ...cells.filter(({ row, col }) => grid[row][col]));
+    spawnRustBurst(a.row, a.col, "#8fe7ff", "#1d6e6a");
+    spawnRustBurst(b.row, b.col, "#8fe7ff", "#1d6e6a");
   }
   drag = null;
   screenShake = Math.max(screenShake, BOMB_SHAKE);
@@ -710,7 +712,9 @@ function startWaveEvent() {
   waveEvent = options[Math.floor(Math.random() * options.length)];
   lastEventId = waveEvent.id;
   eventAttackIn = EVENT_STORM_SECONDS;
-  eventReinforcePerSec = waveEvent.id === "rush" ? enemyPower * EVENT_RUSH_PRESSURE : 0;
+  // Tied to the machine's output: each enemy takes about 2.3 soldiers to match
+  // at WIN_RATIO, so this share slows a win down without making it impossible.
+  eventReinforcePerSec = waveEvent.id === "rush" ? peakRate * EVENT_RUSH_SHARE : 0;
   if (waveEvent.id === "blocked") {
     const rows = blockableRows();
     const row = rows[Math.floor(Math.random() * rows.length)];
