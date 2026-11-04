@@ -70,7 +70,8 @@ button {
   margin: 0;
 }
 
-#play-btn {
+#play-btn,
+#continue-btn {
   margin-top: 10px;
   padding: 16px 48px;
   font-size: 1.3rem;
@@ -82,7 +83,23 @@ button {
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
-#play-btn:active {
+#play-btn.has-run {
+  padding: 11px 22px;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: #3a2414;
+  border: 2px solid var(--accent-dark);
+  box-shadow: none;
+}
+
+#continue-btn {
+  max-width: 90%;
+  padding: 15px 20px;
+  font-size: 1rem;
+}
+
+#play-btn:active,
+#continue-btn:active {
   transform: translateY(4px);
   box-shadow: 0 2px 0 #2f6b18, 0 4px 10px rgba(0, 0, 0, 0.4);
 }
@@ -686,6 +703,32 @@ button {
   font-size: 1.05rem;
 }
 
+.reward-option small {
+  margin-left: 4px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reward-option.rare {
+  border-color: #4f9fe0;
+  background: #1f2c3f;
+}
+
+.reward-option.rare b {
+  color: #8fcbff;
+}
+
+.reward-option.epic {
+  border-color: #c58cf5;
+  background: #33204a;
+  box-shadow: 0 0 12px rgba(197, 140, 245, 0.45);
+}
+
+.reward-option.epic b {
+  color: #e2c4ff;
+}
+
 .reward-option:active {
   background: #5a3a20;
 }
@@ -917,6 +960,15 @@ button {
   color: #bff29a;
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+#pause-parts {
+  max-width: 340px;
+  margin: 0;
+  padding: 0 16px;
+  color: #e4d3b8;
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 #pause-quests {

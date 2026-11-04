@@ -22,10 +22,10 @@
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
-// Everything here is client-only — no backend, no login. Progress within
-// a run isn't persisted (a run is a few minutes), only the best wave
-// reached, coins, upgrades, quests, level, achievements, tips seen and the mute
-// setting, via localStorage.
+// Everything here is client-only — no backend, no login. The best wave reached,
+// coins, upgrades, quests, level, achievements, tips seen and the mute setting
+// live in localStorage, and so does the run in progress, so closing the game
+// doesn't lose it.
 // =====================================================================
 
 const COLS = 7;
@@ -43,17 +43,26 @@ const MAX_MARCHERS = 24; // per army; past this, new soldiers join the newest on
 const CLASH_SECONDS = 0.3;
 const MAX_PARTICLES = 200;
 const MAX_CANVAS_SCALE = 2; // sharper screens are drawn at this scale, to keep phones smooth
-const MAX_HIT_NUMBERS = 12;
-const MAX_FALLERS = 8;
-const FALLER_GAP_MS = 150; // fighters fall at most this often, so big armies don't flood the lane
+const MAX_FALLERS = 2;
+const FALLER_GAP_MS = 600; // fighters fall at most this often, so the two at the front stay easy to see
+const FALLER_START_GAP = 46; // pixels from the front line, behind the fighter
+const FALLER_ALPHA = 0.6;
 const STRIKE_COOLDOWN_SECONDS = 2;
 const STRIKE_OUTPUT_SECONDS = 0.5; // a strike is worth this much of the machine's output
 const VICTORY_MS = 900; // the armies react to a win before the reward choice appears
 const HIT_STOP_SECONDS = 0.07; // a tiny freeze that gives big hits weight
-const HIT_NUMBER_SECONDS = 0.7;
+const HIT_NUMBER_SECONDS = 0.9;
+const HIT_NUMBER_RISE = 18; // pixels per second
+const HIT_NUMBER_GAP = 68; // pixels from the front line, clear of the fighter
+const HIT_NUMBER_BOSS_GAP = 98; // bosses are wider
+const HIT_NUMBER_MARGIN = 26; // kept from the edges of the lane
 const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
+const RUN_SAVE_KEY = "gearfight_run";
+const RUN_SAVE_VERSION = 1; // saves from another version are ignored
+const RUN_SAVE_SECONDS = 5; // how often a run is saved while playing
+const RUN_SAVE_STATES = ["playing", "choosing", "tip", "paused", "worldclear"];
 const COINS_PER_WAVE = 2;
 const COINS_PER_BOSS = 10;
 const COIN_PURSE_PER_LEVEL = 0.1; // extra run coins per level
@@ -347,14 +356,65 @@ const QUEST_KINDS = [
   { kind: "cleanWave", base: 6, coins: 25, best: true, step: 3, text: (n) => `Reach wave ${n} without using Overdrive` },
 ];
 
+// What the rewards below add for each time they are picked.
+const PART_COOLING = 0.8; // Overdrive recharge multiplier
+const PART_STRIKE = 0.3;
+const PART_RUST_SHARE = 0.05;
+const MIN_RUST_SHARE = 0.05; // rust attacks always hit at least one gear
+const PART_COINS = 0.25;
+const PART_TRAIN_COST = 0.75; // training price multiplier
+const PART_SCRAP_REFUND = 0.65; // share of a gear's price; low enough that buying and scrapping can't make soldiers
+const PART_CHAIN_FALLOFF = 0.05;
+const PART_BOSS_DAMAGE = 0.25;
+const PART_BOMB_PAYOUT = 0.5;
+const PART_BIG_PAYOUT = 0.4;
+const PART_BOOST = 0.5;
+const PART_STORM_RECHARGE = 4; // how much faster lightning recharges during Overdrive
+const PART_RALLY_BONUS = 0.5;
+const PART_COMBO = 0.25;
+const PART_FORGE_SECONDS = 2; // of the machine's output sent by each merge
+const PART_FORGE_MIN_SOLDIERS = 5;
+const PART_CLOCKWORK = 0.25; // turns per second
+const FORGED_GEAR_LEVEL = 3;
+// How often each rarity turns up. Beating a boss makes the good ones likelier.
+const RARITY_WEIGHTS = { common: 60, rare: 30, epic: 10 };
+const LUCKY_RARITY_WEIGHTS = { common: 30, rare: 45, epic: 25 };
+
+// rarity: common unless it says otherwise. max: how many times a run can take it.
+// available: only offered when it would do something in this run. oneOff: takes
+// effect once, so it isn't listed among the parts the run has collected.
 const REWARDS = [
-  { name: "Big gear", text: "Fills half as fast, then sends 5 soldiers", gear: "big" },
-  { name: "Booster gear", text: "Gears touching it get an extra 25% per hit", gear: "booster" },
-  { name: "Bomb gear", text: "Fills half as fast, then blasts 2 enemies", gear: "bomb" },
-  { name: "Faster main gear", text: "The one-tooth gear turns 10% faster", apply: () => { driverTurnsPerSec += DRIVER_SPEED_REWARD; } },
-  { name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
-  { name: "Cheaper gears", text: "New gears cost 20% less", apply: () => { gearPriceScale *= DISCOUNT_REWARD; } },
-  { name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
+  { id: "bigGear", name: "Big gear", text: "Fills half as fast, then sends 5 soldiers", gear: "big" },
+  { id: "boosterGear", name: "Booster gear", text: "Gears touching it get an extra 25% per hit", gear: "booster" },
+  { id: "bombGear", name: "Bomb gear", text: "Fills half as fast, then blasts 2 enemies", gear: "bomb" },
+  { id: "fasterGear", name: "Faster main gear", text: "The one-tooth gear turns 10% faster", apply: () => { driverTurnsPerSec += DRIVER_SPEED_REWARD; } },
+  { id: "veterans", name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
+  { id: "cheaperGears", name: "Cheaper gears", text: "New gears cost 20% less", apply: () => { gearPriceScale *= DISCOUNT_REWARD; } },
+  { id: "reinforcements", oneOff: true, name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
+  { id: "cooling", name: "Cooling oil", text: "Overdrive recharges 20% faster", max: 2 },
+  { id: "staticCharge", name: "Static charge", text: "Lightning strikes hit 30% harder", max: 3 },
+  { id: "scrapDealer", name: "Scrap dealer", text: "Scrapping gives 30% more soldiers", max: 1 },
+  { id: "thickOil", name: "Thick oil", text: "Rust attacks hit 5% fewer of your gears", max: 2 },
+  { id: "warChest", name: "War chest", text: "Earn 25% more coins from this run", max: 2 },
+  { id: "drillManual", name: "Drill manual", text: "Training costs 25% less", max: 1, available: () => Boolean(nextRank()) },
+  { id: "piercing", name: "Sharp spears", text: "Soldiers hit armoured brutes at full strength", max: 1, available: () => worldHasEnemy("brute") },
+  { id: "antifreeze", name: "Antifreeze", text: "Freezes last half as long", max: 1, available: () => worldHasEnemy("frost") },
+  { id: "fireproof", name: "Fireproof grease", text: "Fire imps burn 1 gear instead of 2", max: 1, available: () => worldHasEnemy("imp") },
+  { id: "longChain", rarity: "rare", name: "Tight chain", text: "Hits fade less along a chain", max: 2 },
+  { id: "bossHunter", rarity: "rare", name: "Boss hunter", text: "Everything hurts bosses 25% more", max: 2 },
+  { id: "demolition", rarity: "rare", name: "Demolition", text: "Bomb gears blast 50% more enemies", max: 2, available: () => boardHasGear("bomb") },
+  { id: "heavyLoad", rarity: "rare", name: "Heavy load", text: "Big gears send 40% more soldiers", max: 2, available: () => boardHasGear("big") },
+  { id: "turbo", rarity: "rare", name: "Turbo booster", text: "Booster gears are 50% stronger", max: 2, available: () => boardHasGear("booster") },
+  { id: "blastCleaner", rarity: "rare", name: "Blast cleaner", text: "Each bomb gear blast fixes a rusted gear", max: 1, available: () => boardHasGear("bomb") },
+  { id: "stormEngine", rarity: "rare", name: "Storm engine", text: "Lightning recharges 4x faster during Overdrive", max: 1 },
+  { id: "warDrums", rarity: "rare", name: "War drums", text: "A full Rally charges with 100% more, not 50%", max: 1 },
+  { id: "patterns", rarity: "rare", name: "Pattern master", text: "Line and square combos are twice as strong", max: 1, available: () => grid.flat().some((cell) => cell && !cell.driver && (cell.type !== "soldier" || cell.level > 1)) },
+  { id: "forgeBonus", rarity: "rare", name: "Forge bonus", text: "Every merge also sends soldiers to the battle", max: 1 },
+  { id: "forgedGear", rarity: "rare", oneOff: true, name: "Forged gear", text: "A free level 3 gear", available: () => Boolean(bestEmptyCell()), apply: () => { placeGear(boughtGearType()).level = FORGED_GEAR_LEVEL; } },
+  { id: "chargedStrike", rarity: "epic", name: "Charged strike", text: "Lightning also fills every connected gear", max: 1 },
+  { id: "secondWind", rarity: "epic", name: "Second wind", text: "The next time you are overrun, the line resets instead", max: 1 },
+  { id: "promotion", rarity: "epic", oneOff: true, name: "Field promotion", text: "Your army moves up a rank for free", available: () => Boolean(nextRank()), apply: () => { armyRank += 1; questEvent("rank", armyRank); } },
+  { id: "clockwork", rarity: "epic", name: "Clockwork", text: "The one-tooth gear turns 25% faster", max: 2, apply: () => { driverTurnsPerSec += PART_CLOCKWORK; } },
 ];
 
 const WAVE_EVENTS = [
@@ -436,6 +496,11 @@ let lastRunXp = 0;
 let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
+let runParts = {}; // reward id: times picked this run
+let offeredRewards = null; // { title, ids } while a reward choice is open
+let runEventWeek = 0; // the week this run's weekly challenge belongs to
+let savedRun = null; // a run left unfinished last time, until it's continued or given up
+let runSaveIn = RUN_SAVE_SECONDS;
 let save = loadSave();
 let currentWorld = 0; // index into WORLDS
 let currentEvent = null; // this run's weekly challenge, from WEEKLY_EVENTS
@@ -473,7 +538,7 @@ let hitStop = 0;
 let winAt = 0; // when the current win happened, for the armies' reactions
 let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
 let rewardTimer = 0;
-let hitNumbers = []; // { x, y, text, color, age } floating up from the front line
+let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 
@@ -922,13 +987,14 @@ function connectedGears(row, col, firstSpin) {
   const first = grid[row]?.[col];
   if (!first || first.driver || first.rusted) return [];
   const seen = new Set([first]);
+  const falloff = CHAIN_FALLOFF + partCount("longChain") * PART_CHAIN_FALLOFF;
   const queue = [{ row, col, spin: firstSpin, power: 1 }];
   for (const cur of queue) {
     for (const [dr, dc] of TOOTH_DIRS) {
       const next = grid[cur.row + dr]?.[cur.col + dc];
       if (!next || next.driver || next.rusted || seen.has(next)) continue;
       seen.add(next);
-      const power = grid[cur.row][cur.col].type === "booster" ? 1 : Math.max(CHAIN_MIN_POWER, cur.power * CHAIN_FALLOFF);
+      const power = grid[cur.row][cur.col].type === "booster" ? 1 : Math.max(CHAIN_MIN_POWER, cur.power * falloff);
       queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin, power });
     }
   }
@@ -1004,7 +1070,30 @@ function boostersTouching(row, col) {
     const other = grid[row + dr]?.[col + dc];
     if (other?.type === "booster" && !other.rusted) count += other.level * (other.comboRing ? COMBO_RING_BOOST : 1);
   }
-  return count;
+  return count * (1 + partCount("turbo") * PART_BOOST);
+}
+
+function partCount(id) {
+  return runParts[id] || 0;
+}
+
+function worldHasEnemy(id) {
+  return WORLDS[currentEvent ? 0 : currentWorld].enemies.some(([enemy]) => enemy === id);
+}
+
+function comboLinePayout() {
+  return COMBO_LINE_PAYOUT + partCount("patterns") * PART_COMBO;
+}
+
+function comboBlockFill() {
+  return COMBO_BLOCK_FILL + partCount("patterns") * PART_COMBO;
+}
+
+// What this run's rewards add to one kind of gear's payout.
+function gearPartPayout(type) {
+  if (type === "big") return 1 + partCount("heavyLoad") * PART_BIG_PAYOUT;
+  if (type === "bomb") return 1 + partCount("demolition") * PART_BOMB_PAYOUT;
+  return 1;
 }
 
 // Each turn the tooth hits all four sides once, so a gear reachable from two
@@ -1019,8 +1108,8 @@ function soldiersPerSecond() {
       if (!spec.hits) continue;
       const level = levelPayout(grid[gear.row][gear.col].level) * armyStrength();
       const cell = grid[gear.row][gear.col];
-      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * (cell.comboLine ? COMBO_LINE_PAYOUT : 1);
-      const fill = cell.comboBlock ? COMBO_BLOCK_FILL : 1;
+      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * gearPartPayout(cell.type) * (cell.comboLine ? comboLinePayout() : 1);
+      const fill = cell.comboBlock ? comboBlockFill() : 1;
       perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * fill * payout) / spec.hits;
     }
   }
@@ -1034,11 +1123,11 @@ function hitGear(gear, hits) {
   cell.spinTarget += gear.spin;
   cell.flash = 1;
   if (!spec.hits) return;
-  cell.ticks += hits * (cell.comboBlock ? COMBO_BLOCK_FILL : 1);
+  cell.ticks += hits * (cell.comboBlock ? comboBlockFill() : 1);
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    const level = levelPayout(cell.level) * (cell.comboLine ? COMBO_LINE_PAYOUT : 1) * armyStrength();
+    const level = levelPayout(cell.level) * gearPartPayout(cell.type) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
     else launchBomb(spec.enemies * level);
   }
@@ -1053,7 +1142,8 @@ function enemyRank() {
 }
 
 function trainCost() {
-  return Math.round(nextRank().trainCost * (1 - upgradeLevel("drillSergeant") * TRAIN_DISCOUNT_PER_LEVEL));
+  const manual = partCount("drillManual") ? PART_TRAIN_COST : 1;
+  return Math.round(nextRank().trainCost * (1 - upgradeLevel("drillSergeant") * TRAIN_DISCOUNT_PER_LEVEL) * manual);
 }
 
 function nextRank() {
@@ -1108,6 +1198,7 @@ function mergeGears(fromRow, fromCol, toRow, toCol) {
   spawnRustBurst(toRow, toCol, "#ffcc33", "#fff3c4");
   showToast(`Level ${target.level}!`);
   playClankSound();
+  if (partCount("forgeBonus")) sendSoldiers(Math.max(PART_FORGE_MIN_SOLDIERS * armyStrength(), soldiersPerSecond() * PART_FORGE_SECONDS));
 }
 
 function gearCost() {
@@ -1157,6 +1248,7 @@ function placeGear(type) {
   const { row, col } = bestEmptyCell();
   grid[row][col] = freshCell(type);
   grid[row][col].flash = 1;
+  return grid[row][col];
 }
 
 // Soldiers are the price, so buying weakens the army. A purchase that would
@@ -1206,10 +1298,10 @@ function buyGear() {
   playClankSound();
 }
 
-// Half the current price, which is always less than a gear just cost, so
+// Part of the current price, which is always less than a gear just cost, so
 // buying and scrapping can never make soldiers.
 function scrapRefund() {
-  return Math.floor(gearCost() / 2);
+  return Math.floor(gearCost() * (partCount("scrapDealer") ? PART_SCRAP_REFUND : 0.5));
 }
 
 function scrapGear(row, col) {
@@ -1240,7 +1332,6 @@ function sendSoldiers(baseCount) {
   const count = waveEvent?.id === "double" ? baseCount * 2 : baseCount;
   sendMarcher("player", count, MARCH_ARRIVED);
   totalArmyScore += count / armyStrength();
-  showToast(`+${Math.round(count / armyStrength())}`);
   playFireSound();
 }
 
@@ -1248,8 +1339,20 @@ function launchBomb(enemies) {
   enemiesBlasted += enemies;
   questEvent("blasted", enemies);
   sendMarcher("bomb", enemies, MARCH_ARRIVED);
-  showToast(`-${enemies}`);
+  if (partCount("blastCleaner")) fixOneRustedGear();
   playFireSound();
+}
+
+function fixOneRustedGear() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (!grid[row][col]?.rusted) continue;
+      grid[row][col].rusted = false;
+      recordStat("rustFixed");
+      spawnRustBurst(row, col, "#ffcc33", "#fff3c4");
+      return;
+    }
+  }
 }
 
 // The player's soldiers and bombs land at once; the enemy's march in from the start.
@@ -1275,7 +1378,7 @@ function bossMaxHp(forWave) {
 
 function damageBoss(amount) {
   if (!boss || boss.shield > 0) return;
-  boss.hp = Math.max(0, boss.hp - amount);
+  boss.hp = Math.max(0, boss.hp - amount * (1 + partCount("bossHunter") * PART_BOSS_DAMAGE));
   boss.hitFlash = 1;
 }
 
@@ -1284,7 +1387,7 @@ function bossReinforcePerSec(enemyStart) {
 }
 
 function rustPerAttack(workingGears) {
-  const share = BOSS_RUST_SHARE - upgradeLevel("rustGuard") * RUST_GUARD_PER_LEVEL;
+  const share = Math.max(MIN_RUST_SHARE, BOSS_RUST_SHARE - upgradeLevel("rustGuard") * RUST_GUARD_PER_LEVEL - partCount("thickOil") * PART_RUST_SHARE);
   return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * share));
 }
 
@@ -1379,7 +1482,8 @@ function tapBattle(e) {
 }
 
 function strikeRecharge() {
-  return STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL - (heroIs("archer") ? ARCHER_RECHARGE : 0);
+  const seconds = STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL - (heroIs("archer") ? ARCHER_RECHARGE : 0);
+  return overdriveLeft > 0 && partCount("stormEngine") ? seconds / PART_STORM_RECHARGE : seconds;
 }
 
 function strikeEnemy() {
@@ -1387,10 +1491,13 @@ function strikeEnemy() {
   strikeCooldown = strikeRecharge();
   questEvent("strikes");
   frozenFor = 0;
-  const boost = (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1);
+  const boost = (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
+  if (partCount("chargedStrike")) {
+    for (const gear of rustTargets()) hitGear(gear, 1);
+  }
   const front = frontLineFx();
   const x = front.x + 22;
   bolts.push({ x, age: 0 });
@@ -1398,7 +1505,7 @@ function strikeEnemy() {
   hitStop = HIT_STOP_SECONDS;
   screenShake = Math.max(screenShake, 3);
   spawnFaller("enemy");
-  spawnHitNumber(x, front.y - 16, `-${Math.round(amount)}`, "#ffe14d", amount);
+  spawnHitNumber("enemy", (amount * (1 - WIN_RATIO)) / WIN_RATIO / enemyRank().strength, "#ffe14d");
   for (let i = 0; i < 10; i++) {
     spawnParticle({
       x,
@@ -1466,6 +1573,10 @@ function updateBoss(dt) {
   }
 }
 
+function rallyBonus() {
+  return RALLY_BONUS + partCount("warDrums") * PART_RALLY_BONUS;
+}
+
 function toggleRally() {
   if (gameState !== "playing") return;
   if (!rallying) {
@@ -1475,7 +1586,7 @@ function toggleRally() {
   }
   rallying = false;
   if (rallyReserve > 0) {
-    const bonus = rallyHeld >= RALLY_FULL_SECONDS ? RALLY_BONUS : 1;
+    const bonus = rallyHeld >= RALLY_FULL_SECONDS ? rallyBonus() : 1;
     marchers.push({ side: "player", value: rallyReserve * bonus, t: RALLY_CHARGE_START, charge: true });
     rallyReserve = 0;
     screenShake = Math.max(screenShake, BOMB_SHAKE);
@@ -1492,7 +1603,7 @@ function resetRally() {
 function updateRallyButton() {
   const button = document.getElementById("rally-btn");
   const full = rallying && rallyHeld >= RALLY_FULL_SECONDS;
-  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * RALLY_BONUS)}` : `Charge ${Math.round(rallyReserve)}`;
+  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.round(rallyReserve)}`;
   if (button.textContent !== label) button.textContent = label;
   button.disabled = gameState !== "playing";
   button.classList.toggle("holding", rallying);
@@ -1501,7 +1612,8 @@ function updateRallyButton() {
 
 function overdriveRecharge() {
   const seconds = OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
-  return currentEvent?.id === "overdrive" ? seconds / 3 : seconds;
+  const cooled = seconds * Math.pow(PART_COOLING, partCount("cooling"));
+  return currentEvent?.id === "overdrive" ? cooled / 3 : cooled;
 }
 
 function overdriveSeconds() {
@@ -1658,7 +1770,7 @@ function updateMarchers(dt) {
     m.t += dt / MARCH_SECONDS;
     if (m.t < 1) continue;
     if (m.side === "player") {
-      const value = m.value * (enemyType?.id === "brute" ? BRUTE_SOLDIER_DAMAGE : 1);
+      const value = m.value * (enemyType?.id === "brute" && !partCount("piercing") ? BRUTE_SOLDIER_DAMAGE : 1);
       if (rallying && !m.charge) {
         rallyReserve += value;
       } else {
@@ -1736,7 +1848,7 @@ function winWave() {
   frozenFor = 0;
   if (!currentEvent) save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
   if (clearedWorld) clearWorld();
-  else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`);
+  else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`, bossBeaten);
 }
 
 // Reset the balance of power so the new wave starts contested. Carrying the
@@ -1774,7 +1886,8 @@ function burnGears() {
   grid.forEach((row, r) => row.forEach((cell, c) => {
     if (cell && !cell.driver && cell.ticks > 0) lit.push({ r, c });
   }));
-  for (let i = 0; i < IMP_GEARS_BURNED && lit.length; i++) {
+  const burned = IMP_GEARS_BURNED - partCount("fireproof");
+  for (let i = 0; i < burned && lit.length; i++) {
     const [{ r, c }] = lit.splice(Math.floor(Math.random() * lit.length), 1);
     grid[r][c].ticks = 0;
     grid[r][c].ticksAnim = 0;
@@ -1800,7 +1913,7 @@ function updateEnemyType(dt) {
   if (enemyType.id === "shaman") rustAttack();
   else if (enemyType.id === "imp") burnGears();
   else {
-    frozenFor = FROST_SECONDS;
+    frozenFor = FROST_SECONDS / (1 + partCount("antifreeze"));
     showToast("Frozen! Strike to thaw");
     playRustSound();
   }
@@ -1820,27 +1933,51 @@ function canOfferSpecialGear() {
   return Boolean(bestEmptyCell()) && specials < specialGearCap();
 }
 
-// One special gear (while one can be offered) plus other rewards.
-function pickRewards() {
-  const open = REWARDS.filter((r) => (r.gear ? canOfferSpecialGear() : !r.available || r.available()));
-  const shuffled = open.map((r) => [Math.random(), r]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
+function rewardIsOpen(reward) {
+  if (reward.gear) return canOfferSpecialGear();
+  if (reward.max && partCount(reward.id) >= reward.max) return false;
+  return !reward.available || reward.available();
+}
+
+function rewardRarity(reward) {
+  return reward.rarity || "common";
+}
+
+// One special gear (while one can be offered) plus other rewards, with the rarer
+// ones less likely to come up. The power in the sort key is a weighted shuffle.
+function pickRewards(lucky) {
+  const weights = lucky ? LUCKY_RARITY_WEIGHTS : RARITY_WEIGHTS;
+  const open = REWARDS.filter(rewardIsOpen);
+  const shuffled = open.map((r) => [Math.pow(Math.random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
 }
 
-function offerRewards(title) {
+function offerRewards(title, lucky = false) {
+  showRewards(title, pickRewards(lucky));
+  saveRun();
+}
+
+function showRewards(title, rewards) {
   gameState = "choosing";
   drag = null;
+  offeredRewards = { title, ids: rewards.map((reward) => reward.id) };
   rewardOpenedAt = performance.now() + VICTORY_MS;
   document.getElementById("reward-title").textContent = title;
   const list = document.getElementById("reward-options");
   list.replaceChildren();
-  for (const reward of pickRewards()) {
+  for (const reward of rewards) {
     const button = document.createElement("button");
-    button.className = "reward-option";
+    const rarity = rewardRarity(reward);
+    button.className = `reward-option ${rarity}`;
     const name = document.createElement("b");
     name.textContent = reward.name;
+    if (rarity !== "common") {
+      const label = document.createElement("small");
+      label.textContent = rarity === "epic" ? "Epic" : "Rare";
+      name.append(" ", label);
+    }
     const text = document.createElement("span");
     text.textContent = reward.text;
     button.append(name, text);
@@ -1857,7 +1994,8 @@ function offerRewards(title) {
 
 function clearEvent() {
   gameState = "worldclear";
-  const firstTime = save.eventClearedWeek !== weekNumber();
+  // A run saved last week can still be finished, but only pays as a repeat.
+  const firstTime = runEventWeek === weekNumber() && save.eventClearedWeek !== weekNumber();
   const coins = firstTime ? EVENT_CLEAR_COINS : REPEAT_CLEAR_COINS;
   if (firstTime) {
     save.eventClearedWeek = weekNumber();
@@ -1867,6 +2005,7 @@ function clearEvent() {
   gainXp(WORLD_CLEAR_XP);
   writeSave();
   lastClear = { coins, firstTime };
+  saveRun();
   clearTimeout(rewardTimer);
   rewardTimer = setTimeout(showWorldClear, VICTORY_MS);
 }
@@ -1886,6 +2025,7 @@ function clearWorld() {
   recordStat("worlds", clearedWorldCount());
   writeSave();
   lastClear = { coins, firstTime };
+  saveRun();
   clearTimeout(rewardTimer);
   rewardTimer = setTimeout(showWorldClear, VICTORY_MS);
 }
@@ -2008,23 +2148,27 @@ function chooseReward(reward) {
     placeGear(reward.gear);
     playClankSound();
   } else {
-    reward.apply();
+    if (!reward.oneOff) runParts[reward.id] = partCount(reward.id) + 1;
+    reward.apply?.();
   }
+  offeredRewards = null;
   startWave();
   document.getElementById("reward-screen").classList.add("hidden");
   gameState = "playing";
   showWaveBanner(boss ? "Boss wave!" : waveEvent ? `${waveEvent.name}!` : `Wave ${wave}!`);
+  saveRun();
 }
 
 function coinsForRun() {
   const base = (wave - 1) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
-  return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL));
+  return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL) * (1 + partCount("warChest") * PART_COINS));
 }
 
 // Pays out once per run, whether it ended in defeat or with Restart.
 function bankRun() {
   if (runBanked) return 0;
   runBanked = true;
+  clearRunSave();
   const coins = coinsForRun();
   save.coins += coins;
   lastRunXp = XP_PER_RUN + (wave - 1) * XP_PER_WAVE + bossesBeaten * XP_PER_BOSS;
@@ -2032,6 +2176,166 @@ function bankRun() {
   if (wave > 1 || runTime >= COUNTED_RUN_SECONDS) recordStat("runs");
   writeSave();
   return coins;
+}
+
+// The run in progress, as plain data. Effects and animation are left out: they
+// start fresh and never change the outcome.
+function runSnapshot() {
+  return {
+    version: RUN_SAVE_VERSION,
+    state: gameState,
+    world: currentWorld,
+    event: currentEvent?.id ?? null,
+    eventWeek: runEventWeek,
+    grid: grid.map((row) => row.map((cell) => cell && {
+      type: cell.type,
+      level: cell.level,
+      ticks: cell.ticks,
+      rusted: Boolean(cell.rusted),
+      driver: Boolean(cell.driver),
+      angle: cell.angle,
+      spin: cell.spin,
+    })),
+    boss: boss && { kind: boss.kind.id, hp: boss.hp, maxHp: boss.maxHp, attackIn: boss.attackIn, reinforcePerSec: boss.reinforcePerSec, shield: boss.shield },
+    enemyType: enemyType?.id ?? null,
+    waveEvent: waveEvent?.id ?? null,
+    blockedCells: [...blockedCells],
+    marchers,
+    parts: runParts,
+    offered: offeredRewards,
+    lastClear,
+    comboCounts,
+    numbers: {
+      wave, waveTime, playerPower, enemyPower, totalArmyScore, enemyBacklog,
+      gearsBought, peakRate, driverTurnsPerSec, waveLead, gearPriceScale, nextWaveBonus,
+      lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
+      eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
+      eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
+    },
+    flags: { endless, usedOverdrive, rallying },
+    lastEventId,
+  };
+}
+
+function saveRun() {
+  runSaveIn = RUN_SAVE_SECONDS;
+  if (runBanked || !RUN_SAVE_STATES.includes(gameState)) return;
+  try {
+    localStorage.setItem(RUN_SAVE_KEY, JSON.stringify(runSnapshot()));
+  } catch {
+    // Without storage, the run simply lasts until the page closes.
+  }
+}
+
+function clearRunSave() {
+  savedRun = null;
+  updateContinueButton();
+  try {
+    localStorage.removeItem(RUN_SAVE_KEY);
+  } catch {
+    // Nothing was stored, then.
+  }
+}
+
+// A damaged or outdated save is ignored rather than breaking the game.
+function isValidRunSave(data) {
+  if (data?.version !== RUN_SAVE_VERSION || !RUN_SAVE_STATES.includes(data.state) || !WORLDS[data.world]) return false;
+  if (data.event !== null && !WEEKLY_EVENTS.some((e) => e.id === data.event)) return false;
+  if (!Array.isArray(data.grid) || data.grid.length !== ROWS) return false;
+  const cellsOk = data.grid.every((row) => Array.isArray(row) && row.length === COLS
+    && row.every((cell) => cell === null || (GEAR_TYPES[cell.type] && cell.level >= 1 && cell.level <= MAX_GEAR_LEVEL && Number.isFinite(cell.ticks))));
+  if (!cellsOk || !data.grid[DRIVER_ROW][DRIVER_COL]?.driver || !Number.isFinite(data.grid[DRIVER_ROW][DRIVER_COL].angle)) return false;
+  if (!data.numbers || !Object.values(data.numbers).every(Number.isFinite)) return false;
+  if (!(data.numbers.wave >= 1) || !ARMY_RANKS[data.numbers.armyRank]) return false;
+  if (!Array.isArray(data.marchers) || !Array.isArray(data.blockedCells)) return false;
+  if (!data.parts || typeof data.parts !== "object" || !data.comboCounts || !data.flags) return false;
+  if (data.boss && !BOSS_KINDS.some((kind) => kind.id === data.boss.kind)) return false;
+  if (data.enemyType !== null && !ENEMY_TYPES[data.enemyType]) return false;
+  if (data.waveEvent !== null && !WAVE_EVENTS.some((e) => e.id === data.waveEvent)) return false;
+  if (data.state === "choosing" && !data.offered?.ids?.every((id) => REWARDS.some((r) => r.id === id))) return false;
+  if (data.state === "worldclear" && !data.lastClear) return false;
+  return true;
+}
+
+function loadRunSave() {
+  try {
+    const data = JSON.parse(localStorage.getItem(RUN_SAVE_KEY));
+    return isValidRunSave(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function restoreRun(data) {
+  currentWorld = data.world;
+  currentEvent = WEEKLY_EVENTS.find((e) => e.id === data.event) || null;
+  runEventWeek = data.eventWeek;
+  grid = data.grid.map((row) => row.map((cell) => {
+    if (!cell) return null;
+    const restored = { ...freshCell(cell.type), level: cell.level, ticks: cell.ticks, ticksAnim: cell.ticks, rusted: cell.rusted };
+    if (cell.driver) Object.assign(restored, { driver: true, angle: cell.angle, spin: cell.spin });
+    return restored;
+  }));
+  const n = data.numbers;
+  ({ wave, waveTime, playerPower, enemyPower, totalArmyScore, enemyBacklog } = n);
+  ({ gearsBought, peakRate, driverTurnsPerSec, waveLead, gearPriceScale, nextWaveBonus } = n);
+  ({ lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun } = n);
+  ({ eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld } = n);
+  ({ eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown } = n);
+  ({ endless, usedOverdrive, rallying } = data.flags);
+  boss = data.boss && { ...data.boss, kind: BOSS_KINDS.find((kind) => kind.id === data.boss.kind), hitFlash: 0 };
+  enemyType = data.enemyType && ENEMY_TYPES[data.enemyType];
+  waveEvent = data.waveEvent && WAVE_EVENTS.find((e) => e.id === data.waveEvent);
+  lastEventId = data.lastEventId;
+  blockedCells = new Set(data.blockedCells);
+  marchers = data.marchers;
+  clashes = [];
+  runParts = data.parts;
+  lastClear = data.lastClear;
+  comboCounts = data.comboCounts;
+  offeredRewards = null;
+  runBanked = false;
+}
+
+// Back into a saved run, always stopped so the player can get their bearings.
+function continueRun() {
+  if (!savedRun) return;
+  ensureAudio();
+  const data = savedRun;
+  savedRun = null;
+  restoreRun(data);
+  updateCombos();
+  document.getElementById("title-screen").classList.add("hidden");
+  document.getElementById("worlds-screen").classList.add("hidden");
+  document.getElementById("game-screen").classList.remove("hidden");
+  gameState = "playing";
+  handleResize();
+  document.getElementById("wave-num").textContent = wave;
+  updateBuyButton();
+  updateOverdriveButton();
+  updateRallyButton();
+  updateTrainButton();
+  if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)));
+  else if (data.state === "worldclear") {
+    gameState = "worldclear";
+    showWorldClear();
+  } else pauseGame();
+  updateContinueButton();
+}
+
+function runDescription(data) {
+  const name = data.event !== null ? WEEKLY_EVENTS.find((e) => e.id === data.event).name : WORLDS[data.world].name;
+  return `${name}, wave ${data.numbers.wave}`;
+}
+
+// Starting something new gives up the saved run, so the title screen says so.
+function updateContinueButton() {
+  const button = document.getElementById("continue-btn");
+  button.classList.toggle("hidden", !savedRun);
+  if (savedRun) button.textContent = `Continue: ${runDescription(savedRun)}`;
+  const play = document.getElementById("play-btn");
+  play.classList.toggle("has-run", Boolean(savedRun));
+  play.textContent = savedRun ? "New game (ends this run)" : "Play game";
 }
 
 function formatTime(seconds) {
@@ -2088,11 +2392,20 @@ function showRunSummary(coins) {
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
+function renderRunParts() {
+  const owned = REWARDS.filter((reward) => partCount(reward.id) > 0)
+    .map((reward) => (partCount(reward.id) > 1 ? `${reward.name} x${partCount(reward.id)}` : reward.name));
+  const line = document.getElementById("pause-parts");
+  line.textContent = owned.length ? `This run: ${owned.join(", ")}` : "";
+  line.classList.toggle("hidden", !owned.length);
+}
+
 function pauseGame() {
   if (gameState !== "playing") return;
   gameState = "paused";
   drag = null;
   renderQuestList("pause-quests");
+  renderRunParts();
   document.getElementById("pause-screen").classList.remove("hidden");
 }
 
@@ -2135,7 +2448,19 @@ function closeTip() {
 function replayTips() {
   save.tips = {};
   writeSave();
-  startNewRun();
+  if (savedRun) continueRun();
+  else startNewRun();
+}
+
+// Second wind: the line goes back to even and the enemies on their way are lost.
+function useSecondWind() {
+  runParts.secondWind -= 1;
+  playerPower = enemyPower;
+  marchers = marchers.filter((m) => m.side !== "enemy");
+  screenShake = Math.max(screenShake, BOMB_SHAKE * 1.5);
+  showWaveBanner("Second wind!");
+  spawnConfetti();
+  playWinSound();
 }
 
 function gameOver() {
@@ -2172,7 +2497,10 @@ function update(dt) {
   const ratio = total > 0 ? playerPower / total : 0.5;
   const won = boss ? boss.hp <= 0 : ratio >= WIN_RATIO;
   if (won) winWave();
-  else if (ratio <= LOSE_RATIO) gameOver();
+  else if (ratio <= LOSE_RATIO) {
+    if (partCount("secondWind") > 0) useSecondWind();
+    else gameOver();
+  }
 
   document.getElementById("wave-num").textContent = wave;
   updateBuyButton();
@@ -2180,6 +2508,8 @@ function update(dt) {
   updateRallyButton();
   updateTrainButton();
   maybeShowTip();
+  runSaveIn -= dt;
+  if (runSaveIn <= 0) saveRun();
 }
 
 // =====================================================================
@@ -3185,18 +3515,18 @@ function drawBattle() {
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
   const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
-  drawArmyFighter(ctx, playerX, groundY, playerLook, 1, won ? "cheer" : "fight", won ? "happy" : moodFor(ratio, shove.player));
-  if (!boss) {
-    drawArmyFighter(ctx, enemyX, groundY, enemyLook, won ? 1 : -1, won ? "flee" : "fight", won ? "scared" : moodFor(1 - ratio, shove.enemy));
-  }
-
+  // Behind the two fighters, so the ones still fighting are always in plain view.
   for (const f of fallers) {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, 2 * (1 - f.age));
+    ctx.globalAlpha = FALLER_ALPHA * Math.min(1, 2 * (1 - f.age));
     ctx.translate(f.x, f.y);
     ctx.rotate(f.angle);
     drawSoldier(ctx, 0, 10, f.facing, f.look, "idle", 0, "wince");
     ctx.restore();
+  }
+  drawArmyFighter(ctx, playerX, groundY, playerLook, 1, won ? "cheer" : "fight", won ? "happy" : moodFor(ratio, shove.player));
+  if (!boss) {
+    drawArmyFighter(ctx, enemyX, groundY, enemyLook, won ? 1 : -1, won ? "flee" : "fight", won ? "scared" : moodFor(1 - ratio, shove.enemy));
   }
 
   // Soldiers on their way, on a row of their own so they stand out from the
@@ -3324,11 +3654,18 @@ function frontLineFx() {
   return { x: laneRect.x + 16 + (laneRect.w - 32) * ratio, y: laneRect.y + laneRect.h * 0.5 };
 }
 
-// Bigger hits get bigger numbers.
-function spawnHitNumber(x, y, text, color, amount) {
-  if (hitNumbers.length >= MAX_HIT_NUMBERS) return;
-  const size = Math.round(Math.min(26, 13 + Math.log10(Math.max(1, amount / armyStrength())) * 9));
-  hitNumbers.push({ x, y, text, color, size, age: 0 });
+// Only the big moments get a number, counted the way the army totals are. Hits
+// that land close together add up into one number, so they never pile up.
+function spawnHitNumber(side, amount, color) {
+  const number = hitNumbers.find((n) => n.side === side);
+  if (number) {
+    number.amount += amount;
+    number.color = color;
+    number.age = 0;
+    number.rise = 0;
+  } else {
+    hitNumbers.push({ side, amount, color, age: 0, rise: 0 });
+  }
 }
 
 function spawnFaller(side) {
@@ -3339,9 +3676,9 @@ function spawnFaller(side) {
   const markerX = 16 + (battleCssW - 32) * (total > 0 ? playerPower / total : 0.5);
   const away = side === "enemy" ? 1 : -1;
   fallers.push({
-    x: markerX + away * 14,
+    x: markerX + away * FALLER_START_GAP,
     y: battleCssH * 0.5,
-    vx: away * randomBetween(40, 90),
+    vx: away * randomBetween(60, 110),
     vy: randomBetween(-110, -60),
     spin: away * randomBetween(4, 8),
     angle: 0,
@@ -3365,7 +3702,7 @@ function spawnFrontLineHit(marcher) {
       screenShake = Math.max(screenShake, 3);
     }
   }
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     spawnParticle({
       x,
       y,
@@ -3377,14 +3714,8 @@ function spawnFrontLineHit(marcher) {
       color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
     });
   }
-  if (isEnemy) return;
-  spawnHitNumber(
-    x + randomBetween(-10, 10),
-    y - 10,
-    `${marcher.side === "bomb" ? "-" : "+"}${Math.round(marcher.value)}`,
-    marcher.side === "bomb" ? "#ff8a3d" : marcher.charge ? "#ffcc33" : "#bcd9ff",
-    marcher.value,
-  );
+  if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value / enemyRank().strength, "#ff8a3d");
+  else if (marcher.charge) spawnHitNumber("player", marcher.value / armyStrength(), "#ffcc33");
 }
 
 function spawnConfetti() {
@@ -3417,7 +3748,7 @@ function updateFx(dt) {
   particles = particles.filter((p) => p.age < p.life);
   for (const number of hitNumbers) {
     number.age += dt;
-    number.y -= 34 * dt;
+    number.rise += HIT_NUMBER_RISE * dt;
   }
   hitNumbers = hitNumbers.filter((number) => number.age < HIT_NUMBER_SECONDS);
   for (const f of fallers) {
@@ -3479,13 +3810,21 @@ function drawFx() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 3;
+  const front = frontLineFx();
+  const gap = boss ? HIT_NUMBER_BOSS_GAP : HIT_NUMBER_GAP;
   for (const number of hitNumbers) {
-    ctx.font = `800 ${number.size}px system-ui, sans-serif`;
-    ctx.globalAlpha = 1 - number.age / HIT_NUMBER_SECONDS;
+    const value = Math.max(1, Math.round(number.amount));
+    const label = `${number.side === "enemy" ? "-" : "+"}${shortNumber(value)}`;
+    const wanted = front.x + (number.side === "enemy" ? gap : -gap);
+    const x = Math.max(laneRect.x + HIT_NUMBER_MARGIN, Math.min(laneRect.x + laneRect.w - HIT_NUMBER_MARGIN, wanted));
+    const y = laneRect.y + laneRect.h * 0.34 - number.rise;
+    // Bigger hits get bigger numbers. They stay solid at first, then fade.
+    ctx.font = `800 ${Math.round(Math.min(22, 14 + Math.log10(value) * 3))}px system-ui, sans-serif`;
+    ctx.globalAlpha = Math.min(1, 2 * (1 - number.age / HIT_NUMBER_SECONDS));
     ctx.strokeStyle = "#1c130a";
-    ctx.strokeText(number.text, number.x, number.y);
+    ctx.strokeText(label, x, y);
     ctx.fillStyle = number.color;
-    ctx.fillText(number.text, number.x, number.y);
+    ctx.fillText(label, x, y);
   }
   ctx.globalAlpha = 1;
 }
@@ -3813,8 +4152,14 @@ function handleResize() {
 function startNewRun() {
   ensureAudio();
   // Restart ends a run in progress, which still earns its coins.
-  const restarted = ["playing", "choosing", "tip", "paused", "worldclear"].includes(gameState);
-  const coinsFromRestart = restarted ? bankRun() : 0;
+  const restarted = RUN_SAVE_STATES.includes(gameState);
+  // So does giving up a run saved last time.
+  if (savedRun) {
+    ({ wave, bossesBeaten, runTime } = savedRun.numbers);
+    runParts = savedRun.parts;
+    runBanked = false;
+  }
+  const coinsFromRestart = restarted || savedRun ? bankRun() : 0;
   drag = null;
   gearsBought = 0;
   peakRate = 0;
@@ -3836,6 +4181,10 @@ function startNewRun() {
   runTime = 0;
   bestWaveBeforeRun = bestWave;
   runBanked = false;
+  runParts = {};
+  offeredRewards = null;
+  lastClear = null;
+  runEventWeek = currentEvent ? weekNumber() : 0;
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
   armyRank = 0;
@@ -3880,6 +4229,7 @@ function startNewRun() {
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
   showWaveBanner(currentEvent ? currentEvent.name : WORLDS[currentWorld].name);
+  saveRun();
 }
 
 let lastTime = 0;
@@ -3907,6 +4257,9 @@ function init() {
     document.getElementById("best-line").classList.remove("hidden");
   }
 
+  savedRun = loadRunSave();
+  updateContinueButton();
+  document.getElementById("continue-btn").addEventListener("click", continueRun);
   document.getElementById("play-btn").addEventListener("click", pressPlay);
   document.getElementById("next-world-btn").addEventListener("click", goToNextWorld);
   document.getElementById("keep-going-btn").addEventListener("click", keepGoing);
@@ -3927,8 +4280,12 @@ function init() {
   document.getElementById("resume-btn").addEventListener("click", resumeGame);
   // A call or a switch to another app shouldn't lose the run.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) pauseGame();
+    if (document.hidden) {
+      pauseGame();
+      saveRun();
+    }
   });
+  window.addEventListener("pagehide", saveRun);
   document.getElementById("how-to-play-btn").addEventListener("click", replayTips);
   document.getElementById("title-quests-btn").addEventListener("click", openQuests);
   document.getElementById("gameover-quests-btn").addEventListener("click", openQuests);
