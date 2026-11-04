@@ -1,0 +1,12 @@
+{
+  "name": "gear-fight",
+  "private": true,
+  "description": "Tests for Gear Fight! The game itself is the public folder and needs no build.",
+  "scripts": {
+    "test": "node tests/run-all.js",
+    "balance": "node tests/balance.js"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

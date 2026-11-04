@@ -66,7 +66,6 @@ const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGea
 const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!" };
 const TIP_FEATURES = { rally: "rally", train: "train" };
 const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
-const MAX_STATUS_PARTS = 3; // rewards listed by name beside the effects happening now
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
 // and bosses use their real art instead.
 const REWARD_ICONS = {
@@ -612,7 +611,7 @@ const TIPS = [
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.", when: () => boss?.shield > 0 },
-  { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
+  { id: "rally", text: "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
   { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => waveTime > 8 },
   { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute" },
@@ -677,6 +676,7 @@ let runEventWeek = 0; // the week this run's weekly challenge belongs to
 let savedRun = null; // a run left unfinished last time, until it's continued or given up
 let runSaveIn = RUN_SAVE_SECONDS;
 let rerollsLeft = REROLLS_PER_RUN;
+let pausedFromBuild = false; // resuming goes back to the break, not into a wave
 let runEasy = false;
 let strikeHeld = 0; // seconds lightning has been ready without being used
 let buildLeft = 0; // seconds left of the break between waves
@@ -2166,20 +2166,23 @@ function updateDragPreview(e) {
   drag.previewRate = previewDropRate(target);
 }
 
-// What's helping or hurting right now, then the rewards collected this run.
+// Most important first: what's hurting now, what's helping now, then rewards with
+// the newest first. Whatever doesn't fit is counted at the end.
 function statusChips() {
   const chips = [];
-  if (overdriveLeft > 0) chips.push(["good", `Overdrive ${Math.ceil(overdriveLeft)}s`]);
   if (frozenFor > 0) chips.push(["bad", `Frozen ${Math.ceil(frozenFor)}s`]);
-  if (rallying) chips.push(["good", "Rally ready"]);
   if (activeDeal) chips.push(["bad", `Deal: ${activeDeal.text}`]);
   if (wavePace) chips.push(["bad", wavePace.name]);
+  if (overdriveLeft > 0) chips.push(["good", `Overdrive ${Math.ceil(overdriveLeft)}s`]);
+  if (rallying) chips.push(["good", "Rally ready"]);
   if (waveEvent?.id === "double") chips.push(["good", waveEvent.name]);
   if (heroIs("guardian") && !rustBlocked) chips.push(["good", "Blocking rust"]);
   if (partCount("secondWind") > 0) chips.push(["good", "Second wind"]);
-  const parts = runPartNames().filter((name) => name !== "Second wind");
-  for (const name of parts.slice(-MAX_STATUS_PARTS)) chips.push(["part", name]);
-  if (parts.length > MAX_STATUS_PARTS) chips.push(["part", `+${parts.length - MAX_STATUS_PARTS} more`]);
+  const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
+  for (const id of parts) {
+    const name = REWARDS.find((reward) => reward.id === id).name;
+    chips.push(["part", partCount(id) > 1 ? `${name} x${partCount(id)}` : name]);
+  }
   return chips;
 }
 
@@ -2190,12 +2193,22 @@ function updateStatusRow() {
   if (key === lastStatusKey) return;
   lastStatusKey = key;
   const row = document.getElementById("status-chips");
-  row.replaceChildren(...chips.map(([kind, text]) => {
+  const makeChip = (kind, text) => {
     const chip = document.createElement("span");
     chip.className = `status-chip ${kind}`;
     chip.textContent = text;
     return chip;
-  }));
+  };
+  row.replaceChildren(...chips.map(([kind, text]) => makeChip(kind, text)));
+  // Takes labels off the end until the rest and the count fit in the row.
+  const box = document.getElementById("status-row");
+  let hidden = 0;
+  while (box.scrollHeight > box.clientHeight && row.childElementCount > 0) {
+    if (hidden > 0) row.lastElementChild.remove();
+    row.lastElementChild?.remove();
+    hidden += 1;
+    row.append(makeChip("part", `+${hidden} more`));
+  }
 }
 
 function updateRateReadout() {
@@ -3049,7 +3062,7 @@ function runSnapshot() {
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
       buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount,
     },
-    flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy },
+    flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
     lastEventId,
   };
@@ -3178,8 +3191,9 @@ function continueRun() {
   else if (data.state === "worldclear") {
     gameState = "worldclear";
     showWorldClear();
-  } else if (data.state === "building") {
+  } else if (data.state === "building" || data.flags.pausedFromBuild) {
     startBuildBreak(data.numbers.buildLeft ?? BUILD_SECONDS);
+    if (data.state === "paused") pauseGame();
   } else pauseGame();
   updateContinueButton();
 }
@@ -3389,7 +3403,8 @@ function renderRunParts() {
 }
 
 function pauseGame() {
-  if (gameState !== "playing") return;
+  if (gameState !== "playing" && gameState !== "building") return;
+  pausedFromBuild = gameState === "building";
   gameState = "paused";
   drag = null;
   renderQuestList("pause-quests");
@@ -3399,7 +3414,8 @@ function pauseGame() {
 
 function resumeGame() {
   if (gameState !== "paused") return;
-  gameState = "playing";
+  gameState = pausedFromBuild ? "building" : "playing";
+  pausedFromBuild = false;
   document.getElementById("pause-screen").classList.add("hidden");
 }
 
@@ -5412,6 +5428,7 @@ function startNewRun() {
   strikeCount = 0;
   rustBlocked = false;
   strikeHeld = 0;
+  pausedFromBuild = false;
   dealAccepted = false;
   activeDeal = null;
   dealPayout = 0;
@@ -5633,7 +5650,7 @@ function guideSections() {
     ["Abilities", [
       ["Lightning", "Hits the enemy for free. Press it during a boss's glow, after holding it ready, to cancel the attack. It also thaws freezes.", emojiIcon("\u26A1")],
       ["Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.", emojiIcon("\u{1F525}")],
-      ["Rally", "Holds arriving soldiers back. After 5 seconds, press again to charge with 50% more.", emojiIcon("\u{1F4E3}")],
+      ["Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.", emojiIcon("\u{1F4E3}")],
       ["Train", "Moves your army up a rank, so every new soldier counts for more.", emojiIcon("\u2694\uFE0F")],
     ]],
     ["Rewards", REWARDS.filter((reward) => !reward.gear).map((reward) => [reward.name, reward.text, rewardIcon(reward), reward.rarity === "epic" ? "Epic" : reward.rarity === "rare" ? "Rare" : ""])],
