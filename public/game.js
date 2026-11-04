@@ -100,6 +100,15 @@ const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
 const COMBO_LINE_PAYOUT = 1.25; // three matching gears in a row
 const COMBO_BLOCK_FILL = 1.25; // four matching gears in a square
 const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
+const BOSS_WALL_CELLS = 3; // empty cells blocked by each Wall Maker attack
+const BOSS_SCRAMBLE_SWAPS = 3; // gears moved by each Scrambler attack
+const BOSS_SHIELD_TAPS = 5; // taps on the battle to break an Iron Guard shield
+const BOSS_KINDS = [
+  { id: "rust", name: "Rust King", color: "#8c1d10" },
+  { id: "wall", name: "Wall Maker", color: "#5b4a8a" },
+  { id: "scramble", name: "Scrambler", color: "#1d6e6a" },
+  { id: "shield", name: "Iron Guard", color: "#59606b" },
+];
 const WAVE_EVENT_FIRST_WAVE = 3;
 const WAVE_EVENT_CHANCE = 0.4;
 const EVENT_RUSH_PRESSURE = 0.06; // enemies per second, as a share of the wave's starting army
@@ -152,6 +161,9 @@ const TIPS = [
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
+  { id: "bossWall", text: "The Wall Maker blocks empty cells until it is beaten. Keep your machine compact, and scrap or merge to make room.", when: () => boss?.kind.id === "wall" },
+  { id: "bossScramble", text: "The Scrambler moves your gears around. Drag them back to reconnect the chain.", when: () => boss?.kind.id === "scramble" },
+  { id: "bossShield", text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "event", text: "Some waves have a twist, like an enemy rush or double soldiers. Its name shows at the top of the battle.", when: () => waveEvent },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
@@ -194,7 +206,7 @@ let rewardOpenedAt = 0;
 let nextWaveBonus = 0; // extra lead for the next wave only
 let tipOpenedAt = 0;
 let openTip = null;
-let boss = null; // { hp, maxHp, attackIn, hitFlash, reinforcePerSec } during a boss wave
+let boss = null; // { kind, hp, maxHp, attackIn, hitFlash, reinforcePerSec, shield } during a boss wave
 let bossesBeaten = 0;
 let enemiesBlasted = 0;
 let runTime = 0; // seconds played this run, not counting reward choices
@@ -575,7 +587,7 @@ function bossMaxHp(forWave) {
 }
 
 function damageBoss(amount) {
-  if (!boss) return;
+  if (!boss || boss.shield > 0) return;
   boss.hp = Math.max(0, boss.hp - amount);
   boss.hitFlash = 1;
 }
@@ -614,8 +626,68 @@ function rustAttack() {
   playRustSound();
 }
 
+function wallAttack() {
+  const free = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (!grid[row][col] && !isBlocked(row, col)) free.push({ row, col });
+    }
+  }
+  if (!free.length) {
+    rustAttack();
+    return;
+  }
+  for (let i = 0; i < BOSS_WALL_CELLS && free.length; i++) {
+    const [{ row, col }] = free.splice(Math.floor(Math.random() * free.length), 1);
+    blockedCells.add(`${row},${col}`);
+  }
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Cells blocked!");
+  playRustSound();
+}
+
+function scrambleAttack() {
+  const cells = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (!grid[row][col]?.driver && !isBlocked(row, col)) cells.push({ row, col });
+    }
+  }
+  const gears = cells.filter(({ row, col }) => grid[row][col]);
+  for (let i = 0; i < BOSS_SCRAMBLE_SWAPS && gears.length; i++) {
+    const a = gears[Math.floor(Math.random() * gears.length)];
+    const b = cells[Math.floor(Math.random() * cells.length)];
+    [grid[a.row][a.col], grid[b.row][b.col]] = [grid[b.row][b.col], grid[a.row][a.col]];
+    if (grid[a.row][a.col]) spawnRustBurst(a.row, a.col, "#8fe7ff", "#1d6e6a");
+    if (grid[b.row][b.col]) spawnRustBurst(b.row, b.col, "#8fe7ff", "#1d6e6a");
+    gears.splice(0, gears.length, ...cells.filter(({ row, col }) => grid[row][col]));
+  }
+  drag = null;
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Scrambled!");
+  playRustSound();
+}
+
+function shieldAttack() {
+  if (boss.shield > 0) return;
+  boss.shield = BOSS_SHIELD_TAPS;
+  showToast("Shield up! Tap the battle");
+  playRustSound();
+}
+
 function bossAttack() {
-  rustAttack();
+  if (boss.kind.id === "wall") wallAttack();
+  else if (boss.kind.id === "scramble") scrambleAttack();
+  else if (boss.kind.id === "shield") shieldAttack();
+  else rustAttack();
+}
+
+function tapShield() {
+  if (gameState !== "playing" || !(boss?.shield > 0)) return;
+  boss.shield -= 1;
+  boss.hitFlash = 1;
+  playClankSound();
+  if (boss.shield === 0) showToast("Shield broken!");
 }
 
 function blockableRows() {
@@ -761,6 +833,7 @@ function onPointerUp(e) {
 
 function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
+  battleCanvas.addEventListener("pointerdown", tapShield);
   boardCanvas.addEventListener("pointermove", onPointerMove);
   boardCanvas.addEventListener("pointerup", onPointerUp);
   boardCanvas.addEventListener("pointercancel", () => { drag = null; });
@@ -877,7 +950,8 @@ function startWave() {
   nextWaveBonus = 0;
   if (isBossWave(wave)) {
     const hp = bossMaxHp(wave);
-    boss = { hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower) };
+    const kind = BOSS_KINDS[(wave / BOSS_EVERY_WAVES - 1) % BOSS_KINDS.length];
+    boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
   } else if (wave >= WAVE_EVENT_FIRST_WAVE && Math.random() < WAVE_EVENT_CHANCE) {
     startWaveEvent();
@@ -1384,7 +1458,7 @@ function drawBoss(ctx, markerX, x1, y) {
     ctx.shadowBlur = 18;
   }
   ctx.beginPath();
-  ctx.fillStyle = boss.hitFlash > 0 ? "#ffd9cf" : "#8c1d10";
+  ctx.fillStyle = boss.hitFlash > 0 ? "#ffd9cf" : boss.kind.color;
   ctx.arc(x, y, 18, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#3a0d06";
@@ -1403,6 +1477,18 @@ function drawBoss(ctx, markerX, x1, y) {
     ctx.fill();
   }
   ctx.restore();
+  if (boss.shield > 0) {
+    ctx.beginPath();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#8fe7ff";
+    ctx.arc(x, y, 24, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = "800 11px system-ui, sans-serif";
+    ctx.fillStyle = "#8fe7ff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`TAP ${boss.shield}`, x, y + 6);
+  }
 }
 
 function drawBossBar(ctx, x0, x1) {
@@ -1414,7 +1500,7 @@ function drawBossBar(ctx, x0, x1) {
   ctx.fillStyle = "#fdf6e8";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(`BOSS ${Math.ceil(boss.hp)}`, barX + barW / 2, 10.5);
+  ctx.fillText(`${boss.kind.name.toUpperCase()} ${Math.ceil(boss.hp)}`, barX + barW / 2, 10.5);
 }
 
 function drawBattle() {
