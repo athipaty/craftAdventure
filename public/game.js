@@ -97,6 +97,9 @@ const DISCOUNT_REWARD = 0.8; // gear price multiplier
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
 const CHAIN_FALLOFF = 0.85; // strength kept by a hit at each gear it passes through
 const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
+const COMBO_LINE_PAYOUT = 1.25; // three matching gears in a row
+const COMBO_BLOCK_FILL = 1.25; // four matching gears in a square
+const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
@@ -137,6 +140,7 @@ const TIPS = [
   { id: "bomb", text: "A bomb gear fills half as fast, then blasts 2 enemies.", when: () => boardHasGear("bomb") },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
+  { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -185,6 +189,7 @@ let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
+let comboCounts = { line: 0, block: 0, ring: 0 };
 let overdriveLeft = 0; // seconds of overdrive still running
 let overdriveCooldown = 0; // seconds until overdrive can be used again
 
@@ -292,11 +297,63 @@ function tickGear(row, col, driverSpin) {
   playTickSound();
 }
 
+// Plain level 1 gears don't count, or any big machine would be full of combos
+// without trying.
+function comboMatch(a, b) {
+  return Boolean(a) && Boolean(b) && !a.driver && !b.driver && !a.rusted && !b.rusted
+    && a.type === b.type && a.level === b.level && (a.type !== "soldier" || a.level > 1);
+}
+
+// Marks every gear with the combos it is part of, and announces new ones.
+function updateCombos() {
+  const at = (r, c) => grid[r]?.[c];
+  const counts = { line: 0, block: 0, ring: 0 };
+  for (const cell of grid.flat()) {
+    if (cell) {
+      cell.comboLine = false;
+      cell.comboBlock = false;
+      cell.comboRing = false;
+    }
+  }
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = at(r, c);
+      if (!cell) continue;
+      for (const [dr, dc] of [[0, 1], [1, 0]]) {
+        const second = at(r + dr, c + dc);
+        const third = at(r + dr * 2, c + dc * 2);
+        if (comboMatch(cell, second) && comboMatch(cell, third)) {
+          cell.comboLine = second.comboLine = third.comboLine = true;
+          counts.line += 1;
+        }
+      }
+      const right = at(r, c + 1);
+      const below = at(r + 1, c);
+      const corner = at(r + 1, c + 1);
+      if (comboMatch(cell, right) && comboMatch(cell, below) && comboMatch(cell, corner)) {
+        cell.comboBlock = right.comboBlock = below.comboBlock = corner.comboBlock = true;
+        counts.block += 1;
+      }
+      if (cell.type === "booster" && !cell.rusted) {
+        const sides = TOOTH_DIRS.map(([dr, dc]) => at(r + dr, c + dc));
+        if (sides.every((side) => side && !side.driver && !side.rusted)) {
+          cell.comboRing = true;
+          counts.ring += 1;
+        }
+      }
+    }
+  }
+  if (counts.ring > comboCounts.ring) showToast("Ring combo!");
+  else if (counts.block > comboCounts.block) showToast("Square combo!");
+  else if (counts.line > comboCounts.line) showToast("Line combo!");
+  comboCounts = counts;
+}
+
 function boostersTouching(row, col) {
   let count = 0;
   for (const [dr, dc] of TOOTH_DIRS) {
     const other = grid[row + dr]?.[col + dc];
-    if (other?.type === "booster" && !other.rusted) count += other.level;
+    if (other?.type === "booster" && !other.rusted) count += other.level * (other.comboRing ? COMBO_RING_BOOST : 1);
   }
   return count;
 }
@@ -312,8 +369,10 @@ function soldiersPerSecond() {
       const spec = GEAR_TYPES[grid[gear.row][gear.col].type];
       if (!spec.hits) continue;
       const level = levelPayout(grid[gear.row][gear.col].level);
-      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level;
-      perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * payout) / spec.hits;
+      const cell = grid[gear.row][gear.col];
+      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * (cell.comboLine ? COMBO_LINE_PAYOUT : 1);
+      const fill = cell.comboBlock ? COMBO_BLOCK_FILL : 1;
+      perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * fill * payout) / spec.hits;
     }
   }
   return perTurn * driverTurnsPerSec;
@@ -326,11 +385,11 @@ function hitGear(gear, hits) {
   cell.spinTarget += gear.spin;
   cell.flash = 1;
   if (!spec.hits) return;
-  cell.ticks += hits;
+  cell.ticks += hits * (cell.comboBlock ? COMBO_BLOCK_FILL : 1);
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    const level = levelPayout(cell.level);
+    const level = levelPayout(cell.level) * (cell.comboLine ? COMBO_LINE_PAYOUT : 1);
     if (spec.soldiers) sendSoldiers(spec.soldiers * level, gear.row, gear.col);
     else launchBomb(spec.enemies * level, gear.row, gear.col);
   }
@@ -892,6 +951,7 @@ function gameOver() {
 function update(dt) {
   if (gameState !== "playing") return;
   runTime += dt;
+  updateCombos();
   updateOverdrive(dt);
   updateBoss(dt);
   updateDrivers(dt);
@@ -1053,6 +1113,15 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.stroke();
   drawGearFace(ctx, r * 0.72, r * 0.46, palette);
   ctx.restore();
+
+  // A coloured ring marks gears that are part of a combo.
+  if (cell.comboLine || cell.comboBlock || cell.comboRing) {
+    ctx.beginPath();
+    ctx.lineWidth = Math.max(2, size * 0.04);
+    ctx.strokeStyle = cell.comboRing ? "#c8f59a" : cell.comboBlock ? "#8fe7ff" : "#ffcc33";
+    ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   // Progress ring — how close this gear is to sending a soldier. It stays
   // still while the body turns, so it always reads the same way.
@@ -1754,6 +1823,7 @@ function startNewRun() {
   bestWaveBeforeRun = bestWave;
   runBanked = false;
   boss = null;
+  comboCounts = { line: 0, block: 0, ring: 0 };
   overdriveLeft = 0;
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
   flyers = [];
