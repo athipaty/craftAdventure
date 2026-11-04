@@ -7,9 +7,9 @@
 // At 100% a gear sends one soldier to the battle and starts again from 0%,
 // staying where it is. A run starts with just one normal gear beside the
 // one-tooth gear. Soldiers can be spent on more gears, which the player drags
-// into place to connect them. Soldiers from both armies march to the front
-// line and only count once they get there. Winning a wave offers a choice of
-// three rewards, including special gears that make placement matter. Every
+// into place to connect them. The player's soldiers join the front line at
+// once; the enemy's march there and only count once they arrive. Winning a
+// wave offers a choice of three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Runs and quests earn coins, spent in the Workshop on upgrades that last
 // between runs. Every run also earns experience toward a player level, and
@@ -38,11 +38,11 @@ const GEAR_COST_GROWTH = 1.15; // price multiplier per gear bought this run
 const DRIVER_ROW = Math.floor(ROWS / 2);
 const DRIVER_COL = Math.floor(COLS / 2);
 const MARCH_SECONDS = 0.9; // how long a soldier takes to reach the front line
+const MARCH_ARRIVED = 1; // a marcher's progress once it has reached the front line
 const MAX_MARCHERS = 24; // per army; past this, new soldiers join the newest one
 const CLASH_SECONDS = 0.3;
-const FLY_SECONDS = 0.4; // how long a soldier takes to fly from its gear to the battle
-const MAX_FLYERS = 30;
 const MAX_PARTICLES = 200;
+const MAX_CANVAS_SCALE = 2; // sharper screens are drawn at this scale, to keep phones smooth
 const MAX_HIT_NUMBERS = 12;
 const MAX_FALLERS = 8;
 const FALLER_GAP_MS = 150; // fighters fall at most this often, so big armies don't flood the lane
@@ -463,7 +463,6 @@ let overdriveCooldown = 0; // seconds until overdrive can be used again
 let fxCanvas, fxCtx;
 let fxCssW = 0, fxCssH = 0;
 let boardOrigin = { x: 0, y: 0 }; // where the board canvas sits on the effects canvas
-let flyers = []; // { fromX, fromY, side, t }
 let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
 let strikeCooldown = 0;
 let bolts = []; // { x, age } lightning strikes
@@ -1040,8 +1039,8 @@ function hitGear(gear, hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
     const level = levelPayout(cell.level) * (cell.comboLine ? COMBO_LINE_PAYOUT : 1) * armyStrength();
-    if (spec.soldiers) sendSoldiers(spec.soldiers * level, gear.row, gear.col);
-    else launchBomb(spec.enemies * level, gear.row, gear.col);
+    if (spec.soldiers) sendSoldiers(spec.soldiers * level);
+    else launchBomb(spec.enemies * level);
   }
 }
 
@@ -1237,29 +1236,27 @@ function updateScrapZone() {
   if (zone.textContent !== label) zone.textContent = label;
 }
 
-function sendSoldiers(baseCount, row, col) {
+function sendSoldiers(baseCount) {
   const count = waveEvent?.id === "double" ? baseCount * 2 : baseCount;
-  launchFlyer(row, col, "player");
-  sendMarcher("player", count, FLY_SECONDS);
+  sendMarcher("player", count, MARCH_ARRIVED);
   totalArmyScore += count / armyStrength();
   showToast(`+${Math.round(count / armyStrength())}`);
   playFireSound();
 }
 
-function launchBomb(enemies, row, col) {
-  launchFlyer(row, col, "bomb");
+function launchBomb(enemies) {
   enemiesBlasted += enemies;
   questEvent("blasted", enemies);
-  sendMarcher("bomb", enemies, FLY_SECONDS);
+  sendMarcher("bomb", enemies, MARCH_ARRIVED);
   showToast(`-${enemies}`);
   playFireSound();
 }
 
-// A delay holds the marcher back while its soldier is still flying in.
-function sendMarcher(side, value, delaySeconds = 0) {
+// The player's soldiers and bombs land at once; the enemy's march in from the start.
+function sendMarcher(side, value, t = 0) {
   const team = marchers.filter((m) => m.side === side);
   if (team.length >= MAX_MARCHERS) team[team.length - 1].value += value;
-  else marchers.push({ side, value, t: -delaySeconds / MARCH_SECONDS });
+  else marchers.push({ side, value, t });
 }
 
 function isFinalWave(forWave) {
@@ -1724,7 +1721,6 @@ function winWave() {
   waveTime = 0;
   marchers = [];
   enemyBacklog = 0;
-  flyers = [];
   waveEvent = null;
   eventReinforcePerSec = 0;
   blockedCells.clear();
@@ -2266,10 +2262,10 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
   ctx.rotate(cell.angle * cell.spin);
   if (frozenFor > 0) {
     ctx.shadowColor = "#a8e6ff";
-    ctx.shadowBlur = size * 0.45;
+    ctx.shadowBlur = glowBlur(size * 0.45);
   } else if (overdriveLeft > 0) {
     ctx.shadowColor = "#ff8a3d";
-    ctx.shadowBlur = size * 0.45;
+    ctx.shadowBlur = glowBlur(size * 0.45);
   }
 
   ctx.beginPath();
@@ -2306,6 +2302,41 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
   ctx.stroke();
 }
 
+// Drawing a gear's body is slow and a full board has dozens, so each colour is
+// drawn once and reused as an image. Redrawn if the cell size or scale changes.
+const gearSprites = new Map(); // palette -> canvas
+let gearSpriteKey = "";
+
+function gearSprite(palette) {
+  const scale = canvasScale();
+  const key = `${cellSize}:${scale}`;
+  if (key !== gearSpriteKey) {
+    gearSprites.clear();
+    gearSpriteKey = key;
+  }
+  let sprite = gearSprites.get(palette);
+  if (!sprite) {
+    const r = cellSize * 0.48;
+    const lineWidth = Math.max(2, cellSize * 0.045);
+    const half = r + lineWidth;
+    sprite = document.createElement("canvas");
+    sprite.width = sprite.height = Math.ceil(half * 2 * scale);
+    sprite.halfSize = sprite.width / scale / 2;
+    const ctx = sprite.getContext("2d");
+    ctx.setTransform(scale, 0, 0, scale, sprite.width / 2, sprite.height / 2);
+    traceToothedRim(ctx, r, r * 0.84, TOOTH_COUNT);
+    ctx.fillStyle = metalGradient(ctx, r, palette);
+    ctx.fill();
+    ctx.lineWidth = lineWidth;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+    drawGearFace(ctx, r * 0.72, r * 0.46, palette);
+    gearSprites.set(palette, sprite);
+  }
+  return sprite;
+}
+
 function drawGearCell(ctx, cx, cy, size, cell) {
   const flashBoost = 1 + cell.flash * 0.06;
   const r = size * 0.48 * flashBoost;
@@ -2319,17 +2350,11 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.rotate(cell.spinAnim * TICK_ANGLE);
   if (cell.flash > 0) {
     ctx.shadowColor = "#ffcc33";
-    ctx.shadowBlur = size * 0.3 * cell.flash;
+    ctx.shadowBlur = glowBlur(size * 0.3 * cell.flash);
   }
-  traceToothedRim(ctx, r, r * 0.84, TOOTH_COUNT);
-  ctx.fillStyle = metalGradient(ctx, r, palette);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = Math.max(2, size * 0.045);
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = OUTLINE;
-  ctx.stroke();
-  drawGearFace(ctx, r * 0.72, r * 0.46, palette);
+  const sprite = gearSprite(palette);
+  const half = sprite.halfSize * (size / cellSize) * flashBoost;
+  ctx.drawImage(sprite, -half, -half, half * 2, half * 2);
   ctx.restore();
 
   // A coloured ring marks gears that are part of a combo.
@@ -2447,7 +2472,7 @@ function drawMergeHints(ctx) {
         ctx.lineWidth = Math.max(3, cellSize * 0.07);
         ctx.strokeStyle = "#7dff5a";
         ctx.shadowColor = "#7dff5a";
-        ctx.shadowBlur = cellSize * 0.25;
+        ctx.shadowBlur = glowBlur(cellSize * 0.25);
         ctx.stroke();
         ctx.shadowBlur = 0;
       } else {
@@ -2655,7 +2680,7 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
   ctx.lineJoin = "round";
   if (colors.glow) {
     ctx.shadowColor = colors.glow;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = glowBlur(8);
   }
   if (colors.cape) {
     ctx.beginPath();
@@ -2845,7 +2870,7 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
   ctx.lineJoin = "round";
   if (warning) {
     ctx.shadowColor = "#ff3b1f";
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = glowBlur(16);
   }
 
   // Stubby feet.
@@ -3177,7 +3202,7 @@ function drawBattle() {
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
   for (const m of marchers) {
-    // Only charges are shown walking; other soldiers arrive by flying in.
+    // Only charges are shown walking.
     if (m.t < 0 || !m.charge) continue;
     const x = m.side === "enemy" ? x1 - (x1 - markerX) * m.t : x0 + (markerX - x0) * m.t;
     const feetY = battleCssH * 0.72;
@@ -3240,7 +3265,7 @@ function drawBattle() {
 }
 
 // =====================================================================
-// Effects — soldiers flying out of gears, sparks, confetti, screen shake
+// Effects — sparks, confetti, screen shake
 // =====================================================================
 
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -3251,16 +3276,6 @@ function randomBetween(min, max) {
 
 function spawnParticle(particle) {
   if (particles.length < MAX_PARTICLES) particles.push({ age: 0, angle: 0, spin: 0, gravity: 0, ...particle });
-}
-
-function launchFlyer(row, col, side) {
-  if (flyers.length >= MAX_FLYERS) return;
-  flyers.push({
-    fromX: boardOrigin.x + (col + 0.5) * cellSize,
-    fromY: boardOrigin.y + (row + 0.5) * cellSize,
-    side,
-    t: 0,
-  });
 }
 
 // Sparks where the tooth meets the gear it just hit.
@@ -3392,9 +3407,6 @@ function spawnConfetti() {
 }
 
 function updateFx(dt) {
-  for (const flyer of flyers) flyer.t += dt / (FLY_SECONDS + MARCH_SECONDS);
-  flyers = flyers.filter((flyer) => flyer.t < 1);
-
   for (const p of particles) {
     p.age += dt;
     p.vy += p.gravity * dt;
@@ -3436,20 +3448,6 @@ function drawFx() {
   if (!fxCtx) return;
   const ctx = fxCtx;
   ctx.clearRect(0, 0, fxCssW, fxCssH);
-
-  for (const flyer of flyers) {
-    // An arc from the gear up to the lane, speeding up as it goes.
-    const t = flyer.t * flyer.t;
-    const front = frontLineFx();
-    const x = flyer.fromX + (front.x - 20 - flyer.fromX) * t;
-    const y = flyer.fromY + (front.y - flyer.fromY) * flyer.t - Math.sin(flyer.t * Math.PI) * 24;
-    ctx.save();
-    ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
-    ctx.shadowBlur = 16;
-    if (flyer.side === "bomb") drawBombIcon(ctx, x, y);
-    else drawSoldier(ctx, x, y + 10, 1, fighterLook(), "walk", flyer.fromX);
-    ctx.restore();
-  }
 
   for (const p of particles) {
     ctx.save();
@@ -3745,8 +3743,19 @@ function closeWorkshop() {
 // Layout / resize
 // =====================================================================
 
+function canvasScale() {
+  return Math.min(window.devicePixelRatio || 1, MAX_CANVAS_SCALE);
+}
+
+// A glow's blur counts screen pixels and ignores the canvas scale, so without
+// this it would look wider on a canvas drawn at a lower scale. Sizes are given
+// as they look at scale 3.
+function glowBlur(blur) {
+  return (blur * canvasScale()) / 3;
+}
+
 function fitCanvasDPR(canvas, cssW, cssH) {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = canvasScale();
   canvas.width = Math.max(1, Math.round(cssW * dpr));
   canvas.height = Math.max(1, Math.round(cssH * dpr));
   canvas.style.width = `${cssW}px`;
@@ -3844,7 +3853,6 @@ function startNewRun() {
   blockedCells.clear();
   overdriveLeft = 0;
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
-  flyers = [];
   particles = [];
   hitNumbers = [];
   fallers = [];
