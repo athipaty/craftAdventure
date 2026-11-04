@@ -7,7 +7,8 @@
 // At 100% a gear sends one soldier to the battle and starts again from 0%,
 // staying where it is. A run starts with just one normal gear beside the
 // one-tooth gear. Soldiers can be spent on more gears, which the player drags
-// into place to connect them.
+// into place to connect them. Soldiers from both armies march to the front
+// line and only count once they get there.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
@@ -24,7 +25,12 @@ const LOSE_RATIO = 0.3; // playerPower share at/below which the enemy overruns y
 const HITS_TO_FULL = 4; // each hit fills 25% of a gear
 const SOLDIERS_PER_FULL_GEAR = 1;
 const GEAR_BASE_COST = 3; // soldiers for the first extra gear
-const GEAR_COST_STEP = 1; // price rise per gear bought this run
+const GEAR_COST_GROWTH = 1.15; // price multiplier per gear bought this run
+const DRIVER_ROW = Math.floor(ROWS / 2);
+const DRIVER_COL = Math.floor(COLS / 2);
+const MARCH_SECONDS = 0.9; // how long a soldier takes to reach the front line
+const MAX_MARCHERS = 24; // per army; past this, new soldiers join the newest one
+const CLASH_SECONDS = 0.3;
 const TOOTH_COUNT = 12; // teeth drawn per gear — also one tick's worth of visual spin
 const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
 const DRIVER_TURNS_PER_SEC = 1; // how fast the one-tooth gear turns
@@ -32,9 +38,10 @@ const QUARTER_TURN = Math.PI / 2;
 // Which neighbour the tooth points at after each quarter turn, in canvas
 // rotation order (positive angles are clockwise): right, down, left, up.
 const TOOTH_DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
-const ENEMY_BASE_GROWTH = 0.05; // enemy army per second at the start of wave 1
-const ENEMY_WAVE_SCALE = 1.3; // enemy growth multiplier per wave
-const ENEMY_DOUBLING_SECONDS = 40; // enemy growth doubles every this long within a wave
+const MIN_WAVE_SECONDS = 20; // a new wave starts big enough to take the player's best output this long
+const ENEMY_BASE_GROWTH = 0.08; // enemy army per second at the start of wave 1
+const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
+const ENEMY_DOUBLING_SECONDS = 30; // enemy growth doubles every this long within a wave
 const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
 const WAVE_START_SCALE = 1.45; // how much bigger both armies start each wave
 const DRIVER_PALETTE = { light: "#dfe5ea", mid: "#8d99a6", dark: "#3f4a55", recess: "#6d7884", hub: "#c3ccd5" };
@@ -64,6 +71,10 @@ let battleCssW = 0, battleCssH = 0;
 let grid = [];
 let drag = null; // { cell, row, col, x, y } while a gear is being dragged
 let gearsBought = 0;
+let peakRate = 0; // the most soldiers per second the machine has produced this run
+let marchers = []; // { side: "player" | "enemy", value, t } on their way to the front
+let clashes = []; // { t } sparks where soldiers reached the front
+let enemyBacklog = 0; // enemy growth not yet worth a whole soldier
 
 let gameState = "title"; // "title" | "playing" | "gameover"
 let wave = 1;
@@ -95,22 +106,19 @@ function createBoard() {
   for (let row = 0; row < ROWS; row++) grid.push(new Array(COLS).fill(null));
   // The one-tooth gear sits mid-board so all four sides are in reach, with
   // the one starting gear already beside it.
-  const row = Math.floor(ROWS / 2);
-  const col = Math.floor(COLS / 2);
-  makeDriver(row, col);
-  grid[row][col + 1] = freshCell();
+  makeDriver(DRIVER_ROW, DRIVER_COL);
+  grid[DRIVER_ROW][DRIVER_COL + 1] = freshCell();
 }
 
-// One tooth hit: the gear being touched turns, and turns every gear connected
-// to it, each one spinning opposite to the gear that drives it. Each gear
-// moves once per hit, even when a loop of gears gives it two routes.
-function tickGear(row, col, driverSpin) {
+// The gear at a cell plus every gear connected to it, each spinning opposite
+// to the gear that drives it. Each gear appears once, even when a loop gives
+// it two routes. Empty when the cell has no normal gear.
+function connectedGears(row, col, firstSpin) {
   const first = grid[row]?.[col];
-  if (!first || first.driver) return;
+  if (!first || first.driver) return [];
   const seen = new Set([first]);
-  const queue = [{ row, col, spin: -driverSpin }];
+  const queue = [{ row, col, spin: firstSpin }];
   for (const cur of queue) {
-    hitGear(grid[cur.row][cur.col], cur.spin);
     for (const [dr, dc] of TOOTH_DIRS) {
       const next = grid[cur.row + dr]?.[cur.col + dc];
       if (!next || next.driver || seen.has(next)) continue;
@@ -118,7 +126,23 @@ function tickGear(row, col, driverSpin) {
       queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin });
     }
   }
+  return queue;
+}
+
+// One tooth hit: the gear being touched turns, and turns every gear connected to it.
+function tickGear(row, col, driverSpin) {
+  const gears = connectedGears(row, col, -driverSpin);
+  if (!gears.length) return;
+  for (const gear of gears) hitGear(grid[gear.row][gear.col], gear.spin);
   playTickSound();
+}
+
+// Each turn the tooth hits all four sides once, so a gear reachable from two
+// sides fills twice as fast.
+function soldiersPerSecond() {
+  let hitsPerTurn = 0;
+  for (const [dr, dc] of TOOTH_DIRS) hitsPerTurn += connectedGears(DRIVER_ROW + dr, DRIVER_COL + dc, 1).length;
+  return (hitsPerTurn * DRIVER_TURNS_PER_SEC * SOLDIERS_PER_FULL_GEAR) / HITS_TO_FULL;
 }
 
 // A full gear sends a soldier and restarts from 0%, staying in place.
@@ -134,7 +158,7 @@ function hitGear(cell, spin) {
 }
 
 function gearCost() {
-  return GEAR_BASE_COST + gearsBought * GEAR_COST_STEP;
+  return Math.round(GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gearsBought));
 }
 
 function firstEmptyCell() {
@@ -147,11 +171,30 @@ function firstEmptyCell() {
 }
 
 // Soldiers are the price, so buying weakens the army. A purchase that would
-// lose the game on the spot is refused rather than ending the run.
+// lose the game on the spot is refused rather than ending the run. Returns how
+// many more soldiers the player needs for this one, or 0 when they can afford it.
+function soldiersShortForGear() {
+  const armyToKeep = (enemyPower * LOSE_RATIO) / (1 - LOSE_RATIO);
+  const short = gearCost() + armyToKeep - playerPower;
+  return short < 0 ? 0 : Math.floor(short) + 1;
+}
+
 function canBuyGear() {
-  if (gameState !== "playing" || !firstEmptyCell()) return false;
-  const left = playerPower - gearCost();
-  return left > 0 && left / (left + enemyPower) > LOSE_RATIO;
+  return gameState === "playing" && Boolean(firstEmptyCell()) && soldiersShortForGear() === 0;
+}
+
+function buyButtonLabel() {
+  if (!firstEmptyCell()) return "Board full";
+  const label = `Buy gear: ${gearCost()} soldiers`;
+  const short = soldiersShortForGear();
+  return short > 0 ? `${label} (need ${short} more)` : label;
+}
+
+function updateBuyButton() {
+  const button = document.getElementById("buy-gear-btn");
+  const label = buyButtonLabel();
+  if (button.textContent !== label) button.textContent = label;
+  button.disabled = !canBuyGear();
 }
 
 // The new gear lands in the first free cell, which starts it out of reach
@@ -167,10 +210,16 @@ function buyGear() {
 }
 
 function sendSoldier() {
-  playerPower += SOLDIERS_PER_FULL_GEAR;
+  sendMarcher("player", SOLDIERS_PER_FULL_GEAR);
   totalArmyScore += SOLDIERS_PER_FULL_GEAR;
   showToast(`+${SOLDIERS_PER_FULL_GEAR}`);
   playFireSound();
+}
+
+function sendMarcher(side, value) {
+  const team = marchers.filter((m) => m.side === side);
+  if (team.length >= MAX_MARCHERS) team[team.length - 1].value += value;
+  else marchers.push({ side, value, t: 0 });
 }
 
 // =====================================================================
@@ -267,9 +316,34 @@ function updateGearAnim(dt) {
   }
 }
 
+// A soldier only joins its army's total on reaching the front line.
+function updateMarchers(dt) {
+  for (const m of marchers) {
+    m.t += dt / MARCH_SECONDS;
+    if (m.t < 1) continue;
+    if (m.side === "player") playerPower += m.value;
+    else enemyPower += m.value;
+    clashes.push({ t: 0 });
+  }
+  marchers = marchers.filter((m) => m.t < 1);
+  for (const c of clashes) c.t += dt / CLASH_SECONDS;
+  clashes = clashes.filter((c) => c.t < 1);
+}
+
+// The enemy's size for a new wave: the usual schedule, or more if the player's
+// machine would otherwise beat it almost at once. Uses the run's best output so
+// unplugging gears just before a wave ends doesn't make the next one smaller.
+function waveStartEnemy(forWave) {
+  const scheduled = BASE_POWER * Math.pow(WAVE_START_SCALE, forWave - 1);
+  const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - WAVE_START_LEAD;
+  return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS) / soldiersToWinPerEnemy);
+}
+
 function winWave() {
   wave += 1;
   waveTime = 0;
+  marchers = [];
+  enemyBacklog = 0;
   if (wave > bestWave) {
     bestWave = wave;
     localStorage.setItem("gearfight_best_wave", String(bestWave));
@@ -279,7 +353,7 @@ function winWave() {
   // Reset the balance of power so the new wave starts contested. Carrying
   // the player's total over would put them past WIN_RATIO straight away,
   // and waves would then fall one after another with nothing happening.
-  enemyPower = BASE_POWER * Math.pow(WAVE_START_SCALE, wave - 1);
+  enemyPower = waveStartEnemy(wave);
   playerPower = enemyPower * WAVE_START_LEAD;
 }
 
@@ -295,9 +369,16 @@ function update(dt) {
   if (gameState !== "playing") return;
   updateDrivers(dt);
   updateGearAnim(dt);
+  updateMarchers(dt);
+  peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  enemyPower += enemyGrowthPerSec(wave, waveTime) * dt;
+  enemyBacklog += enemyGrowthPerSec(wave, waveTime) * dt;
+  const newEnemies = Math.floor(enemyBacklog);
+  if (newEnemies > 0) {
+    enemyBacklog -= newEnemies;
+    sendMarcher("enemy", newEnemies);
+  }
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
   if (ratio >= WIN_RATIO) winWave();
@@ -305,8 +386,7 @@ function update(dt) {
 
   document.getElementById("wave-num").textContent = wave;
   document.getElementById("army-score").textContent = Math.round(totalArmyScore);
-  document.getElementById("gear-cost").textContent = gearCost();
-  document.getElementById("buy-gear-btn").disabled = !canBuyGear();
+  updateBuyButton();
 }
 
 // =====================================================================
@@ -561,6 +641,21 @@ function drawBattle() {
   drawArmyRow(ctx, x0, markerX, battleCssH * 0.42, playerPower, "#3a7ddb", 1);
   drawArmyRow(ctx, markerX, x1, battleCssH * 0.42, enemyPower, "#d8432f", -1);
 
+  // Soldiers on their way, on a row of their own so they stand out from the
+  // armies already at the front.
+  for (const m of marchers) {
+    const x = m.side === "player" ? x0 + (markerX - x0) * m.t : x1 - (x1 - markerX) * m.t;
+    const stride = Math.abs(Math.sin(m.t * Math.PI * 5)) * 3;
+    drawArmyIcon(ctx, x, battleCssH * 0.6 - stride, m.side === "player" ? "#8fc0ff" : "#ff9a85");
+  }
+  for (const c of clashes) {
+    ctx.beginPath();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255, 204, 51, ${1 - c.t})`;
+    ctx.arc(markerX, barY + barH / 2, 9 + c.t * 14, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   ctx.font = "700 13px system-ui, sans-serif";
   ctx.fillStyle = "#fdf6e8";
   ctx.textAlign = "left";
@@ -700,6 +795,10 @@ function startNewRun() {
   ensureAudio();
   drag = null;
   gearsBought = 0;
+  peakRate = 0;
+  marchers = [];
+  clashes = [];
+  enemyBacklog = 0;
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER;

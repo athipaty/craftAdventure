@@ -314,3 +314,41 @@ button {
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.55);
   }
 }
+
+/* A phone held sideways is too short for the stacked layout, which would leave
+   a tiny board. Use the whole screen instead: the board on the left, everything
+   else in a column on the right. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #app-frame {
+    inset: 0;
+    top: 0;
+    left: 0;
+    transform: none;
+    height: auto;
+    aspect-ratio: auto;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  #game-screen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 92px auto minmax(0, 1fr);
+  }
+
+  #board-wrap {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  #buy-gear-btn {
+    margin-top: 10px;
+    justify-self: center;
+    align-self: start;
+  }
+
+  #title-screen {
+    gap: 8px;
+    padding: 12px 24px;
+  }
+}
