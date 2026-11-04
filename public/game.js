@@ -36,6 +36,8 @@ const CLASH_SECONDS = 0.3;
 const FLY_SECONDS = 0.4; // how long a soldier takes to fly from its gear to the battle
 const MAX_FLYERS = 30;
 const MAX_PARTICLES = 200;
+const MAX_HIT_NUMBERS = 12;
+const HIT_NUMBER_SECONDS = 0.7;
 const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
@@ -234,6 +236,8 @@ let boardOrigin = { x: 0, y: 0 }; // where the board canvas sits on the effects 
 let flyTarget = { x: 0, y: 0 }; // where flying soldiers land in the battle lane
 let flyers = []; // { fromX, fromY, side, t }
 let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
+let hitNumbers = []; // { x, y, text, color, age } floating up from the front line
+let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "gameover"
@@ -948,6 +952,7 @@ function updateMarchers(dt) {
     }
     else enemyPower += m.value;
     clashes.push({ t: 0 });
+    spawnFrontLineHit(m);
   }
   marchers = marchers.filter((m) => m.t < 1);
   for (const c of clashes) c.t += dt / CLASH_SECONDS;
@@ -1485,15 +1490,91 @@ function drawBoard() {
   }
 }
 
-function drawArmyIcon(ctx, x, y, color) {
+const SOLDIER_LOOKS = {
+  player: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5" },
+  marching: { tunic: "#6da6f0", trim: "#2c5f9e", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff" },
+  charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff" },
+  enemy: { tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24" },
+  enemyMarching: { tunic: "#d4513f", trim: "#7e2013", skin: "#94bd5c", horns: "#2f2410", blade: "#7d5529" },
+};
+
+// A small soldier standing on `feetY`, facing +1 (right) or -1 (left).
+// state: "idle" sways, "walk" moves its legs, "fight" swings its weapon.
+// `seed` keeps a crowd from moving in step.
+function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
+  const colors = SOLDIER_LOOKS[look];
+  const time = performance.now() / 1000 + seed * 0.37;
+  const stride = state === "walk" ? Math.sin(time * 14) * 3.5 : 0;
+  const sway = state === "idle" ? Math.sin(time * 2.4) * 0.8 : 0;
+  const swing = state === "fight" ? Math.sin(time * 11) * 1.1 : state === "walk" ? -0.4 + Math.sin(time * 14) * 0.25 : -0.6;
+  ctx.save();
+  ctx.translate(x, feetY + sway * 0.3);
+  ctx.scale(facing, 1);
+  ctx.lineCap = "round";
+
+  ctx.strokeStyle = colors.trim;
+  ctx.lineWidth = 2.4;
+  for (const offset of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(offset * 1.5, -8);
+    ctx.lineTo(offset * 1.5 + offset * stride, 0);
+    ctx.stroke();
+  }
+
+  roundRectFill(ctx, -4.2, -15, 8.4, 8.5, 2.2, colors.tunic);
+
+  // Weapon arm.
+  ctx.save();
+  ctx.translate(3, -12.5);
+  ctx.rotate(swing);
+  ctx.strokeStyle = colors.skin;
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.fillStyle = color;
-  ctx.arc(x, y, 6, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(4, 0);
+  ctx.stroke();
+  ctx.strokeStyle = colors.blade;
+  ctx.lineWidth = look.startsWith("enemy") ? 3 : 1.8;
   ctx.beginPath();
-  ctx.fillStyle = "#fdf0d8";
-  ctx.arc(x, y - 7, 4, 0, Math.PI * 2);
+  ctx.moveTo(4, 0);
+  ctx.lineTo(4, -9);
+  ctx.stroke();
+  ctx.restore();
+
+  // Head.
+  ctx.beginPath();
+  ctx.fillStyle = colors.skin;
+  ctx.arc(0, -19, 4, 0, Math.PI * 2);
   ctx.fill();
+  if (colors.helmet) {
+    ctx.beginPath();
+    ctx.fillStyle = colors.helmet;
+    ctx.arc(0, -19.5, 4.4, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    // Shield on the front arm.
+    ctx.beginPath();
+    ctx.fillStyle = colors.helmet;
+    ctx.arc(-4.5, -11, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.fillStyle = colors.trim;
+    ctx.arc(-4.5, -11, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = colors.horns;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 1.5, -22.5);
+      ctx.lineTo(side * 4.5, -27);
+      ctx.lineTo(side * 4, -21);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = "#1c130a";
+  ctx.fillRect(1.2, -19.6, 1.3, 1.3);
+  ctx.restore();
 }
 
 function drawBombIcon(ctx, x, y) {
@@ -1507,51 +1588,111 @@ function drawBombIcon(ctx, x, y) {
   ctx.fill();
 }
 
-function drawArmyRow(ctx, xStart, xEnd, y, power, color, dir) {
+// The army crowds up behind the front line, and the soldiers nearest it fight.
+function drawArmyRow(ctx, front, back, feetY, power, look, facing) {
   const n = Math.min(10, Math.max(1, Math.round(power / 3)));
-  const span = Math.abs(xEnd - xStart) * 0.9;
-  for (let i = 0; i < n; i++) {
-    const t = (i + 0.5) / n;
-    const x = dir === 1 ? xStart + t * span : xEnd - t * span;
-    const bob = Math.sin(performance.now() / 260 + i) * 2;
-    drawArmyIcon(ctx, x, y + bob, color);
+  const room = Math.max(0, Math.abs(front - back) - 14);
+  const spacing = Math.min(20, room / n);
+  for (let i = n - 1; i >= 0; i--) {
+    const x = front - facing * (10 + i * spacing);
+    drawSoldier(ctx, x, feetY - (i % 2) * 2, facing, look, i < 2 ? "fight" : "idle", i);
   }
 }
 
 // The boss stands just past the front line, glowing before each attack, and
 // flashes when soldiers hit it.
-function drawBoss(ctx, markerX, x1, y) {
+function drawBoss(ctx, markerX, x1, feetY) {
   const x = Math.min(x1 - 22, markerX + 30);
   const warning = boss.attackIn < BOSS_WARNING_SECONDS;
+  const time = performance.now() / 1000;
+  const body = boss.hitFlash > 0 ? "#ffd9cf" : boss.kind.color;
+  const armSwing = warning ? -1.5 + Math.sin(time * 18) * 0.15 : Math.sin(time * 4) * 0.5;
   ctx.save();
   if (warning) {
     ctx.shadowColor = "#ff3b1f";
     ctx.shadowBlur = 18;
   }
-  ctx.beginPath();
-  ctx.fillStyle = boss.hitFlash > 0 ? "#ffd9cf" : boss.kind.color;
-  ctx.arc(x, y, 18, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#3a0d06";
+  ctx.translate(x, feetY);
+  ctx.lineCap = "round";
+  // Legs, then a heavy body facing the player's army.
+  ctx.strokeStyle = "#1c130a";
+  ctx.lineWidth = 6;
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(x + side * 6, y - 15);
-    ctx.lineTo(x + side * 16, y - 29);
-    ctx.lineTo(x + side * 15, y - 11);
+    ctx.moveTo(side * 6, -14);
+    ctx.lineTo(side * 7, -1);
+    ctx.stroke();
+  }
+  roundRectFill(ctx, -14, -33, 28, 22, 8, body);
+  ctx.beginPath();
+  ctx.fillStyle = body;
+  ctx.arc(0, -36, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Weapon arm, raised before an attack.
+  ctx.save();
+  ctx.translate(-13, -27);
+  ctx.rotate(armSwing);
+  ctx.strokeStyle = body;
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-9, 0);
+  ctx.stroke();
+  ctx.strokeStyle = "#3a2414";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-9, 0);
+  ctx.lineTo(-9, -16);
+  ctx.stroke();
+  roundRectFill(ctx, -15, -22, 12, 8, 2, boss.kind.id === "shield" ? "#c3ccd5" : "#59402a");
+  ctx.restore();
+
+  // Each kind of boss has its own mark.
+  if (boss.kind.id === "rust") {
+    ctx.fillStyle = "#e0a92e";
+    ctx.beginPath();
+    ctx.moveTo(-9, -43);
+    ctx.lineTo(-9, -52);
+    ctx.lineTo(-4, -47);
+    ctx.lineTo(0, -54);
+    ctx.lineTo(4, -47);
+    ctx.lineTo(9, -52);
+    ctx.lineTo(9, -43);
     ctx.closePath();
     ctx.fill();
+  } else if (boss.kind.id === "wall") {
+    ctx.fillStyle = "#c7b7e8";
+    for (const [bx, by] of [[-10, -30], [1, -30], [-5, -24], [6, -24], [-10, -18], [1, -18]]) ctx.fillRect(bx, by, 9, 4);
+  } else if (boss.kind.id === "scramble") {
+    ctx.save();
+    ctx.translate(0, -50);
+    ctx.rotate(time * 4);
+    traceToothedRim(ctx, 7, 5, 8);
+    ctx.fillStyle = "#8fe7ff";
+    ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#c3ccd5";
+    ctx.beginPath();
+    ctx.arc(0, -38, 11, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(-11, -38, 22, 3);
   }
+
   ctx.fillStyle = warning ? "#ffe14d" : "#fdf6e8";
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.arc(x + side * 7, y - 3, 3.5, 0, Math.PI * 2);
+    ctx.arc(side * 4 - 2, -36, 2.4, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
   if (boss.shield > 0) {
+    const y = feetY - 26;
     ctx.beginPath();
     ctx.fillStyle = "rgba(10, 40, 60, 0.8)";
-    ctx.arc(x, y, 24, 0, Math.PI * 2);
+    ctx.arc(x, y, 26, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 4;
     ctx.strokeStyle = "#8fe7ff";
@@ -1580,6 +1721,47 @@ function drawBossBar(ctx, x0, x1) {
   ctx.fillText(label, barX + barW / 2, 10.5);
 }
 
+// Dusk over a battlefield, with a banner at each army's camp.
+function drawBattlefield(ctx, x0, x1, groundY) {
+  const w = battleCssW;
+  const h = battleCssH;
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+  sky.addColorStop(0, "#2d2a3e");
+  sky.addColorStop(1, "#8a5a3a");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, groundY);
+
+  ctx.fillStyle = "#4f3a33";
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  for (let i = 0; i <= 8; i++) ctx.lineTo((w * i) / 8, groundY - 10 - Math.abs(Math.sin(i * 1.7)) * 12);
+  ctx.lineTo(w, groundY);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#3d2a18";
+  ctx.fillRect(0, groundY, w, h - groundY);
+  ctx.fillStyle = "#4e3720";
+  ctx.fillRect(0, groundY, w, 2);
+
+  const flap = Math.sin(performance.now() / 300) * 2;
+  for (const [x, color, dir] of [[x0 - 8, "#3a7ddb", 1], [x1 + 8, "#d8432f", -1]]) {
+    ctx.strokeStyle = "#1c130a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, groundY + 2);
+    ctx.lineTo(x, groundY - 24);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, groundY - 24);
+    ctx.lineTo(x + dir * 11, groundY - 20 + flap);
+    ctx.lineTo(x, groundY - 15);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function drawBattle() {
   if (!battleCtx || battleCssW <= 0) return;
   const ctx = battleCtx;
@@ -1593,6 +1775,9 @@ function drawBattle() {
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
   const markerX = x0 + (x1 - x0) * ratio;
+  const groundY = battleCssH * 0.62;
+
+  drawBattlefield(ctx, x0, x1, groundY);
 
   roundRectFill(ctx, x0, barY, x1 - x0, barH, barH / 2, "#1c130a");
   roundRectFill(ctx, x0, barY, markerX - x0, barH, barH / 2, "#3a7ddb");
@@ -1606,23 +1791,34 @@ function drawBattle() {
   ctx.strokeStyle = "#3a2414";
   ctx.stroke();
 
-  drawArmyRow(ctx, x0, markerX, battleCssH * 0.42, playerPower, "#3a7ddb", 1);
-  drawArmyRow(ctx, markerX, x1, battleCssH * 0.42, enemyPower, "#d8432f", -1);
+  drawArmyRow(ctx, markerX, x0, groundY, playerPower, "player", 1);
+  drawArmyRow(ctx, markerX, x1, groundY, enemyPower, "enemy", -1);
 
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
   for (const m of marchers) {
     if (m.t < 0) continue;
     const x = m.side === "enemy" ? x1 - (x1 - markerX) * m.t : x0 + (markerX - x0) * m.t;
-    const stride = Math.abs(Math.sin(m.t * Math.PI * 5)) * 3;
-    if (m.side === "bomb") drawBombIcon(ctx, x, battleCssH * 0.6);
+    const feetY = battleCssH * 0.72;
+    if (m.side === "bomb") drawBombIcon(ctx, x, feetY - 8);
     else if (m.charge) {
-      for (const offset of [-14, 0, 14]) drawArmyIcon(ctx, x + offset, battleCssH * 0.6 - stride, "#ffcc33");
+      for (const offset of [-14, 0, 14]) drawSoldier(ctx, x + offset, feetY, 1, "charge", "walk", offset);
     } else {
-      drawArmyIcon(ctx, x, battleCssH * 0.6 - stride, m.side === "player" ? "#8fc0ff" : "#ff9a85");
+      const facing = m.side === "player" ? 1 : -1;
+      drawSoldier(ctx, x, feetY, facing, m.side === "player" ? "marching" : "enemyMarching", "walk", m.t * 40);
+    }
+    if (m.value >= 2 && m.side !== "bomb") {
+      ctx.font = "800 10px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#1c130a";
+      ctx.strokeText(Math.round(m.value), x, feetY - 29);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(Math.round(m.value), x, feetY - 29);
     }
   }
-  if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.5);
+  if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.75);
   for (const c of clashes) {
     ctx.beginPath();
     ctx.lineWidth = 2;
@@ -1716,6 +1912,35 @@ function spawnRustBurst(row, col, colorA = "#a4552a", colorB = "#6e3a1c") {
   }
 }
 
+// Sparks and a floating number where a soldier or bomb reached the front line.
+function spawnFrontLineHit(marcher) {
+  const total = playerPower + enemyPower;
+  const ratio = total > 0 ? playerPower / total : 0.5;
+  const x = laneRect.x + 16 + (laneRect.w - 32) * ratio;
+  const y = laneRect.y + laneRect.h * 0.5;
+  const isEnemy = marcher.side === "enemy";
+  for (let i = 0; i < 5; i++) {
+    spawnParticle({
+      x,
+      y,
+      vx: randomBetween(-90, 90),
+      vy: randomBetween(-110, 10),
+      gravity: 260,
+      life: randomBetween(0.2, 0.4),
+      size: randomBetween(1.5, 3),
+      color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
+    });
+  }
+  if (isEnemy || hitNumbers.length >= MAX_HIT_NUMBERS) return;
+  hitNumbers.push({
+    x: x + randomBetween(-10, 10),
+    y: y - 10,
+    text: `${marcher.side === "bomb" ? "-" : "+"}${Math.round(marcher.value)}`,
+    color: marcher.side === "bomb" ? "#ff8a3d" : marcher.charge ? "#ffcc33" : "#bcd9ff",
+    age: 0,
+  });
+}
+
 function spawnConfetti() {
   if (REDUCED_MOTION) return;
   const colors = ["#ffcc33", "#3a7ddb", "#8bd65a", "#ff8a3d", "#fdf6e8"];
@@ -1747,6 +1972,11 @@ function updateFx(dt) {
     p.angle += p.spin * dt;
   }
   particles = particles.filter((p) => p.age < p.life);
+  for (const number of hitNumbers) {
+    number.age += dt;
+    number.y -= 34 * dt;
+  }
+  hitNumbers = hitNumbers.filter((number) => number.age < HIT_NUMBER_SECONDS);
 
   screenShake = Math.max(0, screenShake - SHAKE_FADE_PER_SEC * dt);
   const shake = REDUCED_MOTION ? 0 : screenShake;
@@ -1769,7 +1999,7 @@ function drawFx() {
     ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
     ctx.shadowBlur = 16;
     if (flyer.side === "bomb") drawBombIcon(ctx, x, y);
-    else drawArmyIcon(ctx, x, y, "#8fc0ff");
+    else drawSoldier(ctx, x, y + 10, 1, "marching", "walk", flyer.fromX);
     ctx.restore();
   }
 
@@ -1782,6 +2012,19 @@ function drawFx() {
     ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
     ctx.restore();
   }
+
+  ctx.font = "800 13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 3;
+  for (const number of hitNumbers) {
+    ctx.globalAlpha = 1 - number.age / HIT_NUMBER_SECONDS;
+    ctx.strokeStyle = "#1c130a";
+    ctx.strokeText(number.text, number.x, number.y);
+    ctx.fillStyle = number.color;
+    ctx.fillText(number.text, number.x, number.y);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // =====================================================================
@@ -2049,6 +2292,7 @@ function layoutFxCanvas() {
   fxCssH = frame.height;
   boardOrigin = { x: board.left - frame.left, y: board.top - frame.top };
   flyTarget = { x: lane.left - frame.left + 16, y: lane.top - frame.top + lane.height * 0.6 };
+  laneRect = { x: lane.left - frame.left, y: lane.top - frame.top, w: lane.width, h: lane.height };
   fxCtx = fitCanvasDPR(fxCanvas, fxCssW, fxCssH);
 }
 
@@ -2096,6 +2340,7 @@ function startNewRun() {
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
   flyers = [];
   particles = [];
+  hitNumbers = [];
   screenShake = 0;
   wave = 1;
   waveTime = 0;
