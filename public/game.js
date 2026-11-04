@@ -12,12 +12,13 @@
 // three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Runs earn coins, spent in the Workshop on upgrades that last between runs.
+// Tips pause the game the first time something new happens.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
-// reached, coins, upgrades and the mute setting, via localStorage.
+// reached, coins, upgrades, tips seen and the mute setting, via localStorage.
 // =====================================================================
 
 const COLS = 6;
@@ -93,7 +94,9 @@ const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
 const VETERANS_REWARD = 0.15; // added to the player's lead each wave
 const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave outright
 const DISCOUNT_REWARD = 0.8; // gear price multiplier
-const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when the choice appears
+const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
+const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
+const REINFORCEMENTS_REWARD = 0.2; // added to the player's lead for one wave
 
 // Permanent upgrades. `costs` has one price per level, so its length is the
 // highest level.
@@ -114,6 +117,21 @@ const REWARDS = [
   { name: "Faster main gear", text: "The one-tooth gear turns 10% faster", apply: () => { driverTurnsPerSec += DRIVER_SPEED_REWARD; } },
   { name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
   { name: "Cheaper gears", text: "New gears cost 20% less", apply: () => { gearPriceScale *= DISCOUNT_REWARD; } },
+  { name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
+];
+
+// Shown once each, the first time `when` is true. Earlier entries go first.
+const TIPS = [
+  { id: "start", text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
+  { id: "boss", text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
+  { id: "rust", text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
+  { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
+  { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
+  { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
+  { id: "big", text: "A big gear fills half as fast, then sends 5 soldiers.", when: () => boardHasGear("big") },
+  { id: "booster", text: "A booster sends no soldiers. Gears touching it fill faster, so put it in the middle of your best gears.", when: () => boardHasGear("booster") },
+  { id: "bomb", text: "A bomb gear fills half as fast, then blasts 2 enemies.", when: () => boardHasGear("bomb") },
+  { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
 ];
 
 // The enemy's own army grows on its own the whole time, scaling up per
@@ -151,6 +169,9 @@ let driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
 let waveLead = WAVE_START_LEAD; // player's army vs the enemy's when a new wave begins
 let gearPriceScale = 1;
 let rewardOpenedAt = 0;
+let nextWaveBonus = 0; // extra lead for the next wave only
+let tipOpenedAt = 0;
+let openTip = null;
 let boss = null; // { hp, maxHp, attackIn, hitFlash, reinforcePerSec } during a boss wave
 let bossesBeaten = 0;
 let enemiesBlasted = 0;
@@ -170,7 +191,7 @@ let flyers = []; // { fromX, fromY, side, t }
 let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
 let screenShake = 0; // pixels
 
-let gameState = "title"; // "title" | "playing" | "choosing" | "gameover"
+let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "gameover"
 let wave = 1;
 let waveTime = 0; // seconds since the current wave began
 let playerPower = BASE_POWER;
@@ -187,9 +208,10 @@ function loadSave() {
       coins: Math.max(0, Math.floor(Number(data?.coins)) || 0),
       upgrades: data?.upgrades && typeof data.upgrades === "object" ? data.upgrades : {},
       muted: data?.muted === true,
+      tips: data?.tips && typeof data.tips === "object" ? data.tips : {},
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false };
+    return { coins: 0, upgrades: {}, muted: false, tips: {} };
   }
 }
 
@@ -695,7 +717,8 @@ function winWave() {
 function startWave() {
   peakRate = Math.max(peakRate, soldiersPerSecond());
   enemyPower = waveStartEnemy(wave);
-  playerPower = enemyPower * waveLead;
+  playerPower = enemyPower * (waveLead + nextWaveBonus);
+  nextWaveBonus = 0;
   if (isBossWave(wave)) {
     const hp = bossMaxHp(wave);
     boss = { hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower) };
@@ -703,10 +726,23 @@ function startWave() {
   }
 }
 
-// One special gear (while there's room) plus other rewards, so a choice always
-// includes something to place.
+function boardHasGear(type) {
+  return grid.flat().some((cell) => cell?.type === type);
+}
+
+// Free gears are limited so that most of a machine has to be bought.
+function specialGearCap() {
+  return MAX_SPECIAL_GEARS;
+}
+
+function canOfferSpecialGear() {
+  const specials = grid.flat().filter((cell) => cell && !cell.driver && cell.type !== "soldier").length;
+  return Boolean(bestEmptyCell()) && specials < specialGearCap();
+}
+
+// One special gear (while one can be offered) plus other rewards.
 function pickRewards() {
-  const open = REWARDS.filter((r) => (r.gear ? bestEmptyCell() : !r.available || r.available()));
+  const open = REWARDS.filter((r) => (r.gear ? canOfferSpecialGear() : !r.available || r.available()));
   const shuffled = open.map((r) => [Math.random(), r]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
@@ -779,6 +815,40 @@ function showRunSummary(coins) {
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
+function maybeShowTip() {
+  if (gameState !== "playing") return;
+  const tip = TIPS.find((t) => !save.tips[t.id] && t.when());
+  if (!tip) return;
+  gameState = "tip";
+  drag = null;
+  openTip = tip;
+  tipOpenedAt = performance.now();
+  document.getElementById("tip-text").textContent = tip.text;
+  document.getElementById("tip-screen").classList.remove("hidden");
+  if (tip.target) document.querySelector(tip.target).classList.add("tip-target");
+}
+
+function hideTip() {
+  document.getElementById("tip-screen").classList.add("hidden");
+  for (const el of document.querySelectorAll(".tip-target")) el.classList.remove("tip-target");
+  openTip = null;
+}
+
+function closeTip() {
+  if (!openTip || performance.now() - tipOpenedAt < REWARD_CLICK_DELAY_MS) return;
+  save.tips[openTip.id] = true;
+  writeSave();
+  hideTip();
+  gameState = "playing";
+}
+
+// Shows every tip again from the start of a new run.
+function replayTips() {
+  save.tips = {};
+  writeSave();
+  startNewRun();
+}
+
 function gameOver() {
   gameState = "gameover";
   drag = null;
@@ -813,6 +883,7 @@ function update(dt) {
   document.getElementById("army-score").textContent = Math.round(totalArmyScore);
   updateBuyButton();
   updateOverdriveButton();
+  maybeShowTip();
 }
 
 // =====================================================================
@@ -1616,7 +1687,7 @@ function handleResize() {
 function startNewRun() {
   ensureAudio();
   // Restart ends a run in progress, which still earns its coins.
-  const restarted = gameState === "playing" || gameState === "choosing";
+  const restarted = gameState === "playing" || gameState === "choosing" || gameState === "tip";
   const coinsFromRestart = restarted ? bankRun() : 0;
   drag = null;
   gearsBought = 0;
@@ -1627,6 +1698,8 @@ function startNewRun() {
   driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL);
   waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
   gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
+  nextWaveBonus = 0;
+  hideTip();
   bossesBeaten = 0;
   enemiesBlasted = 0;
   runTime = 0;
@@ -1684,6 +1757,8 @@ function init() {
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
+  document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
+  document.getElementById("how-to-play-btn").addEventListener("click", replayTips);
   document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("workshop-close-btn").addEventListener("click", closeWorkshop);

@@ -15,9 +15,12 @@
   <div id="app-frame">
     <div id="title-screen">
       <h1>Gear <span class="accent">Fight!</span></h1>
-      <p>The one-tooth gear keeps turning. Each hit adds 25% to the gear it touches and every gear connected to it. At 100%, a gear sends one soldier to fight. Spend soldiers on new gears, and win waves to pick rewards and special gears.</p>
+      <p>Build a gear machine, send soldiers to fight, and beat the bosses.</p>
       <button id="play-btn">Play game</button>
-      <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
+      <div id="title-actions">
+        <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
+        <button id="how-to-play-btn" class="workshop-btn">How to play</button>
+      </div>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
 
@@ -51,6 +54,13 @@
 
     <div id="wave-banner" class="hidden">
       <span id="wave-banner-text"></span>
+    </div>
+
+    <div id="tip-screen" class="hidden">
+      <div id="tip-card">
+        <p id="tip-text"></p>
+        <button id="tip-ok-btn">Got it</button>
+      </div>
     </div>
 
     <div id="reward-screen" class="hidden">
