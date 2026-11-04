@@ -1500,6 +1500,34 @@ function drawEmptyCell(ctx, cx, cy, size) {
   ctx.fill();
 }
 
+// While a gear is held, fades the gears it can't merge with and rings the ones
+// it can, so matches are easy to spot on a busy board.
+function drawMergeHints(ctx) {
+  const pulse = REDUCED_MOTION ? 0.5 : 0.5 + Math.sin(performance.now() / 130) * 0.5;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell || cell.driver || cell === drag.cell) continue;
+      const cx = col * cellSize + cellSize / 2;
+      const cy = row * cellSize + cellSize / 2;
+      ctx.beginPath();
+      if (canMerge(drag.cell, cell)) {
+        ctx.arc(cx, cy, cellSize * (0.47 + pulse * 0.04), 0, Math.PI * 2);
+        ctx.lineWidth = Math.max(3, cellSize * 0.07);
+        ctx.strokeStyle = "#7dff5a";
+        ctx.shadowColor = "#7dff5a";
+        ctx.shadowBlur = cellSize * 0.25;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.arc(cx, cy, cellSize * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(40, 22, 8, 0.55)";
+        ctx.fill();
+      }
+    }
+  }
+}
+
 // A cartoon wooden workbench under the gears.
 function drawWoodBoard(ctx) {
   roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#a9743f");
@@ -1569,6 +1597,7 @@ function drawBoard() {
   // The dragged gear follows the pointer, above everything else, with an
   // outline on the gear it would swap with.
   if (drag) {
+    drawMergeHints(ctx);
     const target = cellAt(drag);
     if (canDropOn(target)) {
       ctx.lineWidth = 3;
