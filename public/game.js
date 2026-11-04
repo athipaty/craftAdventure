@@ -85,9 +85,9 @@ const BOMB_PALETTE = { light: "#ffb3a0", mid: "#cf5238", dark: "#6e1f10", recess
 // one extra hit each time they are hit.
 const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
-  big: { hits: 8, soldiers: 5, badge: "x5", palette: BIG_PALETTE },
+  big: { hits: 8, soldiers: 5, palette: BIG_PALETTE },
   booster: { hits: 0, palette: BOOSTER_PALETTE },
-  bomb: { hits: 8, enemies: 2, badge: "-2", palette: BOMB_PALETTE },
+  bomb: { hits: 8, enemies: 2, palette: BOMB_PALETTE },
 };
 
 const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
@@ -95,6 +95,8 @@ const VETERANS_REWARD = 0.15; // added to the player's lead each wave
 const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave outright
 const DISCOUNT_REWARD = 0.8; // gear price multiplier
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
+const MAX_GEAR_LEVEL = 5;
+const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
 const REINFORCEMENTS_REWARD = 0.2; // added to the player's lead for one wave
 
@@ -132,6 +134,7 @@ const TIPS = [
   { id: "booster", text: "A booster sends no soldiers. Gears touching it fill faster, so put it in the middle of your best gears.", when: () => boardHasGear("booster") },
   { id: "bomb", text: "A bomb gear fills half as fast, then blasts 2 enemies.", when: () => boardHasGear("bomb") },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
+  { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
 // The enemy's own army grows on its own the whole time, scaling up per
@@ -230,7 +233,7 @@ function upgradeLevel(id) {
 }
 
 function freshCell(type = "soldier") {
-  return { type, ticks: 0, ticksAnim: 0, spinTarget: 0, spinAnim: 0, flash: 0 };
+  return { type, level: 1, ticks: 0, ticksAnim: 0, spinTarget: 0, spinAnim: 0, flash: 0 };
 }
 
 // =====================================================================
@@ -288,7 +291,7 @@ function boostersTouching(row, col) {
   let count = 0;
   for (const [dr, dc] of TOOTH_DIRS) {
     const other = grid[row + dr]?.[col + dc];
-    if (other?.type === "booster" && !other.rusted) count += 1;
+    if (other?.type === "booster" && !other.rusted) count += other.level;
   }
   return count;
 }
@@ -303,7 +306,8 @@ function soldiersPerSecond() {
     for (const gear of connectedGears(DRIVER_ROW + dr, DRIVER_COL + dc, 1)) {
       const spec = GEAR_TYPES[grid[gear.row][gear.col].type];
       if (!spec.hits) continue;
-      const payout = (spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy;
+      const level = levelPayout(grid[gear.row][gear.col].level);
+      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level;
       perTurn += ((1 + boostersTouching(gear.row, gear.col)) * payout) / spec.hits;
     }
   }
@@ -321,9 +325,31 @@ function hitGear(gear, hits) {
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    if (spec.soldiers) sendSoldiers(spec.soldiers, gear.row, gear.col);
-    else launchBomb(spec.enemies, gear.row, gear.col);
+    const level = levelPayout(cell.level);
+    if (spec.soldiers) sendSoldiers(spec.soldiers * level, gear.row, gear.col);
+    else launchBomb(spec.enemies * level, gear.row, gear.col);
   }
+}
+
+function levelPayout(level) {
+  return Math.round(Math.pow(LEVEL_PAYOUT_GROWTH, level - 1));
+}
+
+function canMerge(from, onto) {
+  return Boolean(onto) && !onto.driver && from !== onto && from.type === onto.type
+    && from.level === onto.level && from.level < MAX_GEAR_LEVEL;
+}
+
+// The gear on the target cell levels up and keeps its progress.
+function mergeGears(fromRow, fromCol, toRow, toCol) {
+  const target = grid[toRow][toCol];
+  grid[fromRow][fromCol] = null;
+  target.level += 1;
+  target.rusted = false;
+  target.flash = 1;
+  spawnRustBurst(toRow, toCol, "#ffcc33", "#fff3c4");
+  showToast(`Level ${target.level}!`);
+  playClankSound();
 }
 
 function gearCost() {
@@ -598,7 +624,9 @@ function onPointerUp(e) {
     playClankSound();
   }
   const target = cellAt(boardPoint(e));
-  if (canDropOn(target)) {
+  if (target && canMerge(drag.cell, target.cell)) {
+    mergeGears(drag.row, drag.col, target.row, target.col);
+  } else if (canDropOn(target)) {
     grid[drag.row][drag.col] = target.cell;
     grid[target.row][target.col] = drag.cell;
     playClankSound();
@@ -1044,6 +1072,7 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   }
   if (!spec.hits) {
     drawBolt(ctx, cx, cy, r * 0.34, palette.dark);
+    drawLevelMark(ctx, cx, cy, r, cell.level);
     return;
   }
   ctx.fillStyle = "#2a1b08";
@@ -1052,12 +1081,26 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.textBaseline = "middle";
   ctx.fillText(`${Math.round((cell.ticks / spec.hits) * 100)}%`, cx, cy + 1);
 
-  if (spec.badge) {
-    roundRectFill(ctx, cx - r * 0.34, cy + r * 0.52, r * 0.68, r * 0.4, r * 0.15, palette.dark);
+  const payout = levelPayout(cell.level);
+  const badge = spec.enemies ? `-${spec.enemies * payout}` : spec.soldiers * payout > 1 ? `x${spec.soldiers * payout}` : "";
+  if (badge) {
+    roundRectFill(ctx, cx - r * 0.38, cy + r * 0.52, r * 0.76, r * 0.4, r * 0.15, palette.dark);
     ctx.fillStyle = "#ffffff";
     ctx.font = `800 ${Math.round(r * 0.3)}px system-ui, sans-serif`;
-    ctx.fillText(spec.badge, cx, cy + r * 0.73);
+    ctx.fillText(badge, cx, cy + r * 0.73);
   }
+  drawLevelMark(ctx, cx, cy, r, cell.level);
+}
+
+// A pill on top of the gear showing its merge level.
+function drawLevelMark(ctx, cx, cy, r, level) {
+  if (level <= 1) return;
+  roundRectFill(ctx, cx - r * 0.3, cy - r * 0.92, r * 0.6, r * 0.38, r * 0.15, "#2a1b08");
+  ctx.fillStyle = "#ffcc33";
+  ctx.font = `800 ${Math.round(r * 0.28)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`L${level}`, cx, cy - r * 0.72);
 }
 
 // The booster's mark: a lightning bolt.
@@ -1134,7 +1177,7 @@ function drawBoard() {
     const target = cellAt(drag);
     if (canDropOn(target)) {
       ctx.lineWidth = 3;
-      ctx.strokeStyle = "#ffcc33";
+      ctx.strokeStyle = canMerge(drag.cell, target.cell) ? "#8bd65a" : "#ffcc33";
       ctx.strokeRect(target.col * cellSize + 3, target.row * cellSize + 3, cellSize - 6, cellSize - 6);
     }
     drawGearCell(ctx, drag.x, drag.y, cellSize * 1.12, drag.cell);
@@ -1319,7 +1362,7 @@ function spawnToothSparks(row, col) {
   }
 }
 
-function spawnRustBurst(row, col) {
+function spawnRustBurst(row, col, colorA = "#a4552a", colorB = "#6e3a1c") {
   const x = boardOrigin.x + (col + 0.5) * cellSize;
   const y = boardOrigin.y + (row + 0.5) * cellSize;
   for (let i = 0; i < 18; i++) {
@@ -1333,7 +1376,7 @@ function spawnRustBurst(row, col) {
       gravity: 120,
       life: randomBetween(0.3, 0.7),
       size: randomBetween(2, 5),
-      color: i % 2 ? "#a4552a" : "#6e3a1c",
+      color: i % 2 ? colorA : colorB,
     });
   }
 }
