@@ -19,8 +19,13 @@
       <button id="play-btn">Play game</button>
       <div id="title-actions">
         <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
-        <button id="title-quests-btn" class="workshop-btn">Quests</button>
+        <button id="title-quests-btn" class="workshop-btn">Quests &amp; awards</button>
         <button id="how-to-play-btn" class="workshop-btn">How to play</button>
+      </div>
+      <div id="player-level">
+        <b id="player-level-name">Level 1 Apprentice</b>
+        <div id="player-level-bar"><span id="player-level-fill"></span></div>
+        <small id="player-level-xp">0 / 100 XP</small>
       </div>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
@@ -94,11 +99,12 @@
         <div><dt>Time</dt><dd id="stat-time">0:00</dd></div>
       </dl>
       <p id="coins-earned"></p>
+      <p id="level-gain"></p>
       <div id="gameover-goals"></div>
       <div id="gameover-actions">
         <button id="retry-btn">Try again</button>
         <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
-        <button id="gameover-quests-btn" class="workshop-btn">Quests</button>
+        <button id="gameover-quests-btn" class="workshop-btn">Quests &amp; awards</button>
       </div>
     </div>
 
@@ -110,13 +116,15 @@
     </div>
 
     <div id="quests-screen" class="hidden">
-      <h2>Quests</h2>
-      <p>Finish these over any number of runs. <b id="quests-done-count">0</b> done so far.</p>
+      <h2>Quests &amp; awards</h2>
+      <p>Progress carries across runs. <b id="quests-done-count">0</b> quests done so far.</p>
       <div id="quests-scroll">
         <h3>Today</h3>
         <div id="daily-quests-list"></div>
         <h3>Goals</h3>
         <div id="quests-list"></div>
+        <h3>Achievements <span id="achievement-count"></span></h3>
+        <div id="achievements-list"></div>
       </div>
       <button id="quests-close-btn" class="workshop-btn">Back</button>
     </div>

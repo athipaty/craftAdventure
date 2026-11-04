@@ -626,6 +626,55 @@ button {
   text-align: left;
 }
 
+#player-level {
+  width: 100%;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#player-level b {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+#player-level small {
+  color: #c9b896;
+  font-size: 0.7rem;
+}
+
+#player-level-bar {
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+#player-level-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #8fc0ff;
+}
+
+#gameover-screen #level-gain {
+  color: #bcd9ff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+#gameover-screen #level-gain.leveled {
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.achievement-text {
+  color: #c9b896;
+}
+
+#achievements-list,
 #quests-list,
 #daily-quests-list {
   display: flex;
@@ -1011,8 +1060,36 @@ button {
   }
 
   #title-screen {
-    gap: 8px;
-    padding: 12px 24px;
+    gap: 6px;
+    padding: 8px 24px;
+  }
+
+  #title-screen h1 {
+    font-size: 2.2rem;
+  }
+
+  #play-btn {
+    margin-top: 2px;
+    padding: 10px 40px;
+    font-size: 1.1rem;
+  }
+
+  #title-actions .workshop-btn {
+    padding: 7px 16px;
+    font-size: 0.85rem;
+  }
+
+  #player-level {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    column-gap: 8px;
+  }
+
+  #player-level-bar {
+    width: 100%;
+    order: 2;
   }
 
   #reward-options {

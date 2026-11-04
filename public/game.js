@@ -12,7 +12,8 @@
 // three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Runs and quests earn coins, spent in the Workshop on upgrades that last
-// between runs.
+// between runs. Every run also earns experience toward a player level, and
+// lifetime totals unlock achievements.
 // Tips pause the game the first time something new happens. Training raises the
 // army's rank, so each soldier is worth more; prices are counted in soldiers of
 // the current rank, so a stronger army doesn't make everything free.
@@ -21,7 +22,8 @@
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
-// reached, coins, upgrades, quests, tips seen and the mute setting, via localStorage.
+// reached, coins, upgrades, quests, level, achievements, tips seen and the mute
+// setting, via localStorage.
 // =====================================================================
 
 const COLS = 6;
@@ -58,6 +60,57 @@ const STRIKE_RECHARGE_PER_LEVEL = 0.25; // seconds off the recharge per level
 const OVERDRIVE_RECHARGE_PER_LEVEL = 3; // seconds off the recharge per level
 const RUST_GUARD_PER_LEVEL = 0.05; // share of gears rusted per attack removed by each level
 const TRAIN_DISCOUNT_PER_LEVEL = 0.1;
+const XP_PER_RUN = 5; // even a run that wins nothing counts for something
+const XP_PER_WAVE = 10;
+const XP_PER_BOSS = 40;
+const XP_PER_QUEST = 20;
+const XP_LEVEL_BASE = 100; // experience needed for level 2
+const XP_LEVEL_STEP = 50; // how much more each level after that needs
+const LEVEL_COINS_BASE = 20;
+const LEVEL_COINS_STEP = 5;
+const COUNTED_RUN_SECONDS = 30; // restarting at once doesn't count as a run
+const PLAYER_TITLES = [
+  { fromLevel: 1, name: "Apprentice" },
+  { fromLevel: 5, name: "Mechanic" },
+  { fromLevel: 10, name: "Engineer" },
+  { fromLevel: 20, name: "Gearsmith" },
+  { fromLevel: 30, name: "Master Gearsmith" },
+  { fromLevel: 50, name: "Gear Legend" },
+];
+// Lifetime totals that keep the highest value reached instead of adding up.
+const BEST_STATS = ["topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
+const ACHIEVEMENTS = [
+  { id: "wave1", name: "First win", text: "Win a wave", stat: "waves", target: 1, coins: 10 },
+  { id: "wave50", name: "Veteran", text: "Win 50 waves", stat: "waves", target: 50, coins: 30 },
+  { id: "wave250", name: "Warlord", text: "Win 250 waves", stat: "waves", target: 250, coins: 75 },
+  { id: "wave1000", name: "Unstoppable", text: "Win 1,000 waves", stat: "waves", target: 1000, coins: 150 },
+  { id: "reach10", name: "Getting serious", text: "Reach wave 10", stat: "reachWave", target: 10, coins: 15 },
+  { id: "reach20", name: "Deep run", text: "Reach wave 20", stat: "reachWave", target: 20, coins: 30 },
+  { id: "reach30", name: "Long haul", text: "Reach wave 30", stat: "reachWave", target: 30, coins: 60 },
+  { id: "reach40", name: "Beyond the wall", text: "Reach wave 40", stat: "reachWave", target: 40, coins: 120 },
+  { id: "boss1", name: "Giant slayer", text: "Beat a boss", stat: "bosses", target: 1, coins: 15 },
+  { id: "boss10", name: "Boss hunter", text: "Beat 10 bosses", stat: "bosses", target: 10, coins: 40 },
+  { id: "boss50", name: "Boss nightmare", text: "Beat 50 bosses", stat: "bosses", target: 50, coins: 100 },
+  { id: "merge1", name: "Better together", text: "Merge two gears", stat: "merges", target: 1, coins: 10 },
+  { id: "merge100", name: "Merge master", text: "Merge gears 100 times", stat: "merges", target: 100, coins: 50 },
+  { id: "level5", name: "Top gear", text: "Make a level 5 gear", stat: "topLevel", target: 5, coins: 40 },
+  { id: "knight", name: "Arise, Knights", text: "Train your army to Knights", stat: "rank", target: 1, coins: 15 },
+  { id: "champion", name: "Champions", text: "Train your army to Champions", stat: "rank", target: 2, coins: 30 },
+  { id: "hero", name: "Heroes", text: "Train your army to Heroes", stat: "rank", target: 3, coins: 60 },
+  { id: "strike100", name: "Storm caller", text: "Use 100 lightning strikes", stat: "strikes", target: 100, coins: 30 },
+  { id: "blast100", name: "Demolition", text: "Blast 100 enemies with bombs", stat: "blasted", target: 100, coins: 30 },
+  { id: "combo1", name: "Pattern spotter", text: "Make a combo", stat: "combos", target: 1, coins: 15 },
+  { id: "combo25", name: "Combo builder", text: "Make 25 combos", stat: "combos", target: 25, coins: 40 },
+  { id: "clean10", name: "No shortcuts", text: "Reach wave 10 without using Overdrive", stat: "cleanWave", target: 10, coins: 40 },
+  { id: "rust25", name: "Rust remover", text: "Fix 25 rusted gears", stat: "rustFixed", target: 25, coins: 25 },
+  { id: "scrap10", name: "Clean workshop", text: "Scrap 10 gears", stat: "scraps", target: 10, coins: 15 },
+  { id: "quest10", name: "Reliable", text: "Finish 10 quests", stat: "questsDone", target: 10, coins: 30 },
+  { id: "quest50", name: "Quest master", text: "Finish 50 quests", stat: "questsDone", target: 50, coins: 80 },
+  { id: "streak7", name: "One full week", text: "Reach a 7-day streak", stat: "streak", target: 7, coins: 40 },
+  { id: "run10", name: "Back for more", text: "Play 10 runs", stat: "runs", target: 10, coins: 20 },
+  { id: "run50", name: "Regular", text: "Play 50 runs", stat: "runs", target: 50, coins: 60 },
+  { id: "upgrades10", name: "Well equipped", text: "Buy 10 Workshop upgrades", stat: "upgrades", target: 10, coins: 30 },
+];
 const ACTIVE_QUESTS = 3;
 const DAILY_REWARDS = [10, 15, 20, 25, 30, 40, 75]; // coins for each day of the weekly cycle
 const DAILY_QUEST_KINDS = ["waves", "bosses", "merges", "strikes", "buys", "blasted"];
@@ -276,6 +329,8 @@ let bossesBeaten = 0;
 let enemiesBlasted = 0;
 let usedOverdrive = false; // this run, for the quest that forbids it
 let runQuestCoins = 0;
+let lastRunLevelUps = []; // { level, coins } from the run just banked
+let lastRunXp = 0;
 let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
@@ -336,9 +391,13 @@ function loadSave() {
       dailyStreak: Math.max(0, Math.floor(Number(data?.dailyStreak)) || 0),
       dailyQuestsOn: typeof data?.dailyQuestsOn === "string" ? data.dailyQuestsOn : "",
       dailyQuests: Array.isArray(data?.dailyQuests) ? data.dailyQuests.filter(isValidQuest) : [],
+      xp: Math.max(0, Math.floor(Number(data?.xp)) || 0),
+      playerLevel: Math.max(1, Math.floor(Number(data?.playerLevel)) || 1),
+      stats: data?.stats && typeof data.stats === "object" ? data.stats : {},
+      achievements: data?.achievements && typeof data.achievements === "object" ? data.achievements : {},
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [] };
+    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, achievements: {} };
   }
 }
 
@@ -378,7 +437,82 @@ function fillQuests() {
   while (save.quests.length < ACTIVE_QUESTS) save.quests.push(makeQuest());
 }
 
+function statValue(stat) {
+  return Number(save.stats[stat]) || 0;
+}
+
+function recordStat(stat, value = 1) {
+  save.stats[stat] = BEST_STATS.includes(stat) ? Math.max(statValue(stat), value) : statValue(stat) + value;
+  for (const achievement of ACHIEVEMENTS) {
+    if (achievement.stat === stat && !save.achievements[achievement.id] && statValue(stat) >= achievement.target) {
+      unlockAchievement(achievement);
+    }
+  }
+}
+
+function unlockAchievement(achievement) {
+  save.achievements[achievement.id] = true;
+  save.coins += achievement.coins;
+  writeSave();
+  showToast(`Achievement: ${achievement.name}! +${achievement.coins}`);
+  playClankSound();
+}
+
+function renderAchievements() {
+  const unlocked = ACHIEVEMENTS.filter((a) => save.achievements[a.id]).length;
+  document.getElementById("achievement-count").textContent = `${unlocked} / ${ACHIEVEMENTS.length}`;
+  // Closest to done first, finished ones last.
+  const ratio = (a) => (save.achievements[a.id] ? -1 : statValue(a.stat) / a.target);
+  const list = document.getElementById("achievements-list");
+  list.replaceChildren();
+  for (const achievement of [...ACHIEVEMENTS].sort((a, b) => ratio(b) - ratio(a))) {
+    const done = Boolean(save.achievements[achievement.id]);
+    const row = document.createElement("div");
+    row.className = done ? "quest done" : "quest";
+    const name = document.createElement("b");
+    name.textContent = achievement.name;
+    const reward = document.createElement("em");
+    reward.textContent = done ? "Done \u2713" : `${achievement.coins} coins`;
+    const text = document.createElement("span");
+    text.className = "achievement-text";
+    text.textContent = achievement.text;
+    const count = document.createElement("small");
+    count.textContent = done ? "" : `${Math.min(achievement.target, Math.floor(statValue(achievement.stat)))} / ${achievement.target}`;
+    row.append(name, reward, text, count);
+    list.append(row);
+  }
+}
+
+function xpForNextLevel(level = save.playerLevel) {
+  return XP_LEVEL_BASE + (level - 1) * XP_LEVEL_STEP;
+}
+
+function playerTitle() {
+  return [...PLAYER_TITLES].reverse().find((t) => save.playerLevel >= t.fromLevel).name;
+}
+
+// Adds experience, paying coins for each level gained.
+function gainXp(amount) {
+  const levelUps = [];
+  save.xp += amount;
+  while (save.xp >= xpForNextLevel()) {
+    save.xp -= xpForNextLevel();
+    save.playerLevel += 1;
+    const coins = LEVEL_COINS_BASE + save.playerLevel * LEVEL_COINS_STEP;
+    save.coins += coins;
+    levelUps.push({ level: save.playerLevel, coins });
+  }
+  return levelUps;
+}
+
+function renderPlayerLevel() {
+  document.getElementById("player-level-name").textContent = `Level ${save.playerLevel} ${playerTitle()}`;
+  document.getElementById("player-level-fill").style.width = `${Math.min(100, (save.xp / xpForNextLevel()) * 100)}%`;
+  document.getElementById("player-level-xp").textContent = `${save.xp} / ${xpForNextLevel()} XP`;
+}
+
 function questEvent(kind, value = 1) {
+  recordStat(kind, value);
   const quest = save.quests.find((q) => q.kind === kind);
   if (quest) {
     const before = quest.progress;
@@ -463,6 +597,7 @@ function claimDailyReward() {
   if (!dailyRewardReady()) return;
   save.coins += DAILY_REWARDS[dailyRewardIndex()];
   save.dailyStreak += 1;
+  recordStat("streak", save.dailyStreak);
   save.dailyClaimedOn = todayKey();
   writeSave();
   ensureAudio();
@@ -475,7 +610,9 @@ function completeQuest(quest) {
   save.quests = save.quests.filter((q) => q !== quest);
   save.coins += quest.reward;
   save.questsDone += 1;
+  recordStat("questsDone", save.questsDone);
   runQuestCoins += quest.reward;
+  gainXp(XP_PER_QUEST);
   fillQuests();
   writeSave();
   showToast(`Quest done! +${quest.reward} coins`);
@@ -508,6 +645,7 @@ function openQuests() {
   refreshDailyQuests();
   renderQuestList("quests-list");
   renderQuestList("daily-quests-list", save.dailyQuests);
+  renderAchievements();
   document.getElementById("quests-done-count").textContent = save.questsDone;
   document.getElementById("quests-screen").classList.remove("hidden");
 }
@@ -844,6 +982,7 @@ function scrapRefund() {
 }
 
 function scrapGear(row, col) {
+  recordStat("scraps");
   const refund = scrapRefund();
   grid[row][col] = null;
   playerPower += refund * armyStrength();
@@ -1216,6 +1355,7 @@ function onPointerUp(e) {
   // Handling a rusted gear frees it, whether it was tapped or moved.
   if (drag.cell.rusted) {
     drag.cell.rusted = false;
+    recordStat("rustFixed");
     playClankSound();
   }
   const target = cellAt(boardPoint(e));
@@ -1450,6 +1590,9 @@ function bankRun() {
   runBanked = true;
   const coins = coinsForRun();
   save.coins += coins;
+  lastRunXp = XP_PER_RUN + (wave - 1) * XP_PER_WAVE + bossesBeaten * XP_PER_BOSS;
+  lastRunLevelUps = gainXp(lastRunXp);
+  if (wave > 1 || runTime >= COUNTED_RUN_SECONDS) recordStat("runs");
   writeSave();
   return coins;
 }
@@ -1498,6 +1641,13 @@ function showRunSummary(coins) {
   document.getElementById("coins-earned").textContent = runQuestCoins > 0
     ? `+${coins} coins, plus ${runQuestCoins} from quests`
     : `+${coins} coins`;
+  const levelLine = document.getElementById("level-gain");
+  const lastUp = lastRunLevelUps[lastRunLevelUps.length - 1];
+  const levelCoins = lastRunLevelUps.reduce((total, up) => total + up.coins, 0);
+  levelLine.textContent = lastUp
+    ? `+${lastRunXp} XP. Level ${lastUp.level}! +${levelCoins} coins`
+    : `+${lastRunXp} XP. Level ${save.playerLevel}: ${save.xp} / ${xpForNextLevel()}`;
+  levelLine.classList.toggle("leveled", Boolean(lastUp));
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
@@ -3007,6 +3157,7 @@ function buyUpgrade(upgrade) {
   if (cost === undefined || save.coins < cost) return;
   save.coins -= cost;
   save.upgrades[upgrade.id] = level + 1;
+  recordStat("upgrades", UPGRADES.reduce((total, u) => total + upgradeLevel(u.id), 0));
   writeSave();
   ensureAudio();
   playClankSound();
@@ -3016,6 +3167,7 @@ function buyUpgrade(upgrade) {
 function renderWorkshop() {
   document.getElementById("workshop-coins").textContent = save.coins;
   document.getElementById("title-coins").textContent = save.coins;
+  renderPlayerLevel();
   const list = document.getElementById("workshop-list");
   list.replaceChildren();
   for (const upgrade of UPGRADES) {
