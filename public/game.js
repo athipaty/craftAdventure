@@ -65,8 +65,19 @@ const RUN_SAVE_KEY = "gearfight_run";
 const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10 };
 const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!" };
 const TIP_FEATURES = { rally: "rally", train: "train" };
-const EASY_BOSS = 0.75; // boss health and reinforcements on Easy
+const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 const MAX_STATUS_PARTS = 3; // rewards listed by name beside the effects happening now
+// One icon per reward, skill and word, the same wherever it appears. Gears, enemies
+// and bosses use their real art instead.
+const REWARD_ICONS = {
+  fasterGear: "\u23E9", veterans: "\u{1F396}\uFE0F", cheaperGears: "\u{1F3F7}\uFE0F", reinforcements: "\u{1F6A9}",
+  cooling: "\u{1F9CA}", staticCharge: "\u26A1", scrapDealer: "\u267B\uFE0F", thickOil: "\u{1F6E2}\uFE0F", warChest: "\u{1F4B0}",
+  drillManual: "\u{1F4D8}", piercing: "\u{1F531}", antifreeze: "\u2744\uFE0F", fireproof: "\u{1F9EF}", longChain: "\u{1F517}",
+  bossHunter: "\u{1F3AF}", demolition: "\u{1F4A3}", heavyLoad: "\u{1F3CB}\uFE0F", turbo: "\u{1F680}", blastCleaner: "\u{1F9F9}",
+  stormEngine: "\u{1F329}\uFE0F", warDrums: "\u{1F941}", patterns: "\u{1F9E9}", forgeBonus: "\u{1F528}", forgedGear: "\u2692\uFE0F",
+  chargedStrike: "\u{1F31F}", secondWind: "\u{1F4A8}", promotion: "\u2B50", clockwork: "\u23F0",
+};
+const GUIDE_ICON_SIZE = 48;
 const COUNTER_HOLD_SECONDS = 0.5; // lightning must have been ready this long, so tapping nonstop can't counter
 const BUILD_SECONDS = 5; // the break between waves
 const BUILD_MIN_GEARS = 3; // smaller machines have nothing to rearrange
@@ -225,12 +236,12 @@ const WORLDS = [
     theme: { skyTop: "#f0a64f", skyBottom: "#fbe6b0", hillBack: "#e8c27a", hillFront: "#d9a95c", ground: "#c9954a", groundDark: "#b5823c", deco: "cactus" },
   },
   {
-    id: "ice", name: "Frozen Peaks", finalHp: 1.25, finalWave: 25, scale: 1.66, clearCoins: 400,
+    id: "ice", name: "Frozen Peaks", finalHp: 1.25, finalWave: 25, scale: 1.58, clearCoins: 400,
     enemies: [["frost", 1], ["runner", 3], ["brute", 8], ["shaman", 12]],
     theme: { skyTop: "#8fb8e0", skyBottom: "#eaf6ff", hillBack: "#dcecf8", hillFront: "#c2dcef", ground: "#e8f2fa", groundDark: "#cfe2f0", deco: "snow" },
   },
   {
-    id: "lava", name: "Lava Core", finalHp: 1, finalWave: 25, scale: 1.7, clearCoins: 800,
+    id: "lava", name: "Lava Core", finalHp: 1.25, finalWave: 25, scale: 1.6, clearCoins: 800,
     enemies: [["imp", 1], ["shaman", 4], ["brute", 8], ["frost", 14]],
     theme: { skyTop: "#2a1020", skyBottom: "#a8381c", hillBack: "#4a2020", hillFront: "#301418", ground: "#3a2018", groundDark: "#2a1610", deco: "embers" },
   },
@@ -262,15 +273,16 @@ const RULES = {
 // Level 0 is the world as it is. scale: added to how much bigger each wave starts.
 // waveSeconds: multiplies how long the machine's best output takes to win a wave,
 // which is what sets a wave's size once a machine is big. growth: how fast enemies
-// grow during a wave.
+// grow during a wave. lead: taken from the army a wave starts with, so the line
+// starts closer to losing. bossHp: extra boss health.
 const WORLD_LEVELS = [
-  { name: "Normal", scale: 0, waveSeconds: 1, growth: 1, coins: 1, clearCoins: 1 },
-  { name: "Hard", scale: 0.04, waveSeconds: 1.6, growth: 1.5, coins: 1.25, clearCoins: 1.5 },
-  { name: "Expert", scale: 0.08, waveSeconds: 2, growth: 2, coins: 1.5, clearCoins: 2 },
+  { name: "Normal", scale: 0, waveSeconds: 1, growth: 1, lead: 0, bossHp: 1, coins: 1, clearCoins: 1 },
+  { name: "Hard", scale: 0.04, waveSeconds: 1.6, growth: 1.5, lead: 0.1, bossHp: 1.4, coins: 1.25, clearCoins: 1.5 },
+  { name: "Expert", scale: 0.08, waveSeconds: 2, growth: 2, lead: 0.2, bossHp: 2, coins: 1.5, clearCoins: 2 },
 ];
 // For anyone who'd rather see every world than be tested by them. Earns less, and
 // only the first star.
-const EASY_LEVEL = { name: "Easy", scale: -0.05, waveSeconds: 0.8, growth: 0.75, coins: 0.75 };
+const EASY_LEVEL = { name: "Easy", scale: -0.08, waveSeconds: 0.8, growth: 0.75, lead: -0.1, bossHp: 0.8, coins: 0.75 };
 const WORLD_STORIES = {
   forest: { intro: "Goblins have overrun the Green Forest! Build a machine, send your soldiers, and drive them out.", outro: "The forest is safe. But the goblins left tracks heading for the desert..." },
   desert: { intro: "The goblins fled to the Sun Desert, and armoured brutes have joined them. Your machine must grow.", outro: "The Sand Wyrm sinks beneath the dunes. Far away, the mountains have turned white." },
@@ -1663,7 +1675,7 @@ function bossWeakening() {
 function bossMaxHp(forWave) {
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
   const finalScale = isFinalWave(forWave) ? (currentEvent ? FINAL_BOSS_HP : WORLDS[currentWorld].finalHp) : 1;
-  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening() * finalScale;
+  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening() * finalScale * runLevel().bossHp;
 }
 
 function damageBoss(amount) {
@@ -2397,7 +2409,7 @@ function startWave() {
   dealAccepted = false;
   rustBlocked = false;
   enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1);
-  playerPower = enemyPower * (waveLead + nextWaveBonus);
+  playerPower = enemyPower * (waveLead + nextWaveBonus - runLevel().lead);
   nextWaveBonus = 0;
   if (plan.boss) {
     const hp = bossMaxHp(wave);
@@ -2580,7 +2592,10 @@ function renderRewardOptions(rewards) {
     }
     const text = document.createElement("span");
     text.textContent = reward.text;
-    button.append(name, text);
+    const words = document.createElement("div");
+    words.className = "reward-words";
+    words.append(name, text);
+    button.append(rewardIcon(reward), words);
     button.addEventListener("click", () => {
       if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) chooseReward(reward);
     });
@@ -4304,6 +4319,61 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
     inked(ctx, "#8fe7ff", 1.6);
     inkedCircle(ctx, 0, 0, 2.4, "#1d6e6a", 1.2);
     ctx.restore();
+  } else if (who.kind.id === "warlord") {
+    // A war helmet with two great horns.
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 8, -41);
+      ctx.quadraticCurveTo(side * 21, -43, side * 20, -56);
+      ctx.quadraticCurveTo(side * 14, -48, side * 4, -47);
+      ctx.closePath();
+      inked(ctx, "#f3ead2", 1.6);
+    }
+    ctx.beginPath();
+    ctx.arc(0, -36, 14, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.closePath();
+    inked(ctx, "#7a4a23", 1.8);
+  } else if (who.kind.id === "wyrm") {
+    // A row of sharp spines running over the head.
+    for (const [sx, tall] of [[-11, 8], [-5.5, 12], [0, 15], [5.5, 12], [11, 8]]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 4, -40);
+      ctx.lineTo(sx, -40 - tall);
+      ctx.lineTo(sx + 4, -40);
+      ctx.closePath();
+      inked(ctx, "#6b3f17", 1.5);
+    }
+  } else if (who.kind.id === "queen") {
+    // A crown of ice shards.
+    for (const [sx, tall, lean] of [[-10, 9, -3], [-5, 13, -1], [0, 18, 0], [5, 13, 1], [10, 9, 3]]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 3.5, -40);
+      ctx.lineTo(sx + lean, -40 - tall);
+      ctx.lineTo(sx + 3.5, -40);
+      ctx.closePath();
+      inked(ctx, "#bdeeff", 1.4);
+    }
+  } else if (who.kind.id === "magma") {
+    // Flames that flicker on top of the head.
+    const lick = Math.sin(time * 9) * 2;
+    ctx.beginPath();
+    ctx.moveTo(-13, -40);
+    ctx.quadraticCurveTo(-16, -50, -9, -54 + lick);
+    ctx.quadraticCurveTo(-7, -48, -4, -49);
+    ctx.quadraticCurveTo(-4, -58, 2, -62 - lick);
+    ctx.quadraticCurveTo(3, -52, 7, -52);
+    ctx.quadraticCurveTo(9, -56, 12, -56 + lick);
+    ctx.quadraticCurveTo(16, -48, 13, -40);
+    ctx.closePath();
+    inked(ctx, "#ff8a3d", 1.6);
+    ctx.beginPath();
+    ctx.moveTo(-6, -40);
+    ctx.quadraticCurveTo(-7, -47, -2, -50);
+    ctx.quadraticCurveTo(0, -46, 3, -49);
+    ctx.quadraticCurveTo(7, -45, 6, -40);
+    ctx.closePath();
+    ctx.fillStyle = "#ffe14d";
+    ctx.fill();
   } else {
     ctx.beginPath();
     ctx.arc(0, -35, 15, Math.PI * 1.08, Math.PI * 1.92);
@@ -5466,17 +5536,77 @@ function openMore() {
   document.getElementById("more-screen").classList.remove("hidden");
 }
 
-function guideRow(name, text, swatch, tag) {
+// A small picture drawn once with the game's own art.
+function artIcon(draw) {
+  const scale = canvasScale();
+  const canvas = document.createElement("canvas");
+  canvas.className = "art-icon";
+  canvas.width = canvas.height = GUIDE_ICON_SIZE * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  // Gear art is sized from the board, which doesn't exist before the first run.
+  const boardSize = cellSize;
+  if (cellSize <= 0) cellSize = GUIDE_ICON_SIZE;
+  draw(ctx);
+  cellSize = boardSize;
+  return canvas;
+}
+
+function gearIcon(type, rusted = false) {
+  return artIcon((ctx) => {
+    const cell = freshCell(type);
+    cell.rusted = rusted;
+    drawGearCell(ctx, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE - 4, cell);
+  });
+}
+
+function mainGearIcon() {
+  return artIcon((ctx) => {
+    const cell = freshCell();
+    Object.assign(cell, { driver: true, angle: QUARTER_TURN / 2, spin: 1 });
+    drawDriverCell(ctx, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE - 4, cell);
+  });
+}
+
+function enemyIcon(look) {
+  return artIcon((ctx) => {
+    ctx.translate(GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE - 3);
+    const fit = (GUIDE_ICON_SIZE - 8) / (31 * SOLDIER_LOOKS[look].size * battleArtScale());
+    ctx.scale(fit, fit);
+    drawSoldier(ctx, 0, 0, -1, look, "idle", 0);
+  });
+}
+
+function bossIcon(kind) {
+  return artIcon((ctx) => {
+    ctx.translate(GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE - 2);
+    const fit = kind.final ? 0.5 : 0.7;
+    ctx.scale(fit, fit);
+    // drawBoss stands the boss 32 pixels past the front line it's given.
+    drawBoss(ctx, { kind, attackIn: BOSS_ATTACK_SECONDS, hitFlash: 0, shield: 0 }, -32, 1000, 0);
+  });
+}
+
+function emojiIcon(emoji) {
+  const icon = document.createElement("span");
+  icon.className = "emoji-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = emoji;
+  return icon;
+}
+
+// A reward's picture: its gear if it gives one, otherwise its own icon.
+function rewardIcon(reward) {
+  return reward.gear ? gearIcon(reward.gear) : emojiIcon(REWARD_ICONS[reward.id] || "\u2728");
+}
+
+function guideRow(name, text, icon, tag) {
   const row = document.createElement("div");
   row.className = "guide-row";
+  const words = document.createElement("div");
+  words.className = "guide-words";
   const title = document.createElement("b");
   title.textContent = name;
-  if (swatch) {
-    const mark = document.createElement("i");
-    mark.className = "swatch";
-    mark.style.background = swatch;
-    title.prepend(mark);
-  }
   if (tag) {
     const label = document.createElement("small");
     label.className = tag.toLowerCase();
@@ -5485,7 +5615,8 @@ function guideRow(name, text, swatch, tag) {
   }
   const detail = document.createElement("span");
   detail.textContent = text;
-  row.append(title, detail);
+  words.append(title, detail);
+  row.append(icon, words);
   return row;
 }
 
@@ -5494,32 +5625,32 @@ function guideSections() {
   const gearRewards = REWARDS.filter((reward) => reward.gear);
   return [
     ["Gears", [
-      ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", DRIVER_PALETTE.mid],
-      ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", GEAR_PALETTE.mid],
-      ...gearRewards.map((reward) => [reward.name, reward.text, GEAR_TYPES[reward.gear].palette.mid]),
-      ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", RUST_PALETTE.mid],
+      ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
+      ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
+      ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [
-      ["Lightning", "Hits the enemy for free. Press it during a boss's glow, after holding it ready, to cancel the attack. It also thaws freezes."],
-      ["Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge."],
-      ["Rally", "Holds arriving soldiers back. After 5 seconds, press again to charge with 50% more."],
-      ["Train", "Moves your army up a rank, so every new soldier counts for more."],
+      ["Lightning", "Hits the enemy for free. Press it during a boss's glow, after holding it ready, to cancel the attack. It also thaws freezes.", emojiIcon("\u26A1")],
+      ["Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.", emojiIcon("\u{1F525}")],
+      ["Rally", "Holds arriving soldiers back. After 5 seconds, press again to charge with 50% more.", emojiIcon("\u{1F4E3}")],
+      ["Train", "Moves your army up a rank, so every new soldier counts for more.", emojiIcon("\u2694\uFE0F")],
     ]],
-    ["Rewards", REWARDS.filter((reward) => !reward.gear).map((reward) => [reward.name, reward.text, null, reward.rarity === "epic" ? "Epic" : reward.rarity === "rare" ? "Rare" : ""])],
+    ["Rewards", REWARDS.filter((reward) => !reward.gear).map((reward) => [reward.name, reward.text, rewardIcon(reward), reward.rarity === "epic" ? "Epic" : reward.rarity === "rare" ? "Rare" : ""])],
     ["Enemies", [
-      [ENEMY_TYPES.runner.name, "Goblin runners bring extra enemies, so win quickly."],
-      [ENEMY_TYPES.brute.name, "Soldiers do less, but lightning and bombs hit at full strength."],
-      [ENEMY_TYPES.shaman.name, "Keep rusting your gears, so tap them to fix them."],
-      [ENEMY_TYPES.frost.name, "Freeze the main gear to half speed. Lightning thaws it."],
-      [ENEMY_TYPES.imp.name, "Burn away gear progress, so win fast."],
+      [ENEMY_TYPES.runner.name, "Goblin runners bring extra enemies, so win quickly.", enemyIcon(ENEMY_TYPES.runner.look)],
+      [ENEMY_TYPES.brute.name, "Soldiers do less, but lightning and bombs hit at full strength.", enemyIcon(ENEMY_TYPES.brute.look)],
+      [ENEMY_TYPES.shaman.name, "Keep rusting your gears, so tap them to fix them.", enemyIcon(ENEMY_TYPES.shaman.look)],
+      [ENEMY_TYPES.frost.name, "Freeze the main gear to half speed. Lightning thaws it.", enemyIcon(ENEMY_TYPES.frost.look)],
+      [ENEMY_TYPES.imp.name, "Burn away gear progress, so win fast.", enemyIcon(ENEMY_TYPES.imp.look)],
     ]],
-    ["Bosses", [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => [kind.name, NEXT_WAVE_HINTS[kind.id], kind.color])],
+    ["Bosses", [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => [kind.name, NEXT_WAVE_HINTS[kind.id], bossIcon(kind)])],
     ["Words to know", [
-      ["Rank", "How strong each soldier is. Prices count in soldiers of your current rank."],
-      ["Merge", "Drag a gear onto a matching one. Each level pays about 2.5x as much."],
-      ["Combo", "Three matching gears in a row, or four in a square, work better. Plain level 1 gears don't count."],
-      ["Chain", "A line of connected gears. Hits get weaker along it, and a Booster brings them back to full."],
-      ["Scrap", "Drag a gear onto the bar that appears to remove it and get some soldiers back."],
+      ["Rank", "How strong each soldier is. Prices count in soldiers of your current rank.", emojiIcon("\u{1F396}\uFE0F")],
+      ["Merge", "Drag a gear onto a matching one. Each level pays about 2.5x as much.", emojiIcon("\u2795")],
+      ["Combo", "Three matching gears in a row, or four in a square, work better. Plain level 1 gears don't count.", emojiIcon("\u2728")],
+      ["Chain", "A line of connected gears. Hits get weaker along it, and a Booster brings them back to full.", emojiIcon("\u{1F517}")],
+      ["Scrap", "Drag a gear onto the bar that appears to remove it and get some soldiers back.", emojiIcon("\u267B\uFE0F")],
     ]],
   ];
 }

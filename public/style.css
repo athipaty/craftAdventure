@@ -1949,3 +1949,135 @@ html.less-motion *::after {
 #backup-screen {
   z-index: 39;
 }
+
+/* Pictures in the guide and on reward cards. */
+.art-icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+}
+
+.emoji-icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.guide-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.guide-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reward-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.reward-words {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The same icons on the buttons that use them. */
+#strike-btn::before { content: "\26A1 "; }
+#strike-btn.shield::before { content: "\1F6E1\FE0F  "; }
+#overdrive-btn::before { content: "\1F525  "; }
+#rally-btn::before { content: "\1F4E3  "; }
+#train-btn::before { content: "\2694\FE0F  "; }
+
+@media (orientation: portrait) and (max-height: 700px) {
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Side by side in landscape, so the picture sits above the words. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .reward-option {
+    flex-direction: column;
+    text-align: center;
+    gap: 4px;
+  }
+
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1.25rem;
+  }
+}
+
+/* A short landscape screen needs everything on the reward screen to be compact. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #reward-screen {
+    gap: 3px;
+    padding: 4px 12px;
+  }
+
+  #reward-screen h2 {
+    font-size: 1.15rem;
+  }
+
+  #reward-screen #reward-next {
+    font-size: 0.78rem;
+  }
+
+  #reward-options {
+    margin-top: 2px;
+    gap: 6px;
+  }
+
+  .reward-option {
+    gap: 2px;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .reward-option b {
+    font-size: 0.86rem;
+  }
+
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 1.05rem;
+  }
+
+  #deal-btn {
+    max-width: 720px;
+    margin-top: 2px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+  }
+
+  #reward-actions {
+    margin-top: 2px;
+  }
+
+  #reward-guide-btn,
+  #reward-actions .workshop-btn {
+    padding: 4px 12px;
+    font-size: 0.72rem;
+  }
+}
