@@ -14,7 +14,8 @@
 // Runs and quests earn coins, spent in the Workshop on upgrades that last
 // between runs. Every run also earns experience toward a player level, and
 // lifetime totals unlock achievements. Runs happen in worlds, each with its own
-// enemies and a final boss; beating one unlocks the next.
+// enemies and a final boss; beating one unlocks the next. Coins and levels also
+// unlock heroes and colours, and a weekly challenge changes the rules.
 // Tips pause the game the first time something new happens. Training raises the
 // army's rank, so each soldier is worth more; prices are counted in soldiers of
 // the current rank, so a stronger army doesn't make everything free.
@@ -81,12 +82,15 @@ const PLAYER_TITLES = [
   { fromLevel: 50, name: "Gear Legend" },
 ];
 // Lifetime totals that keep the highest value reached instead of adding up.
-const BEST_STATS = ["worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
+const BEST_STATS = ["owned", "worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
 const ACHIEVEMENTS = [
   { id: "world1", name: "Out of the woods", text: "Clear Green Forest", stat: "worlds", target: 1, coins: 30 },
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "event1", name: "Challenger", text: "Finish a weekly challenge", stat: "events", target: 1, coins: 30 },
+  { id: "event5", name: "Week after week", text: "Finish 5 weekly challenges", stat: "events", target: 5, coins: 100 },
+  { id: "owned5", name: "Collector", text: "Unlock 5 heroes or colours", stat: "owned", target: 5, coins: 40 },
   { id: "wave1", name: "First win", text: "Win a wave", stat: "waves", target: 1, coins: 10 },
   { id: "wave50", name: "Veteran", text: "Win 50 waves", stat: "waves", target: 50, coins: 30 },
   { id: "wave250", name: "Warlord", text: "Win 250 waves", stat: "waves", target: 250, coins: 75 },
@@ -162,6 +166,50 @@ const WORLDS = [
     theme: { skyTop: "#2a1020", skyBottom: "#a8381c", hillBack: "#4a2020", hillFront: "#301418", ground: "#3a2018", groundDark: "#2a1610", deco: "embers" },
   },
 ];
+const EVENT_CLEAR_COINS = 150;
+const EVENT_FINAL_WAVE = 15;
+const EVENT_BASE_SCALE = 1.55;
+const EVENT_RUST_SECONDS = 8;
+const ARCHER_STRIKE = 1.5;
+const ARCHER_RECHARGE = 0.25; // seconds
+const ENGINEER_SPEED = 1.05;
+const BERSERKER_OVERDRIVE = 3; // seconds
+const GUARDIAN_BOSS = 0.85; // bosses have this share of their health and enemies
+
+// Each hero changes how a run plays. helmet and plume colour the fighter.
+const HEROES = [
+  { id: "knight", name: "Knight", text: "The all-rounder", cost: 0, level: 1, helmet: "#c3ccd5", plume: null },
+  { id: "archer", name: "Stormcaller", text: "Lightning hits 50% harder and recharges faster", cost: 150, level: 1, helmet: "#7fb85a", plume: "#ffe14d" },
+  { id: "engineer", name: "Engineer", text: "Start with 1 more gear, main gear 5% faster", cost: 250, level: 3, helmet: "#e0a92e", plume: "#3a7ddb" },
+  { id: "berserker", name: "Berserker", text: "Overdrive lasts 3 seconds longer", cost: 350, level: 5, helmet: "#a32a1c", plume: "#ff8a3d" },
+  { id: "guardian", name: "Guardian", text: "Bosses have 15% less health and help", cost: 500, level: 8, helmet: "#e8f2fa", plume: "#8fe7ff" },
+];
+const ARMY_SKINS = [
+  { id: "blue", name: "Blue army", cost: 0, level: 1, tunic: null, swatch: "#3a7ddb" },
+  { id: "red", name: "Red army", cost: 60, level: 1, tunic: "#c9402f", trim: "#6e1f10", swatch: "#c9402f" },
+  { id: "green", name: "Green army", cost: 60, level: 1, tunic: "#4f9e2c", trim: "#2f6b18", swatch: "#4f9e2c" },
+  { id: "purple", name: "Purple army", cost: 120, level: 3, tunic: "#7a4fc4", trim: "#4f2f8c", swatch: "#7a4fc4" },
+  { id: "black", name: "Shadow army", cost: 200, level: 6, tunic: "#2f3440", trim: "#14171d", swatch: "#2f3440" },
+  { id: "gold", name: "Golden army", cost: 400, level: 10, tunic: "#ffcc33", trim: "#a06d10", swatch: "#ffcc33" },
+];
+const GEAR_SKINS = [
+  { id: "brass", name: "Brass gears", cost: 0, level: 1, palette: null, swatch: "#c99a35" },
+  { id: "steel", name: "Steel gears", cost: 80, level: 1, palette: { light: "#dfe5ea", mid: "#9aa7b4", dark: "#4a5560", recess: "#7c8894", hub: "#e8edf2" }, swatch: "#9aa7b4" },
+  { id: "copper", name: "Copper gears", cost: 80, level: 1, palette: { light: "#f2b48a", mid: "#c97a45", dark: "#6e3a1c", recess: "#a8602f", hub: "#fbdcc4" }, swatch: "#c97a45" },
+  { id: "jade", name: "Jade gears", cost: 150, level: 3, palette: { light: "#a8ecc8", mid: "#3fae7a", dark: "#1a5e40", recess: "#2f8f62", hub: "#d8f8e8" }, swatch: "#3fae7a" },
+  { id: "ruby", name: "Ruby gears", cost: 250, level: 6, palette: { light: "#f5a8c0", mid: "#c73a68", dark: "#6e1436", recess: "#a42a52", hub: "#fbdce8" }, swatch: "#c73a68" },
+  { id: "amethyst", name: "Amethyst gears", cost: 500, level: 12, palette: { light: "#d8bdf5", mid: "#8a5ad0", dark: "#46257a", recess: "#6f44b0", hub: "#efe2fb" }, swatch: "#8a5ad0" },
+];
+
+// A new challenge each week, chosen by the week number.
+const WEEKLY_EVENTS = [
+  { id: "bombs", name: "Bomb Week", text: "Every gear you buy is a bomb gear" },
+  { id: "bossRush", name: "Boss Rush", text: "A boss every 3 waves" },
+  { id: "rust", name: "Rust Season", text: "Rust attacks on every wave" },
+  { id: "bargain", name: "Bargain Week", text: "Gears cost half, but enemies are stronger", scaleBonus: 0.05 },
+  { id: "overdrive", name: "Overdrive Week", text: "Overdrive recharges 3x faster, but enemies are stronger", scaleBonus: 0.05 },
+];
+
 const ACTIVE_QUESTS = 3;
 const DAILY_REWARDS = [10, 15, 20, 25, 30, 40, 75]; // coins for each day of the weekly cycle
 const DAILY_QUEST_KINDS = ["waves", "bosses", "merges", "strikes", "buys", "blasted"];
@@ -345,7 +393,7 @@ const TIPS = [
 // wave ends: take it out and the two sides can settle into a balance where
 // neither threshold is ever reached.
 function isBossWave(forWave) {
-  return forWave % BOSS_EVERY_WAVES === 0;
+  return forWave % bossEvery() === 0;
 }
 
 function enemyGrowthPerSec(wave, waveTime) {
@@ -390,6 +438,8 @@ let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
 let currentWorld = 0; // index into WORLDS
+let currentEvent = null; // this run's weekly challenge, from WEEKLY_EVENTS
+let eventRustIn = 0;
 let endless = false; // playing on past the final boss
 let enemyType = null; // this wave's special enemy, from ENEMY_TYPES
 let enemyPowerIn = 0; // seconds until its next special move
@@ -457,10 +507,15 @@ function loadSave() {
       stats: data?.stats && typeof data.stats === "object" ? data.stats : {},
       worldsCleared: data?.worldsCleared && typeof data.worldsCleared === "object" ? data.worldsCleared : {},
       worldBest: data?.worldBest && typeof data.worldBest === "object" ? data.worldBest : {},
+      owned: data?.owned && typeof data.owned === "object" ? data.owned : {},
+      hero: typeof data?.hero === "string" ? data.hero : "knight",
+      armySkin: typeof data?.armySkin === "string" ? data.armySkin : "blue",
+      gearSkin: typeof data?.gearSkin === "string" ? data.gearSkin : "brass",
+      eventClearedWeek: Number(data?.eventClearedWeek) || 0,
       achievements: data?.achievements && typeof data.achievements === "object" ? data.achievements : {},
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, achievements: {} };
+    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
   }
 }
 
@@ -718,6 +773,115 @@ function closeQuests() {
   renderWorkshop();
 }
 
+function heroIs(id) {
+  return save.hero === id;
+}
+
+function weekNumber() {
+  // Weeks counted from a fixed Monday, in local time.
+  const day = Math.floor((new Date().getTime() - new Date().getTimezoneOffset() * 60000) / 86400000);
+  return Math.floor((day - 4) / 7);
+}
+
+function weeklyEvent() {
+  return WEEKLY_EVENTS[weekNumber() % WEEKLY_EVENTS.length];
+}
+
+function worldScale() {
+  return currentEvent ? EVENT_BASE_SCALE + (currentEvent.scaleBonus || 0) : WORLDS[currentWorld].scale;
+}
+
+function finalWaveNumber() {
+  return currentEvent ? EVENT_FINAL_WAVE : WORLDS[currentWorld].finalWave;
+}
+
+function bossEvery() {
+  return currentEvent?.id === "bossRush" ? 3 : BOSS_EVERY_WAVES;
+}
+
+// Applies the chosen gear colour. Special gears keep theirs so they stay easy to read.
+function applyGearSkin() {
+  const skin = GEAR_SKINS.find((g) => g.id === save.gearSkin);
+  GEAR_TYPES.soldier.palette = skin?.palette || GEAR_PALETTE;
+}
+
+// The fighter's look: its rank, in the chosen army colour and hero colours.
+function fighterLook() {
+  const base = ARMY_RANKS[armyRank].look;
+  const key = `${base}:${save.armySkin}:${save.hero}`;
+  if (!SOLDIER_LOOKS[key]) {
+    const skin = ARMY_SKINS.find((a) => a.id === save.armySkin);
+    const hero = HEROES.find((h) => h.id === save.hero);
+    SOLDIER_LOOKS[key] = { ...SOLDIER_LOOKS[base] };
+    if (skin?.tunic) Object.assign(SOLDIER_LOOKS[key], { tunic: skin.tunic, trim: skin.trim });
+    if (hero?.plume) Object.assign(SOLDIER_LOOKS[key], { helmet: hero.helmet, plume: hero.plume });
+  }
+  return key;
+}
+
+function ownsItem(group, item) {
+  return item.cost === 0 || Boolean(save.owned[`${group}:${item.id}`]);
+}
+
+function selectedItem(group) {
+  return group === "hero" ? save.hero : group === "army" ? save.armySkin : save.gearSkin;
+}
+
+function selectItem(group, item) {
+  if (group === "hero") save.hero = item.id;
+  else if (group === "army") save.armySkin = item.id;
+  else save.gearSkin = item.id;
+  applyGearSkin();
+}
+
+// Tapping an item equips it if owned, or buys it and equips it if possible.
+function useItem(group, item) {
+  if (!ownsItem(group, item)) {
+    if (save.playerLevel < item.level || save.coins < item.cost) return;
+    save.coins -= item.cost;
+    save.owned[`${group}:${item.id}`] = true;
+    recordStat("owned", Object.keys(save.owned).length);
+    ensureAudio();
+    playClankSound();
+  }
+  selectItem(group, item);
+  writeSave();
+  renderWorkshop();
+}
+
+function renderCollection() {
+  const list = document.getElementById("collection-list");
+  list.replaceChildren();
+  for (const [group, title, items] of [["hero", "Heroes", HEROES], ["army", "Army colours", ARMY_SKINS], ["gear", "Gear colours", GEAR_SKINS]]) {
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    list.append(heading);
+    for (const item of items) {
+      const owned = ownsItem(group, item);
+      const button = document.createElement("button");
+      const selected = selectedItem(group) === item.id;
+      button.className = selected ? "upgrade selected" : "upgrade";
+      const levelOk = save.playerLevel >= item.level;
+      button.disabled = !owned && (!levelOk || save.coins < item.cost);
+      const name = document.createElement("b");
+      name.textContent = item.name;
+      if (item.swatch) {
+        const swatch = document.createElement("i");
+        swatch.className = "swatch";
+        swatch.style.background = item.swatch;
+        name.prepend(swatch);
+      }
+      const text = document.createElement("span");
+      text.textContent = item.text || (owned ? "Tap to use" : "A new look");
+      const state = document.createElement("em");
+      state.textContent = selected ? "In use" : owned ? "Use" : !levelOk ? `Level ${item.level}` : `${item.cost} coins`;
+      button.append(name, text, state);
+      button.addEventListener("click", () => useItem(group, item));
+      list.append(button);
+    }
+  }
+}
+
 function upgradeLevel(id) {
   const upgrade = UPGRADES.find((u) => u.id === id);
   const level = Math.floor(Number(save.upgrades[id])) || 0;
@@ -948,7 +1112,8 @@ function mergeGears(fromRow, fromCol, toRow, toCol) {
 }
 
 function gearCost() {
-  return Math.max(1, Math.round(GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gearsBought) * gearPriceScale));
+  const eventScale = currentEvent?.id === "bargain" ? 0.5 : 1;
+  return Math.max(1, Math.round(GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gearsBought) * gearPriceScale * eventScale));
 }
 
 // Where a new gear goes: the free cell closest to the one-tooth gear along the
@@ -983,6 +1148,10 @@ function bestEmptyCell() {
 
 function isBlocked(row, col) {
   return blockedCells.has(`${row},${col}`);
+}
+
+function boughtGearType() {
+  return currentEvent?.id === "bombs" ? "bomb" : "soldier";
 }
 
 function placeGear(type) {
@@ -1034,7 +1203,7 @@ function buyGear() {
   playerPower -= gearCost() * armyStrength();
   gearsBought += 1;
   questEvent("buys");
-  placeGear("soldier");
+  placeGear(boughtGearType());
   playClankSound();
 }
 
@@ -1094,11 +1263,11 @@ function sendMarcher(side, value, delaySeconds = 0) {
 }
 
 function isFinalWave(forWave) {
-  return !endless && forWave === WORLDS[currentWorld].finalWave;
+  return !endless && forWave === finalWaveNumber();
 }
 
 function bossWeakening() {
-  return 1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL;
+  return (1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL) * (heroIs("guardian") ? GUARDIAN_BOSS : 1);
 }
 
 function bossMaxHp(forWave) {
@@ -1213,7 +1382,7 @@ function tapBattle(e) {
 }
 
 function strikeRecharge() {
-  return STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL;
+  return STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL - (heroIs("archer") ? ARCHER_RECHARGE : 0);
 }
 
 function strikeEnemy() {
@@ -1221,7 +1390,7 @@ function strikeEnemy() {
   strikeCooldown = strikeRecharge();
   questEvent("strikes");
   frozenFor = 0;
-  const boost = 1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL;
+  const boost = (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
@@ -1334,11 +1503,12 @@ function updateRallyButton() {
 }
 
 function overdriveRecharge() {
-  return OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
+  const seconds = OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
+  return currentEvent?.id === "overdrive" ? seconds / 3 : seconds;
 }
 
 function overdriveSeconds() {
-  return OVERDRIVE_BASE_SECONDS + upgradeLevel("overdrive") * OVERDRIVE_SECONDS_PER_LEVEL;
+  return OVERDRIVE_BASE_SECONDS + upgradeLevel("overdrive") * OVERDRIVE_SECONDS_PER_LEVEL + (heroIs("berserker") ? BERSERKER_OVERDRIVE : 0);
 }
 
 function overdriveReady() {
@@ -1518,7 +1688,7 @@ function updateMarchers(dt) {
 // machine would otherwise beat it almost at once. Uses the run's best output so
 // unplugging gears just before a wave ends doesn't make the next one smaller.
 function waveStartEnemy(forWave) {
-  const scheduled = BASE_POWER * Math.pow(WORLDS[currentWorld].scale, forWave - 1);
+  const scheduled = BASE_POWER * Math.pow(worldScale(), forWave - 1);
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
   return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS) / soldiersToWinPerEnemy);
 }
@@ -1568,7 +1738,7 @@ function winWave() {
   enemyType = null;
   enemyReinforcePerSec = 0;
   frozenFor = 0;
-  save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
+  if (!currentEvent) save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
   if (clearedWorld) clearWorld();
   else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`);
 }
@@ -1585,7 +1755,7 @@ function startWave() {
   if (isBossWave(wave)) {
     const hp = bossMaxHp(wave);
     // Each world's bosses begin at a different kind, so worlds don't repeat.
-    const kind = BOSS_KINDS[(wave / BOSS_EVERY_WAVES - 1 + currentWorld) % BOSS_KINDS.length];
+    const kind = BOSS_KINDS[(Math.round(wave / bossEvery()) - 1 + currentWorld) % BOSS_KINDS.length];
     boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
   } else {
@@ -1596,7 +1766,7 @@ function startWave() {
 
 // Plain goblins mean no special type, leaving the wave free for a wave event.
 function chooseEnemyType() {
-  const options = WORLDS[currentWorld].enemies.filter(([, fromWave]) => wave >= fromWave);
+  const options = WORLDS[currentEvent ? 0 : currentWorld].enemies.filter(([, fromWave]) => wave >= fromWave);
   const [id] = options[Math.floor(Math.random() * options.length)];
   enemyType = id === "goblin" ? null : ENEMY_TYPES[id];
   enemyPowerIn = ENEMY_POWER_SECONDS / 2;
@@ -1620,6 +1790,13 @@ function burnGears() {
 
 function updateEnemyType(dt) {
   frozenFor = Math.max(0, frozenFor - dt);
+  if (currentEvent?.id === "rust" && !boss) {
+    eventRustIn -= dt;
+    if (eventRustIn <= 0) {
+      eventRustIn = EVENT_RUST_SECONDS;
+      rustAttack();
+    }
+  }
   if (!enemyType || (enemyType.id !== "shaman" && enemyType.id !== "frost" && enemyType.id !== "imp")) return;
   enemyPowerIn -= dt;
   if (enemyPowerIn > 0) return;
@@ -1682,7 +1859,27 @@ function offerRewards(title) {
   }, VICTORY_MS);
 }
 
+function clearEvent() {
+  gameState = "worldclear";
+  const firstTime = save.eventClearedWeek !== weekNumber();
+  const coins = firstTime ? EVENT_CLEAR_COINS : REPEAT_CLEAR_COINS;
+  if (firstTime) {
+    save.eventClearedWeek = weekNumber();
+    recordStat("events");
+  }
+  save.coins += coins;
+  gainXp(WORLD_CLEAR_XP);
+  writeSave();
+  lastClear = { coins, firstTime };
+  clearTimeout(rewardTimer);
+  rewardTimer = setTimeout(showWorldClear, VICTORY_MS);
+}
+
 function clearWorld() {
+  if (currentEvent) {
+    clearEvent();
+    return;
+  }
   gameState = "worldclear";
   const world = WORLDS[currentWorld];
   const firstTime = !save.worldsCleared[world.id];
@@ -1704,12 +1901,12 @@ function clearedWorldCount() {
 function showWorldClear() {
   if (gameState !== "worldclear") return;
   const world = WORLDS[currentWorld];
-  const next = WORLDS[currentWorld + 1];
-  document.getElementById("world-clear-title").textContent = `${world.name} cleared!`;
+  const next = currentEvent ? null : WORLDS[currentWorld + 1];
+  document.getElementById("world-clear-title").textContent = `${currentEvent ? currentEvent.name : world.name} ${currentEvent ? "complete" : "cleared"}!`;
   document.getElementById("world-clear-coins").textContent = `+${lastClear.coins} coins`;
   document.getElementById("world-clear-next").textContent = next
     ? (lastClear.firstTime ? `${next.name} unlocked!` : "")
-    : "You have cleared every world!";
+    : currentEvent ? "A new challenge comes next week." : "You have cleared every world!";
   const nextBtn = document.getElementById("next-world-btn");
   nextBtn.classList.toggle("hidden", !next);
   if (next) nextBtn.textContent = `Go to ${next.name}`;
@@ -1721,7 +1918,7 @@ function hideWorldClear() {
 }
 
 function goToNextWorld() {
-  if (!WORLDS[currentWorld + 1]) return;
+  if (currentEvent || !WORLDS[currentWorld + 1]) return;
   bankRun();
   currentWorld += 1;
   startNewRun();
@@ -1738,9 +1935,31 @@ function worldUnlocked(index) {
   return index === 0 || Boolean(save.worldsCleared[WORLDS[index - 1].id]);
 }
 
+function weeklyCard() {
+  const event = weeklyEvent();
+  const done = save.eventClearedWeek === weekNumber();
+  const button = document.createElement("button");
+  button.className = "world-card weekly";
+  const name = document.createElement("b");
+  name.textContent = `This week: ${event.name}`;
+  const detail = document.createElement("span");
+  detail.textContent = `${event.text}. Reach wave ${EVENT_FINAL_WAVE} for ${EVENT_CLEAR_COINS} coins`;
+  const mark = document.createElement("em");
+  mark.textContent = done ? "\u2713" : "";
+  button.append(name, detail, mark);
+  button.addEventListener("click", () => {
+    currentEvent = event;
+    currentWorld = weekNumber() % WORLDS.length;
+    document.getElementById("worlds-screen").classList.add("hidden");
+    startNewRun();
+  });
+  return button;
+}
+
 function openWorlds() {
   const list = document.getElementById("worlds-list");
   list.replaceChildren();
+  list.append(weeklyCard());
   WORLDS.forEach((world, i) => {
     const unlocked = worldUnlocked(i);
     const button = document.createElement("button");
@@ -1760,6 +1979,7 @@ function openWorlds() {
     button.append(name, detail, mark);
     button.addEventListener("click", () => {
       currentWorld = i;
+      currentEvent = null;
       document.getElementById("worlds-screen").classList.add("hidden");
       startNewRun();
     });
@@ -2935,7 +3155,7 @@ function drawBattle() {
 
   const won = gameState === "choosing";
   const fleeing = won ? (performance.now() - winAt) * 0.16 : 0;
-  const playerLook = ARMY_RANKS[armyRank].look;
+  const playerLook = fighterLook();
   const enemyLook = enemyType ? enemyType.look : enemyRank().look;
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
@@ -3227,7 +3447,7 @@ function drawFx() {
     ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
     ctx.shadowBlur = 16;
     if (flyer.side === "bomb") drawBombIcon(ctx, x, y);
-    else drawSoldier(ctx, x, y + 10, 1, ARMY_RANKS[armyRank].look, "walk", flyer.fromX);
+    else drawSoldier(ctx, x, y + 10, 1, fighterLook(), "walk", flyer.fromX);
     ctx.restore();
   }
 
@@ -3488,6 +3708,7 @@ function buyUpgrade(upgrade) {
 }
 
 function renderWorkshop() {
+  renderCollection();
   document.getElementById("workshop-coins").textContent = save.coins;
   document.getElementById("title-coins").textContent = save.coins;
   renderPlayerLevel();
@@ -3591,7 +3812,7 @@ function startNewRun() {
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
-  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL);
+  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL) * (heroIs("engineer") ? ENGINEER_SPEED : 1);
   waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
   gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
   nextWaveBonus = 0;
@@ -3609,6 +3830,7 @@ function startNewRun() {
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
   armyRank = 0;
+  eventRustIn = EVENT_RUST_SECONDS;
   endless = false;
   enemyType = null;
   enemyReinforcePerSec = 0;
@@ -3638,7 +3860,8 @@ function startNewRun() {
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
   createBoard();
-  for (let i = 0; i < upgradeLevel("startGears"); i++) placeGear("soldier");
+  for (let i = 0; i < upgradeLevel("startGears") + (heroIs("engineer") ? 1 : 0); i++) placeGear(boughtGearType());
+  if (currentEvent?.id === "bombs") grid[DRIVER_ROW][DRIVER_COL + 1] = freshCell("bomb");
 
   document.getElementById("title-screen").classList.add("hidden");
   document.getElementById("gameover-screen").classList.add("hidden");
@@ -3648,7 +3871,7 @@ function startNewRun() {
   gameState = "playing";
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
-  showWaveBanner(WORLDS[currentWorld].name);
+  showWaveBanner(currentEvent ? currentEvent.name : WORLDS[currentWorld].name);
 }
 
 let lastTime = 0;
@@ -3703,6 +3926,7 @@ function init() {
   document.getElementById("gameover-quests-btn").addEventListener("click", openQuests);
   document.getElementById("quests-close-btn").addEventListener("click", closeQuests);
   document.getElementById("daily-claim-btn").addEventListener("click", claimDailyReward);
+  applyGearSkin();
   fillQuests();
   refreshDailyQuests();
   writeSave();

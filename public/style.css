@@ -1000,16 +1000,47 @@ button {
 }
 
 /* The page blocks touch scrolling for the board, so the list turns it back on. */
-#workshop-list {
+#workshop-scroll {
   flex: 1;
   min-height: 0;
   width: 100%;
   max-width: 420px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#workshop-scroll h3 {
+  margin: 10px 0 6px;
+  font-size: 0.95rem;
+  color: var(--accent);
+  text-align: left;
+}
+
+#workshop-list,
+#collection-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
-  touch-action: pan-y;
+}
+
+.upgrade.selected {
+  border-color: #8bd65a;
+  background: #2f3a1c;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid #22150b;
+  vertical-align: -1px;
+}
+
+.world-card.weekly {
+  background: linear-gradient(180deg, #7a4fc4, #3a2470);
+  border-color: var(--accent);
 }
 
 .upgrade {
@@ -1275,11 +1306,24 @@ button {
     min-width: 0;
   }
 
+  #workshop-scroll {
+    max-width: 760px;
+  }
+
   #workshop-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-content: start;
-    max-width: 760px;
+  }
+
+  #collection-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+
+  #collection-list h3 {
+    grid-column: 1 / -1;
   }
 
   .reward-option {
