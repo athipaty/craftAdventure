@@ -12,7 +12,9 @@
 // three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Runs earn coins, spent in the Workshop on upgrades that last between runs.
-// Tips pause the game the first time something new happens.
+// Tips pause the game the first time something new happens. Training raises the
+// army's rank, so each soldier is worth more; prices are counted in soldiers of
+// the current rank, so a stronger army doesn't make everything free.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
@@ -118,6 +120,21 @@ const WAVE_EVENT_FIRST_WAVE = 3;
 const WAVE_EVENT_CHANCE = 0.4;
 const EVENT_RUSH_SHARE = 0.2; // extra enemies per second, as a share of the machine's best soldiers per second
 const EVENT_STORM_SECONDS = 8; // time between rust attacks in a storm
+// strength: how much one soldier of this rank counts for. trainCost: soldiers
+// of the rank before it needed to reach this one.
+const ARMY_RANKS = [
+  { name: "Recruit", plural: "Recruits", strength: 1, look: "r0" },
+  { name: "Knight", plural: "Knights", strength: 3, trainCost: 20, look: "r1" },
+  { name: "Champion", plural: "Champions", strength: 9, trainCost: 50, look: "r2" },
+  { name: "Hero", plural: "Heroes", strength: 27, trainCost: 120, look: "r3" },
+];
+// The enemy's rank only changes how its army looks and is counted.
+const ENEMY_RANKS = [
+  { plural: "Goblins", strength: 1, fromWave: 1, look: "e0" },
+  { plural: "Orcs", strength: 3, fromWave: 8, look: "e1" },
+  { plural: "Trolls", strength: 9, fromWave: 15, look: "e2" },
+  { plural: "Demons", strength: 27, fromWave: 22, look: "e3" },
+];
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const TIP_GAP_SECONDS = 18; // play time between tips that aren't urgent
@@ -168,6 +185,7 @@ const TIPS = [
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
+  { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -217,6 +235,7 @@ let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
+let armyRank = 0; // index into ARMY_RANKS
 let rallying = false;
 let rallyReserve = 0; // soldiers waiting for the charge
 let rallyHeld = 0; // seconds held so far
@@ -406,7 +425,7 @@ function soldiersPerSecond() {
     for (const gear of connectedGears(DRIVER_ROW + dr, DRIVER_COL + dc, 1)) {
       const spec = GEAR_TYPES[grid[gear.row][gear.col].type];
       if (!spec.hits) continue;
-      const level = levelPayout(grid[gear.row][gear.col].level);
+      const level = levelPayout(grid[gear.row][gear.col].level) * armyStrength();
       const cell = grid[gear.row][gear.col];
       const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * (cell.comboLine ? COMBO_LINE_PAYOUT : 1);
       const fill = cell.comboBlock ? COMBO_BLOCK_FILL : 1;
@@ -427,10 +446,48 @@ function hitGear(gear, hits) {
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    const level = levelPayout(cell.level) * (cell.comboLine ? COMBO_LINE_PAYOUT : 1);
+    const level = levelPayout(cell.level) * (cell.comboLine ? COMBO_LINE_PAYOUT : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level, gear.row, gear.col);
     else launchBomb(spec.enemies * level, gear.row, gear.col);
   }
+}
+
+function armyStrength() {
+  return ARMY_RANKS[armyRank].strength;
+}
+
+function enemyRank() {
+  return [...ENEMY_RANKS].reverse().find((rank) => wave >= rank.fromWave);
+}
+
+function nextRank() {
+  return ARMY_RANKS[armyRank + 1];
+}
+
+function canTrain() {
+  return gameState === "playing" && Boolean(nextRank()) && soldiersShortFor(nextRank().trainCost) === 0;
+}
+
+function trainArmy() {
+  if (!canTrain()) return;
+  playerPower -= nextRank().trainCost * armyStrength();
+  armyRank += 1;
+  showWaveBanner(`${ARMY_RANKS[armyRank].plural}!`);
+  spawnConfetti();
+  playWinSound();
+}
+
+function updateTrainButton() {
+  const button = document.getElementById("train-btn");
+  const next = nextRank();
+  let label = `${ARMY_RANKS[armyRank].plural} (top rank)`;
+  if (next) {
+    const short = soldiersShortFor(next.trainCost);
+    label = short > 0 ? `Train ${next.name}: ${next.trainCost} (need ${short})` : `Train ${next.name}: ${next.trainCost}`;
+  }
+  if (button.textContent !== label) button.textContent = label;
+  button.disabled = !canTrain();
+  document.getElementById("rank-label").textContent = ARMY_RANKS[armyRank].plural;
 }
 
 function levelPayout(level) {
@@ -501,10 +558,14 @@ function placeGear(type) {
 // Soldiers are the price, so buying weakens the army. A purchase that would
 // lose the game on the spot is refused rather than ending the run. Returns how
 // many more soldiers the player needs for this one, or 0 when they can afford it.
-function soldiersShortForGear() {
+function soldiersShortFor(soldiers) {
   const armyToKeep = (enemyPower * LOSE_RATIO) / (1 - LOSE_RATIO);
-  const short = gearCost() + armyToKeep - playerPower;
-  return short < 0 ? 0 : Math.floor(short) + 1;
+  const short = soldiers * armyStrength() + armyToKeep - playerPower;
+  return short < 0 ? 0 : Math.floor(short / armyStrength()) + 1;
+}
+
+function soldiersShortForGear() {
+  return soldiersShortFor(gearCost());
 }
 
 function canBuyGear() {
@@ -512,7 +573,7 @@ function canBuyGear() {
 }
 
 function buyIsRisky() {
-  const left = playerPower - gearCost();
+  const left = playerPower - gearCost() * armyStrength();
   return canBuyGear() && left / (left + enemyPower) < BUY_WARN_RATIO;
 }
 
@@ -520,8 +581,8 @@ function buyButtonLabel() {
   if (!bestEmptyCell()) return "Board full: scrap a gear";
   const label = `Buy gear: ${gearCost()} soldiers`;
   const short = soldiersShortForGear();
-  if (short > 0) return `${label} (need ${short} more)`;
-  return buyIsRisky() ? `${label} (risky!)` : label;
+  if (short > 0) return `Buy gear: ${gearCost()} (need ${short})`;
+  return buyIsRisky() ? `Buy gear: ${gearCost()} (risky!)` : label;
 }
 
 function updateBuyButton() {
@@ -534,7 +595,7 @@ function updateBuyButton() {
 
 function buyGear() {
   if (!canBuyGear()) return;
-  playerPower -= gearCost();
+  playerPower -= gearCost() * armyStrength();
   gearsBought += 1;
   placeGear("soldier");
   playClankSound();
@@ -549,7 +610,7 @@ function scrapRefund() {
 function scrapGear(row, col) {
   const refund = scrapRefund();
   grid[row][col] = null;
-  playerPower += refund;
+  playerPower += refund * armyStrength();
   spawnRustBurst(row, col);
   showToast(`Scrapped: +${refund}`);
   playClankSound();
@@ -573,8 +634,8 @@ function sendSoldiers(baseCount, row, col) {
   const count = waveEvent?.id === "double" ? baseCount * 2 : baseCount;
   launchFlyer(row, col, "player");
   sendMarcher("player", count, FLY_SECONDS);
-  totalArmyScore += count;
-  showToast(`+${count}`);
+  totalArmyScore += count / armyStrength();
+  showToast(`+${Math.round(count / armyStrength())}`);
   playFireSound();
 }
 
@@ -1193,6 +1254,7 @@ function update(dt) {
   updateBuyButton();
   updateOverdriveButton();
   updateRallyButton();
+  updateTrainButton();
   maybeShowTip();
 }
 
@@ -1491,11 +1553,15 @@ function drawBoard() {
 }
 
 const SOLDIER_LOOKS = {
-  player: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5" },
-  marching: { tunic: "#6da6f0", trim: "#2c5f9e", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff" },
-  charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff" },
-  enemy: { tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24" },
-  enemyMarching: { tunic: "#d4513f", trim: "#7e2013", skin: "#94bd5c", horns: "#2f2410", blade: "#7d5529" },
+  r0: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
+  r1: { tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
+  r2: { tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
+  r3: { tunic: "#fff0b8", trim: "#b98a1e", skin: "#f3d5b0", helmet: "#ffffff", blade: "#8fe7ff", plume: "#8fe7ff", cape: "#3a7ddb", glow: "#ffe28a", size: 1.4 },
+  charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff", size: 1.1 },
+  e0: { tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
+  e1: { tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
+  e2: { tunic: "#4a5560", trim: "#262c33", skin: "#7a93a3", horns: "#d7dfe6", blade: "#59402a", size: 1.3 },
+  e3: { tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
 };
 
 // A small soldier standing on `feetY`, facing +1 (right) or -1 (left).
@@ -1509,8 +1575,21 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
   const swing = state === "fight" ? Math.sin(time * 11) * 1.1 : state === "walk" ? -0.4 + Math.sin(time * 14) * 0.25 : -0.6;
   ctx.save();
   ctx.translate(x, feetY + sway * 0.3);
-  ctx.scale(facing, 1);
+  ctx.scale(facing * colors.size, colors.size);
   ctx.lineCap = "round";
+  if (colors.glow) {
+    ctx.shadowColor = colors.glow;
+    ctx.shadowBlur = 9;
+  }
+  if (colors.cape) {
+    ctx.fillStyle = colors.cape;
+    ctx.beginPath();
+    ctx.moveTo(-3, -15);
+    ctx.lineTo(-8 - Math.abs(stride), -3);
+    ctx.lineTo(-1, -5);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   ctx.strokeStyle = colors.trim;
   ctx.lineWidth = 2.4;
@@ -1534,7 +1613,7 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
   ctx.lineTo(4, 0);
   ctx.stroke();
   ctx.strokeStyle = colors.blade;
-  ctx.lineWidth = look.startsWith("enemy") ? 3 : 1.8;
+  ctx.lineWidth = colors.horns ? 3 : 1.8;
   ctx.beginPath();
   ctx.moveTo(4, 0);
   ctx.lineTo(4, -9);
@@ -1552,6 +1631,14 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
     ctx.arc(0, -19.5, 4.4, Math.PI, Math.PI * 2);
     ctx.closePath();
     ctx.fill();
+    if (colors.plume) {
+      ctx.strokeStyle = colors.plume;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -24);
+      ctx.quadraticCurveTo(-4, -27, -6, -22);
+      ctx.stroke();
+    }
     // Shield on the front arm.
     ctx.beginPath();
     ctx.fillStyle = colors.helmet;
@@ -1589,10 +1676,11 @@ function drawBombIcon(ctx, x, y) {
 }
 
 // The army crowds up behind the front line, and the soldiers nearest it fight.
-function drawArmyRow(ctx, front, back, feetY, power, look, facing) {
-  const n = Math.min(10, Math.max(1, Math.round(power / 3)));
+function drawArmyRow(ctx, front, back, feetY, power, rank, facing) {
+  const look = rank.look;
+  const n = Math.min(10, Math.max(1, Math.round(power / (3 * rank.strength))));
   const room = Math.max(0, Math.abs(front - back) - 14);
-  const spacing = Math.min(20, room / n);
+  const spacing = Math.min(20 * SOLDIER_LOOKS[look].size, room / n);
   for (let i = n - 1; i >= 0; i--) {
     const x = front - facing * (10 + i * spacing);
     drawSoldier(ctx, x, feetY - (i % 2) * 2, facing, look, i < 2 ? "fight" : "idle", i);
@@ -1791,8 +1879,8 @@ function drawBattle() {
   ctx.strokeStyle = "#3a2414";
   ctx.stroke();
 
-  drawArmyRow(ctx, markerX, x0, groundY, playerPower, "player", 1);
-  drawArmyRow(ctx, markerX, x1, groundY, enemyPower, "enemy", -1);
+  drawArmyRow(ctx, markerX, x0, groundY, playerPower, ARMY_RANKS[armyRank], 1);
+  drawArmyRow(ctx, markerX, x1, groundY, enemyPower, enemyRank(), -1);
 
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
@@ -1805,17 +1893,18 @@ function drawBattle() {
       for (const offset of [-14, 0, 14]) drawSoldier(ctx, x + offset, feetY, 1, "charge", "walk", offset);
     } else {
       const facing = m.side === "player" ? 1 : -1;
-      drawSoldier(ctx, x, feetY, facing, m.side === "player" ? "marching" : "enemyMarching", "walk", m.t * 40);
+      drawSoldier(ctx, x, feetY, facing, m.side === "player" ? ARMY_RANKS[armyRank].look : enemyRank().look, "walk", m.t * 40);
     }
-    if (m.value >= 2 && m.side !== "bomb") {
+    const headCount = Math.round(m.value / (m.side === "enemy" ? enemyRank().strength : armyStrength()));
+    if (headCount >= 2 && m.side !== "bomb") {
       ctx.font = "800 10px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "alphabetic";
       ctx.lineWidth = 3;
       ctx.strokeStyle = "#1c130a";
-      ctx.strokeText(Math.round(m.value), x, feetY - 29);
+      ctx.strokeText(headCount, x, feetY - 29);
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(Math.round(m.value), x, feetY - 29);
+      ctx.fillText(headCount, x, feetY - 29);
     }
   }
   if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.75);
@@ -1831,9 +1920,12 @@ function drawBattle() {
   ctx.fillStyle = "#fdf6e8";
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText(String(Math.round(playerPower)), x0, 14);
+  // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
+  const playerCount = Math.round(playerPower / armyStrength());
+  const enemyCount = Math.round(enemyPower / enemyRank().strength);
+  ctx.fillText(boss ? String(playerCount) : `${ARMY_RANKS[armyRank].plural} ${playerCount}`, x0, 14);
   ctx.textAlign = "right";
-  ctx.fillText(String(Math.round(enemyPower)), x1, 14);
+  ctx.fillText(boss ? String(enemyCount) : `${enemyRank().plural} ${enemyCount}`, x1, 14);
   if (rallying) {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
@@ -1999,7 +2091,7 @@ function drawFx() {
     ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
     ctx.shadowBlur = 16;
     if (flyer.side === "bomb") drawBombIcon(ctx, x, y);
-    else drawSoldier(ctx, x, y + 10, 1, "marching", "walk", flyer.fromX);
+    else drawSoldier(ctx, x, y + 10, 1, ARMY_RANKS[armyRank].look, "walk", flyer.fromX);
     ctx.restore();
   }
 
@@ -2331,6 +2423,7 @@ function startNewRun() {
   runBanked = false;
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
+  armyRank = 0;
   resetRally();
   waveEvent = null;
   lastEventId = null;
@@ -2388,6 +2481,7 @@ function init() {
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
+  document.getElementById("train-btn").addEventListener("click", trainArmy);
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
   document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
   document.getElementById("pause-btn").addEventListener("click", pauseGame);

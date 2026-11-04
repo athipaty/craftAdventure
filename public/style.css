@@ -227,14 +227,14 @@ button {
   align-items: stretch;
   gap: 8px;
   position: relative;
-  min-height: 78px; /* room for a two-line label and both side buttons, so the board never has to move */
+  min-height: 84px; /* room for a two-line label and both side buttons, so the board never has to move */
   margin-top: 4px;
   padding: 0 10px;
 }
 
 @media (max-width: 360px) {
   #action-row {
-    min-height: 84px;
+    min-height: 92px;
   }
 }
 
@@ -332,15 +332,46 @@ button {
   pointer-events: none;
 }
 
-#buy-gear-btn {
-  flex: 0 1 auto;
+#main-actions {
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 10px 14px;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#train-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #b48cf0, #7a4fc4);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 3px 0 #4f2f8c;
+}
+
+#train-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #4f2f8c;
+}
+
+#train-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: #a99a80;
+  box-shadow: none;
+}
+
+#buy-gear-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
   border-radius: 10px;
   background: linear-gradient(180deg, #8bd65a, #4f9e2d);
   color: #14300a;
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   box-shadow: 0 3px 0 #2f6d18;
 }
 

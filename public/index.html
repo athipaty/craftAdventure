@@ -27,7 +27,7 @@
     <div id="game-screen" class="hidden">
       <div id="hud">
         <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
-        <span id="score-indicator">Army <b id="army-score">0</b></span>
+        <span id="score-indicator"><span id="rank-label">Recruits</span> <b id="army-score">0</b></span>
         <button id="mute-btn"></button>
         <button id="pause-btn" aria-label="Pause">II</button>
       </div>
@@ -42,7 +42,10 @@
       </div>
 
       <div id="action-row">
-        <button id="buy-gear-btn" disabled>Buy gear: 3 soldiers</button>
+        <div id="main-actions">
+          <button id="buy-gear-btn" disabled>Buy gear: 3 soldiers</button>
+          <button id="train-btn" disabled>Train Knight: 20</button>
+        </div>
         <div id="side-actions">
           <button id="overdrive-btn">Overdrive!</button>
           <button id="rally-btn">Rally</button>
