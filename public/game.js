@@ -1815,15 +1815,23 @@ function drawBombIcon(ctx, x, y) {
   ctx.restore();
 }
 
-function drawArmyRow(ctx, front, back, feetY, power, rank, facing) {
-  const look = rank.look;
-  const n = Math.min(10, Math.max(1, Math.round(power / (3 * rank.strength))));
-  const room = Math.max(0, Math.abs(front - back) - 14);
-  const spacing = Math.min(19 * SOLDIER_LOOKS[look].size * battleArtScale(), room / n);
-  for (let i = n - 1; i >= 0; i--) {
-    const x = front - facing * (13 + i * spacing);
-    drawSoldier(ctx, x, feetY - (i % 2) * 2, facing, look, i < 2 ? "fight" : "idle", i);
-  }
+// Each army is shown as one big fighter at the front line, its size growing a
+// little with rank. The number above says how many soldiers it stands for.
+function drawArmyFighter(ctx, x, feetY, look, facing) {
+  const scale = 1.3 * (1 + (SOLDIER_LOOKS[look].size - 1) * 0.4) / SOLDIER_LOOKS[look].size;
+  ctx.save();
+  ctx.translate(x, feetY);
+  ctx.scale(scale, scale);
+  drawSoldier(ctx, 0, 0, facing, look, "fight", facing);
+  ctx.restore();
+}
+
+function drawArmyCount(ctx, x, y, count) {
+  ctx.font = "800 16px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff";
+  drawLaneText(ctx, String(count), x, y);
 }
 
 // The boss stands just past the front line, glowing before each attack, and
@@ -2067,8 +2075,10 @@ function drawBattle() {
   ctx.strokeStyle = "#3a2414";
   ctx.stroke();
 
-  drawArmyRow(ctx, markerX, x0, groundY, playerPower, ARMY_RANKS[armyRank], 1);
-  drawArmyRow(ctx, markerX, x1, groundY, enemyPower, enemyRank(), -1);
+  const playerX = Math.max(x0 + 12, markerX - 20);
+  const enemyX = Math.min(x1 - 12, markerX + 20);
+  drawArmyFighter(ctx, playerX, groundY, ARMY_RANKS[armyRank].look, 1);
+  if (!boss) drawArmyFighter(ctx, enemyX, groundY, enemyRank().look, -1);
 
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
@@ -2109,11 +2119,13 @@ function drawBattle() {
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
-  const playerCount = Math.round(playerPower / armyStrength());
-  const enemyCount = Math.round(enemyPower / enemyRank().strength);
-  drawLaneText(ctx, boss ? String(playerCount) : `${ARMY_RANKS[armyRank].plural} ${playerCount}`, x0, 14);
-  ctx.textAlign = "right";
-  drawLaneText(ctx, boss ? String(enemyCount) : `${enemyRank().plural} ${enemyCount}`, x1, 14);
+  // During a boss fight the enemy's number sits over the boss, below its health bar.
+  const countY = boss ? 25 : 13;
+  drawArmyCount(ctx, playerX, countY, Math.round(playerPower / armyStrength()));
+  drawArmyCount(ctx, boss ? Math.min(x1 - 22, markerX + 30) : enemyX, countY, Math.round(enemyPower / enemyRank().strength));
+  ctx.font = "800 12px system-ui, sans-serif";
+  ctx.fillStyle = "#ffcc33";
+  ctx.textBaseline = "alphabetic";
   if (rallying) {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
@@ -2125,7 +2137,8 @@ function drawBattle() {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
     ctx.textAlign = "center";
-    drawLaneText(ctx, waveEvent.name.toUpperCase(), (x0 + x1) / 2, 30);
+    ctx.textBaseline = "alphabetic";
+    drawLaneText(ctx, waveEvent.name.toUpperCase(), battleCssW / 2, battleCssH - 5);
   }
 }
 
