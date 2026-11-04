@@ -1707,3 +1707,79 @@ button {
     font-size: 0.76rem;
   }
 }
+
+/* Two rows the same height as before: buying and training above, the three
+   abilities below, so nothing has to shrink the board. */
+#action-row {
+  flex-direction: column;
+  gap: 6px;
+}
+
+#main-actions,
+#side-actions {
+  flex: 1 1 0;
+  width: 100%;
+  max-width: none;
+  flex-direction: row;
+}
+
+#main-actions > button,
+#side-actions > button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  line-height: 1.1;
+}
+
+#strike-btn {
+  border-radius: 10px;
+  background: linear-gradient(90deg, #d9b52a var(--charge, 100%), rgba(255, 255, 255, 0.12) var(--charge, 100%));
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+#strike-btn.ready {
+  background: linear-gradient(180deg, #ffe14d, #d9a51c);
+  color: #3a2a00;
+  box-shadow: 0 3px 0 #94700d;
+}
+
+#strike-btn.ready:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #94700d;
+}
+
+#strike-btn.counter {
+  background: linear-gradient(180deg, #ffffff, #ffe14d);
+  box-shadow: 0 0 16px #ffe14d;
+  animation: overdrive-pulse 0.3s ease-in-out infinite;
+}
+
+#strike-btn.shield {
+  background: linear-gradient(180deg, #c3ccd5, #59606b);
+  color: #14171d;
+  box-shadow: 0 3px 0 #33383f;
+}
+
+#strike-btn.shield:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #33383f;
+}
+
+#strike-btn:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #strike-btn.counter {
+    animation: none;
+  }
+}
+
+@media (max-width: 360px) {
+  #main-actions > button,
+  #side-actions > button {
+    font-size: 0.76rem;
+  }
+}

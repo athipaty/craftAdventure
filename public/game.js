@@ -565,17 +565,17 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
-  { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep your lightning ready, then strike during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
+  { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.", when: () => soldiersShortForGear() > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
-  { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
+  { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
-  { id: "strike", text: "Tap the battle to strike the enemy with lightning! The ring around the yellow marker shows when it is ready again.", target: "#battle-lane", when: () => waveTime > 8 },
+  { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => waveTime > 8 },
   { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute" },
   { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost" },
   { id: "imp", urgent: true, text: "Fire imps burn the progress out of your gears. Win fast, before they burn it all.", when: () => enemyType?.id === "imp" },
@@ -1704,7 +1704,7 @@ function scrambleAttack() {
 function shieldAttack() {
   if (boss.shield > 0) return;
   boss.shield = BOSS_SHIELD_TAPS;
-  showToast("Shield up! Tap the battle");
+  showToast("Shield up! Press Break shield");
   playRustSound();
 }
 
@@ -1727,7 +1727,7 @@ function wyrmAttack() {
 function queenAttack() {
   frozenFor = QUEEN_FREEZE_SECONDS / (1 + partCount("antifreeze"));
   screenShake = Math.max(screenShake, BOMB_SHAKE);
-  showToast("Frozen! Strike to thaw");
+  showToast("Frozen! Use Lightning to thaw");
   playRustSound();
 }
 
@@ -1765,10 +1765,31 @@ function bossAttack() {
   else rustAttack();
 }
 
-// Taps on the battle go to a raised shield first, otherwise they call a strike.
-function tapBattle(e) {
+// A raised shield takes presses first, otherwise the button calls a strike.
+function pressLightning() {
+  ensureAudio();
   if (boss?.shield > 0) tapShield();
-  else strikeEnemy(e);
+  else strikeEnemy();
+}
+
+function updateStrikeButton() {
+  const button = document.getElementById("strike-btn");
+  const shielded = boss?.shield > 0;
+  const blocked = Boolean(activeDeal?.noStrike);
+  const ready = strikeCooldown <= 0;
+  const canCounter = boss && ready && !shielded && boss.attackIn < BOSS_WARNING_SECONDS && strikeHeld >= COUNTER_HOLD_SECONDS;
+  let label = "Lightning!";
+  if (shielded) label = `Break shield: ${boss.shield}`;
+  else if (blocked) label = "No lightning";
+  else if (canCounter) label = "Strike now!";
+  else if (!ready) label = `Lightning ${Math.ceil(strikeCooldown)}s`;
+  if (button.textContent !== label) button.textContent = label;
+  button.disabled = gameState !== "playing" || (!shielded && (blocked || !ready));
+  button.classList.toggle("ready", !shielded && !blocked && ready);
+  button.classList.toggle("shield", Boolean(shielded));
+  button.classList.toggle("counter", Boolean(canCounter));
+  const charge = shielded || blocked ? 0 : 1 - Math.min(1, strikeCooldown / strikeRecharge());
+  button.style.setProperty("--charge", `${Math.round(charge * 100)}%`);
 }
 
 function strikeRecharge() {
@@ -1778,10 +1799,7 @@ function strikeRecharge() {
 
 function strikeEnemy() {
   if (gameState !== "playing" || strikeCooldown > 0) return;
-  if (activeDeal?.noStrike) {
-    showToast("No lightning: you took the deal");
-    return;
-  }
+  if (activeDeal?.noStrike) return;
   const countered = boss && boss.attackIn < BOSS_WARNING_SECONDS && strikeHeld >= COUNTER_HOLD_SECONDS;
   strikeHeld = 0;
   if (countered) {
@@ -2132,7 +2150,6 @@ function onPointerUp(e) {
 
 function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
-  battleCanvas.addEventListener("pointerdown", tapBattle);
   boardCanvas.addEventListener("pointermove", onPointerMove);
   boardCanvas.addEventListener("pointerup", onPointerUp);
   boardCanvas.addEventListener("pointercancel", () => { drag = null; });
@@ -2342,7 +2359,7 @@ function updateEnemyType(dt) {
   else if (enemyType.id === "imp") burnGears();
   else {
     frozenFor = FROST_SECONDS / (1 + partCount("antifreeze"));
-    showToast("Frozen! Strike to thaw");
+    showToast("Frozen! Use Lightning to thaw");
     playRustSound();
   }
 }
@@ -3033,6 +3050,7 @@ function continueRun() {
   updateOverdriveButton();
   updateRallyButton();
   updateTrainButton();
+  updateStrikeButton();
   if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
@@ -3362,6 +3380,7 @@ function update(dt) {
   updateOverdriveButton();
   updateRallyButton();
   updateTrainButton();
+  updateStrikeButton();
   updateRateReadout();
   maybeShowTip();
   runSaveIn -= dt;
@@ -4195,7 +4214,7 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
     ctx.fillStyle = "#d8f6ff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`TAP ${who.shield}`, x, y);
+    ctx.fillText(`SHIELD ${who.shield}`, x, y);
   }
 }
 
@@ -4388,14 +4407,6 @@ function drawBattle() {
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#3a2414";
-  ctx.stroke();
-
-  // Fills up as the strike recharges, then pulses when it is ready.
-  const strikeCharge = 1 - strikeCooldown / strikeRecharge();
-  ctx.beginPath();
-  ctx.lineWidth = strikeCharge >= 1 ? 3 + Math.sin(performance.now() / 150) : 3;
-  ctx.strokeStyle = strikeCharge >= 1 ? "#ffffff" : "rgba(255, 255, 255, 0.75)";
-  ctx.arc(markerX, barY + barH / 2, 13, -Math.PI / 2, -Math.PI / 2 + strikeCharge * Math.PI * 2);
   ctx.stroke();
 
   const won = gameState === "choosing";
@@ -5327,6 +5338,7 @@ function init() {
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
+  document.getElementById("strike-btn").addEventListener("click", pressLightning);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("train-btn").addEventListener("click", trainArmy);
