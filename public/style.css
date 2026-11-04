@@ -580,6 +580,98 @@ button {
   background: #5a3a20;
 }
 
+#quests-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  text-align: center;
+  background: var(--bg-bottom);
+}
+
+#quests-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#quests-screen p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e4d3b8;
+}
+
+#quests-screen p b {
+  color: var(--accent);
+}
+
+#quests-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#pause-quests {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+}
+
+.quest {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.quest b {
+  color: var(--text);
+}
+
+.quest em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.quest-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.quest-bar span {
+  display: block;
+  height: 100%;
+  background: #8bd65a;
+}
+
+.quest small {
+  color: #c9b896;
+  text-align: right;
+}
+
 #workshop-screen {
   position: absolute;
   inset: 0;
@@ -825,6 +917,20 @@ button {
   #run-stats {
     grid-template-columns: repeat(4, 1fr);
     max-width: 560px;
+  }
+
+  #pause-screen {
+    gap: 6px;
+  }
+
+  #pause-quests {
+    flex-direction: row;
+    max-width: 780px;
+  }
+
+  #pause-quests .quest {
+    flex: 1;
+    min-width: 0;
   }
 
   #workshop-list {

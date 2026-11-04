@@ -11,7 +11,8 @@
 // line and only count once they get there. Winning a wave offers a choice of
 // three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
-// Runs earn coins, spent in the Workshop on upgrades that last between runs.
+// Runs and quests earn coins, spent in the Workshop on upgrades that last
+// between runs.
 // Tips pause the game the first time something new happens. Training raises the
 // army's rank, so each soldier is worth more; prices are counted in soldiers of
 // the current rank, so a stronger army doesn't make everything free.
@@ -20,7 +21,7 @@
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
-// reached, coins, upgrades, tips seen and the mute setting, via localStorage.
+// reached, coins, upgrades, quests, tips seen and the mute setting, via localStorage.
 // =====================================================================
 
 const COLS = 6;
@@ -51,6 +52,14 @@ const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
 const COINS_PER_WAVE = 2;
 const COINS_PER_BOSS = 10;
+const COIN_PURSE_PER_LEVEL = 0.1; // extra run coins per level
+const STRIKE_POWER_PER_LEVEL = 0.25;
+const STRIKE_RECHARGE_PER_LEVEL = 0.25; // seconds off the recharge per level
+const OVERDRIVE_RECHARGE_PER_LEVEL = 3; // seconds off the recharge per level
+const RUST_GUARD_PER_LEVEL = 0.05; // share of gears rusted per attack removed by each level
+const TRAIN_DISCOUNT_PER_LEVEL = 0.1;
+const ACTIVE_QUESTS = 3;
+const QUESTS_PER_TIER = 5; // quests get harder and pay more after this many
 const RECRUITS_FIRST_WAVE_PER_LEVEL = 0.1; // extra share of the army in wave 1; level 5 stays under WIN_RATIO
 const RECRUITS_LEAD_PER_LEVEL = 0.05; // added to the player's lead in later waves
 const BOSS_BREAKER_PER_LEVEL = 0.1; // boss health and reinforcements removed by each level
@@ -158,6 +167,29 @@ const UPGRADES = [
   { id: "overdrive", name: "Long Overdrive", text: "Overdrive lasts 1 second longer", costs: [25, 60, 110] },
   { id: "discount", name: "Trade deal", text: "New gears cost 5% less", costs: [20, 45, 80, 120] },
   { id: "extraChoice", name: "Bigger crate", text: "Choose from 4 rewards after each wave", costs: [200] },
+  { id: "coinPurse", name: "Coin purse", text: "Earn 10% more coins from each run", costs: [30, 70, 130, 220, 350] },
+  { id: "strikePower", name: "Thunder", text: "Lightning strikes hit 25% harder", costs: [25, 60, 110, 180] },
+  { id: "strikeRecharge", name: "Quick storm", text: "Lightning recharges 0.25 seconds faster", costs: [40, 100, 200] },
+  { id: "overdriveRecharge", name: "Cooling fans", text: "Overdrive recharges 3 seconds faster", costs: [35, 80, 140, 220] },
+  { id: "rustGuard", name: "Oil can", text: "Rust attacks hit 5% fewer of your gears", costs: [50, 120, 240] },
+  { id: "specials", name: "Spare parts", text: "Rewards can offer 1 more special gear", costs: [60, 150, 300] },
+  { id: "drillSergeant", name: "Drill sergeant", text: "Training costs 10% less", costs: [40, 100, 200] },
+];
+
+// kind: what counts toward it. best: progress is the highest value reached, not
+// a running total. max: the hardest target that makes sense.
+const QUEST_KINDS = [
+  { kind: "waves", base: 10, coins: 15, text: (n) => `Win ${n} waves` },
+  { kind: "bosses", base: 2, coins: 25, text: (n) => `Beat ${n} bosses` },
+  { kind: "merges", base: 8, coins: 15, text: (n) => `Merge gears ${n} times` },
+  { kind: "strikes", base: 15, coins: 10, text: (n) => `Use ${n} lightning strikes` },
+  { kind: "blasted", base: 20, coins: 15, text: (n) => `Blast ${n} enemies with bombs` },
+  { kind: "buys", base: 15, coins: 10, text: (n) => `Buy ${n} gears` },
+  { kind: "combos", base: 3, coins: 20, text: (n) => `Make ${n} combos` },
+  { kind: "topLevel", base: 3, coins: 15, best: true, step: 1, max: 5, text: (n) => `Make a level ${n} gear` },
+  { kind: "rank", base: 1, coins: 15, best: true, step: 1, max: 3, text: (n) => `Train your army to ${ARMY_RANKS[n].plural}` },
+  { kind: "reachWave", base: 10, coins: 30, best: true, step: 5, text: (n) => `Reach wave ${n}` },
+  { kind: "cleanWave", base: 6, coins: 25, best: true, step: 3, text: (n) => `Reach wave ${n} without using Overdrive` },
 ];
 
 const REWARDS = [
@@ -238,6 +270,8 @@ let lastTipAt = 0; // play time when the last tip appeared
 let boss = null; // { kind, hp, maxHp, attackIn, hitFlash, reinforcePerSec, shield } during a boss wave
 let bossesBeaten = 0;
 let enemiesBlasted = 0;
+let usedOverdrive = false; // this run, for the quest that forbids it
+let runQuestCoins = 0;
 let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
@@ -292,10 +326,17 @@ function loadSave() {
       upgrades: data?.upgrades && typeof data.upgrades === "object" ? data.upgrades : {},
       muted: data?.muted === true,
       tips: data?.tips && typeof data.tips === "object" ? data.tips : {},
+      quests: Array.isArray(data?.quests) ? data.quests.filter(isValidQuest) : [],
+      questsDone: Math.max(0, Math.floor(Number(data?.questsDone)) || 0),
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {} };
+    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0 };
   }
+}
+
+function isValidQuest(quest) {
+  return QUEST_KINDS.some((k) => k.kind === quest?.kind) && Number(quest.target) > 0
+    && Number(quest.reward) > 0 && Number.isFinite(Number(quest.progress));
 }
 
 function writeSave() {
@@ -304,6 +345,82 @@ function writeSave() {
   } catch {
     // Without storage, progress simply lasts until the page closes.
   }
+}
+
+function questInfo(quest) {
+  return QUEST_KINDS.find((k) => k.kind === quest.kind);
+}
+
+// A new quest, harder and better paid the more have been finished.
+function makeQuest() {
+  const taken = save.quests.map((q) => q.kind);
+  const tier = Math.floor(save.questsDone / QUESTS_PER_TIER);
+  const options = QUEST_KINDS.filter((k) => !taken.includes(k.kind));
+  const k = options[Math.floor(Math.random() * options.length)];
+  const raw = k.best ? k.base + tier * k.step : Math.round(k.base * (1 + tier * 0.5));
+  return {
+    kind: k.kind,
+    target: k.max ? Math.min(k.max, raw) : raw,
+    reward: Math.round(k.coins * (1 + tier * 0.25)),
+    progress: 0,
+  };
+}
+
+function fillQuests() {
+  while (save.quests.length < ACTIVE_QUESTS) save.quests.push(makeQuest());
+}
+
+function questEvent(kind, value = 1) {
+  const quest = save.quests.find((q) => q.kind === kind);
+  if (!quest) return;
+  const before = quest.progress;
+  quest.progress = questInfo(quest).best ? Math.max(quest.progress, value) : quest.progress + value;
+  if (quest.progress >= quest.target) completeQuest(quest);
+  else if (quest.progress !== before) writeSave();
+}
+
+function completeQuest(quest) {
+  save.quests = save.quests.filter((q) => q !== quest);
+  save.coins += quest.reward;
+  save.questsDone += 1;
+  runQuestCoins += quest.reward;
+  fillQuests();
+  writeSave();
+  showToast(`Quest done! +${quest.reward} coins`);
+  playClankSound();
+}
+
+function renderQuestList(listId) {
+  const list = document.getElementById(listId);
+  list.replaceChildren();
+  for (const quest of save.quests) {
+    const row = document.createElement("div");
+    row.className = "quest";
+    const name = document.createElement("b");
+    name.textContent = questInfo(quest).text(quest.target);
+    const reward = document.createElement("em");
+    reward.textContent = `${quest.reward} coins`;
+    const bar = document.createElement("div");
+    bar.className = "quest-bar";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.min(100, (quest.progress / quest.target) * 100)}%`;
+    bar.append(fill);
+    const count = document.createElement("small");
+    count.textContent = `${Math.floor(quest.progress)} / ${quest.target}`;
+    row.append(name, reward, bar, count);
+    list.append(row);
+  }
+}
+
+function openQuests() {
+  renderQuestList("quests-list");
+  document.getElementById("quests-done-count").textContent = save.questsDone;
+  document.getElementById("quests-screen").classList.remove("hidden");
+}
+
+function closeQuests() {
+  document.getElementById("quests-screen").classList.add("hidden");
+  renderWorkshop();
 }
 
 function upgradeLevel(id) {
@@ -415,6 +532,8 @@ function updateCombos() {
       }
     }
   }
+  const newCombos = Math.max(0, counts.line - comboCounts.line) + Math.max(0, counts.block - comboCounts.block) + Math.max(0, counts.ring - comboCounts.ring);
+  if (newCombos > 0) questEvent("combos", newCombos);
   if (counts.ring > comboCounts.ring) showToast("Ring combo!");
   else if (counts.block > comboCounts.block) showToast("Square combo!");
   else if (counts.line > comboCounts.line) showToast("Line combo!");
@@ -475,18 +594,23 @@ function enemyRank() {
   return [...ENEMY_RANKS].reverse().find((rank) => wave >= rank.fromWave);
 }
 
+function trainCost() {
+  return Math.round(nextRank().trainCost * (1 - upgradeLevel("drillSergeant") * TRAIN_DISCOUNT_PER_LEVEL));
+}
+
 function nextRank() {
   return ARMY_RANKS[armyRank + 1];
 }
 
 function canTrain() {
-  return gameState === "playing" && Boolean(nextRank()) && soldiersShortFor(nextRank().trainCost) === 0;
+  return gameState === "playing" && Boolean(nextRank()) && soldiersShortFor(trainCost()) === 0;
 }
 
 function trainArmy() {
   if (!canTrain()) return;
-  playerPower -= nextRank().trainCost * armyStrength();
+  playerPower -= trainCost() * armyStrength();
   armyRank += 1;
+  questEvent("rank", armyRank);
   showWaveBanner(`${ARMY_RANKS[armyRank].plural}!`);
   spawnConfetti();
   playWinSound();
@@ -497,8 +621,8 @@ function updateTrainButton() {
   const next = nextRank();
   let label = `${ARMY_RANKS[armyRank].plural} (top rank)`;
   if (next) {
-    const short = soldiersShortFor(next.trainCost);
-    label = short > 0 ? `Train ${next.name}: ${next.trainCost} (need ${short})` : `Train ${next.name}: ${next.trainCost}`;
+    const short = soldiersShortFor(trainCost());
+    label = short > 0 ? `Train ${next.name}: ${trainCost()} (need ${short})` : `Train ${next.name}: ${trainCost()}`;
   }
   if (button.textContent !== label) button.textContent = label;
   button.disabled = !canTrain();
@@ -520,6 +644,8 @@ function mergeGears(fromRow, fromCol, toRow, toCol) {
   grid[fromRow][fromCol] = null;
   target.level += 1;
   target.rusted = false;
+  questEvent("merges");
+  questEvent("topLevel", target.level);
   target.flash = 1;
   spawnRustBurst(toRow, toCol, "#ffcc33", "#fff3c4");
   showToast(`Level ${target.level}!`);
@@ -612,6 +738,7 @@ function buyGear() {
   if (!canBuyGear()) return;
   playerPower -= gearCost() * armyStrength();
   gearsBought += 1;
+  questEvent("buys");
   placeGear("soldier");
   playClankSound();
 }
@@ -657,6 +784,7 @@ function sendSoldiers(baseCount, row, col) {
 function launchBomb(enemies, row, col) {
   launchFlyer(row, col, "bomb");
   enemiesBlasted += enemies;
+  questEvent("blasted", enemies);
   sendMarcher("bomb", enemies, FLY_SECONDS);
   showToast(`-${enemies}`);
   playFireSound();
@@ -689,7 +817,8 @@ function bossReinforcePerSec(enemyStart) {
 }
 
 function rustPerAttack(workingGears) {
-  return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * BOSS_RUST_SHARE));
+  const share = BOSS_RUST_SHARE - upgradeLevel("rustGuard") * RUST_GUARD_PER_LEVEL;
+  return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * share));
 }
 
 // Every working gear the tooth can reach, so an attack always hurts the machine.
@@ -782,10 +911,16 @@ function tapBattle(e) {
   else strikeEnemy(e);
 }
 
+function strikeRecharge() {
+  return STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL;
+}
+
 function strikeEnemy() {
   if (gameState !== "playing" || strikeCooldown > 0) return;
-  strikeCooldown = STRIKE_COOLDOWN_SECONDS;
-  const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS);
+  strikeCooldown = strikeRecharge();
+  questEvent("strikes");
+  const boost = 1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL;
+  const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
   const front = frontLineFx();
@@ -896,6 +1031,10 @@ function updateRallyButton() {
   button.classList.toggle("full", full);
 }
 
+function overdriveRecharge() {
+  return OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
+}
+
 function overdriveSeconds() {
   return OVERDRIVE_BASE_SECONDS + upgradeLevel("overdrive") * OVERDRIVE_SECONDS_PER_LEVEL;
 }
@@ -907,6 +1046,7 @@ function overdriveReady() {
 function activateOverdrive() {
   if (gameState !== "playing" || !overdriveReady()) return;
   overdriveLeft = overdriveSeconds();
+  usedOverdrive = true;
   playOverdriveSound();
 }
 
@@ -915,7 +1055,7 @@ function updateOverdrive(dt) {
     overdriveLeft -= dt;
     if (overdriveLeft <= 0) {
       overdriveLeft = 0;
-      overdriveCooldown = OVERDRIVE_COOLDOWN_SECONDS;
+      overdriveCooldown = overdriveRecharge();
     }
   } else if (overdriveCooldown > 0) {
     overdriveCooldown = Math.max(0, overdriveCooldown - dt);
@@ -930,7 +1070,7 @@ function updateOverdriveButton() {
   button.disabled = !overdriveReady() || gameState !== "playing";
   button.classList.toggle("ready", overdriveReady());
   button.classList.toggle("active", overdriveLeft > 0);
-  const charge = overdriveLeft > 0 ? overdriveLeft / overdriveSeconds() : 1 - overdriveCooldown / OVERDRIVE_COOLDOWN_SECONDS;
+  const charge = overdriveLeft > 0 ? overdriveLeft / overdriveSeconds() : 1 - Math.min(1, overdriveCooldown / overdriveRecharge());
   button.style.setProperty("--charge", `${Math.round(charge * 100)}%`);
 }
 
@@ -1095,8 +1235,12 @@ function winWave() {
   for (const cell of grid.flat()) {
     if (cell) cell.rusted = false;
   }
+  questEvent("waves");
+  questEvent("reachWave", wave + 1);
+  if (!usedOverdrive) questEvent("cleanWave", wave + 1);
   if (bossBeaten) {
     bossesBeaten += 1;
+    questEvent("bosses");
     // Beating a boss recharges Overdrive on top of the usual reward.
     overdriveLeft = 0;
     overdriveCooldown = 0;
@@ -1144,7 +1288,7 @@ function boardHasGear(type) {
 
 // Free gears are limited so that most of a machine has to be bought.
 function specialGearCap() {
-  return MAX_SPECIAL_GEARS;
+  return MAX_SPECIAL_GEARS + upgradeLevel("specials");
 }
 
 function canOfferSpecialGear() {
@@ -1202,7 +1346,8 @@ function chooseReward(reward) {
 }
 
 function coinsForRun() {
-  return (wave - 1) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
+  const base = (wave - 1) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
+  return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL));
 }
 
 // Pays out once per run, whether it ended in defeat or with Restart.
@@ -1227,7 +1372,9 @@ function showRunSummary(coins) {
   document.getElementById("stat-bosses").textContent = bossesBeaten;
   document.getElementById("stat-blasted").textContent = enemiesBlasted;
   document.getElementById("stat-time").textContent = formatTime(runTime);
-  document.getElementById("coins-earned").textContent = `+${coins} coins`;
+  document.getElementById("coins-earned").textContent = runQuestCoins > 0
+    ? `+${coins} coins, plus ${runQuestCoins} from quests`
+    : `+${coins} coins`;
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
@@ -1235,6 +1382,7 @@ function pauseGame() {
   if (gameState !== "playing") return;
   gameState = "paused";
   drag = null;
+  renderQuestList("pause-quests");
   document.getElementById("pause-screen").classList.remove("hidden");
 }
 
@@ -2204,7 +2352,7 @@ function drawBattle() {
   ctx.stroke();
 
   // Fills up as the strike recharges, then pulses when it is ready.
-  const strikeCharge = 1 - strikeCooldown / STRIKE_COOLDOWN_SECONDS;
+  const strikeCharge = 1 - strikeCooldown / strikeRecharge();
   ctx.beginPath();
   ctx.lineWidth = strikeCharge >= 1 ? 3 + Math.sin(performance.now() / 150) : 3;
   ctx.strokeStyle = strikeCharge >= 1 ? "#ffffff" : "rgba(255, 255, 255, 0.75)";
@@ -2853,6 +3001,8 @@ function startNewRun() {
   document.getElementById("pause-screen").classList.add("hidden");
   bossesBeaten = 0;
   enemiesBlasted = 0;
+  usedOverdrive = false;
+  runQuestCoins = 0;
   runTime = 0;
   bestWaveBeforeRun = bestWave;
   runBanked = false;
@@ -2935,6 +3085,11 @@ function init() {
     if (document.hidden) pauseGame();
   });
   document.getElementById("how-to-play-btn").addEventListener("click", replayTips);
+  document.getElementById("title-quests-btn").addEventListener("click", openQuests);
+  document.getElementById("gameover-quests-btn").addEventListener("click", openQuests);
+  document.getElementById("quests-close-btn").addEventListener("click", closeQuests);
+  fillQuests();
+  writeSave();
   document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("workshop-close-btn").addEventListener("click", closeWorkshop);

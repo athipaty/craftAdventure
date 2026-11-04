@@ -19,6 +19,7 @@
       <button id="play-btn">Play game</button>
       <div id="title-actions">
         <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
+        <button id="title-quests-btn" class="workshop-btn">Quests</button>
         <button id="how-to-play-btn" class="workshop-btn">How to play</button>
       </div>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
@@ -66,6 +67,7 @@
       <h2>Paused</h2>
       <button id="resume-btn">Resume</button>
       <button id="restart-btn" class="workshop-btn">Restart from wave 1</button>
+      <div id="pause-quests"></div>
     </div>
 
     <div id="tip-screen" class="hidden">
@@ -95,7 +97,15 @@
       <div id="gameover-actions">
         <button id="retry-btn">Try again</button>
         <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
+        <button id="gameover-quests-btn" class="workshop-btn">Quests</button>
       </div>
+    </div>
+
+    <div id="quests-screen" class="hidden">
+      <h2>Quests</h2>
+      <p>Finish these over any number of runs. <b id="quests-done-count">0</b> done so far.</p>
+      <div id="quests-list"></div>
+      <button id="quests-close-btn" class="workshop-btn">Back</button>
     </div>
 
     <div id="workshop-screen" class="hidden">
