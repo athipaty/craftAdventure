@@ -260,57 +260,16 @@ button {
   box-shadow: 0 2px 0 #8a5c12, 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
-/* ---------- Mobile-only gate ---------- */
-/* Gear Fight is a mobile game — on a mouse/trackpad-primary device (a
-   desktop or laptop browser), show a short "play on your phone" message
-   instead of the game, hidden behind #desktop-block so there's no board
-   underneath for a stray click to hit. Gated the same way as the
-   portrait frame below, just the opposite pointer type, so the two
-   rules agree on what counts as "a phone" instead of drifting apart. */
-
-#desktop-block {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
-  text-align: center;
-  padding: 24px;
-}
-
-#desktop-block .desktop-block-icon {
-  font-size: 3rem;
-}
-
-#desktop-block p {
-  margin: 0;
-  color: #e4d3b8;
-  max-width: 320px;
-}
-
-@media (pointer: fine) {
-  #desktop-block {
-    display: flex;
-  }
-}
-
 /* ---------- Portrait frame ---------- */
 /* Gear Fight is designed for portrait. Rather than blocking play and
    demanding the person physically rotate their device — which doesn't
    help at all if their phone/tablet has its own rotation lock on, or if
    they'd rather not — hold the whole game inside a fixed portrait-shaped
-   frame instead. In the normal case (already portrait, or a desktop
-   window) the frame just fills the viewport, same as before. Only when
-   an actual touch device is held sideways does the media query below
-   shrink it down to a portrait rectangle centered in the middle of the
-   screen, letterboxed by the page background on either side — so the
-   game always plays upright no matter how the device is held. pointer:
-   coarse keeps a wide desktop window (which is "landscape" in shape but
-   not in this sense) from ever triggering it. */
+   frame instead. On a portrait screen the frame just fills the viewport.
+   On any landscape screen — a phone held sideways or a desktop browser
+   window — the media query below shrinks it to a portrait rectangle
+   centered on screen, letterboxed by the page background on either side,
+   so the game always plays upright with the same proportions. */
 
 #app-frame {
   position: fixed;
@@ -319,7 +278,7 @@ button {
   background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
 }
 
-@media (pointer: coarse) and (orientation: landscape) {
+@media (orientation: landscape) {
   #app-frame {
     inset: auto;
     top: 50%;
