@@ -60,6 +60,17 @@ const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
 const RUN_SAVE_KEY = "gearfight_run";
+const REROLLS_PER_RUN = 2;
+const SKIP_COINS = 3; // paid for passing on a reward choice
+const HEAD_START_WAVE = 6; // cleared worlds can start here
+const HEAD_START_GEARS = 6; // free gears that make up for the waves skipped
+const BUZZ_GAP_MS = 150; // vibration at most this often
+const CROWD_MAX = 10; // soldiers drawn behind each fighter
+const CROWD_FIRST_GAP = 30; // pixels behind the fighter, so it stays in plain view
+const CROWD_BOSS_GAP = 42;
+const CROWD_SPACING = 13;
+const CROWD_SCALE = 0.62;
+const CROWD_SPRITE_SIZE = 64;
 const RUN_SAVE_VERSION = 1; // saves from another version are ignored
 const RUN_SAVE_SECONDS = 5; // how often a run is saved while playing
 const RUN_SAVE_STATES = ["playing", "choosing", "tip", "paused", "worldclear"];
@@ -286,6 +297,22 @@ const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
 const BOSS_WALL_CELLS = 3; // empty cells blocked by each Wall Maker attack
 const BOSS_SCRAMBLE_SWAPS = 3; // pairs of gears swapped by each Scrambler attack
 const BOSS_SHIELD_TAPS = 5; // taps on the battle to break an Iron Guard shield
+// Shown on the reward screen, so the next wave can be planned for.
+const NEXT_WAVE_HINTS = {
+  rust: "rusts your gears",
+  wall: "blocks empty cells",
+  scramble: "swaps your gears",
+  shield: "raises a shield",
+  runner: "extra enemies",
+  brute: "soldiers do less",
+  shaman: "rusts your gears",
+  frost: "freezes the main gear",
+  imp: "burns gear progress",
+  rush: "extra enemies",
+  storm: "rust attacks",
+  double: "your soldiers count double",
+  blocked: "a row is blocked",
+};
 const BOSS_KINDS = [
   { id: "rust", name: "Rust King", color: "#8c1d10" },
   { id: "wall", name: "Wall Maker", color: "#5b4a8a" },
@@ -431,6 +458,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
+  { id: "short", text: "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.", when: () => soldiersShortForGear() > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
@@ -501,6 +529,15 @@ let offeredRewards = null; // { title, ids } while a reward choice is open
 let runEventWeek = 0; // the week this run's weekly challenge belongs to
 let savedRun = null; // a run left unfinished last time, until it's continued or given up
 let runSaveIn = RUN_SAVE_SECONDS;
+let rerollsLeft = REROLLS_PER_RUN;
+let nextWavePlan = null; // { boss } or { enemy, event }: the wave after this reward choice
+let runStartWave = 1; // later than 1 for a head start, which earns nothing for the waves skipped
+let nextRunHeadStart = false;
+let lastBuzzAt = 0;
+let crowdSprites = new Map();
+let musicTime = 0; // when the next music step is due, on the audio clock
+let musicStep = 0;
+let musicGain = null;
 let save = loadSave();
 let currentWorld = 0; // index into WORLDS
 let currentEvent = null; // this run's weekly challenge, from WEEKLY_EVENTS
@@ -577,6 +614,9 @@ function loadSave() {
       gearSkin: typeof data?.gearSkin === "string" ? data.gearSkin : "brass",
       eventClearedWeek: Number(data?.eventClearedWeek) || 0,
       achievements: data?.achievements && typeof data.achievements === "object" ? data.achievements : {},
+      music: data?.music !== false,
+      vibrate: data?.vibrate !== false,
+      speed: data?.speed === 2 ? 2 : 1,
     };
   } catch {
     return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
@@ -1159,6 +1199,7 @@ function trainArmy() {
   playerPower -= trainCost() * armyStrength();
   armyRank += 1;
   questEvent("rank", armyRank);
+  buzz(30);
   showWaveBanner(`${ARMY_RANKS[armyRank].plural}!`);
   spawnConfetti();
   playWinSound();
@@ -1170,7 +1211,7 @@ function updateTrainButton() {
   let label = `${ARMY_RANKS[armyRank].plural} (top rank)`;
   if (next) {
     const short = soldiersShortFor(trainCost());
-    label = short > 0 ? `Train ${next.name}: ${trainCost()} (need ${short})` : `Train ${next.name}: ${trainCost()}`;
+    label = short > 0 ? `Train ${next.name}: need ${short} more` : `Train ${next.name}: ${trainCost()}`;
   }
   if (button.textContent !== label) button.textContent = label;
   button.disabled = !canTrain();
@@ -1277,7 +1318,7 @@ function buyButtonLabel() {
   if (!bestEmptyCell()) return "Board full: scrap a gear";
   const label = `Buy gear: ${gearCost()} soldiers`;
   const short = soldiersShortForGear();
-  if (short > 0) return `Buy gear: ${gearCost()} (need ${short})`;
+  if (short > 0) return `Buy gear: need ${short} more`;
   return buyIsRisky() ? `Buy gear: ${gearCost()} (risky!)` : label;
 }
 
@@ -1413,6 +1454,7 @@ function rustAttack() {
     spawnRustBurst(row, col);
   }
   screenShake = Math.max(screenShake, BOMB_SHAKE);
+  buzz(40);
   showToast("Rust! Tap the gears");
   playRustSound();
 }
@@ -1490,6 +1532,7 @@ function strikeEnemy() {
   if (gameState !== "playing" || strikeCooldown > 0) return;
   strikeCooldown = strikeRecharge();
   questEvent("strikes");
+  buzz(15);
   frozenFor = 0;
   const boost = (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
@@ -1537,10 +1580,39 @@ function blockableRows() {
   return rows;
 }
 
-function startWaveEvent() {
-  const options = WAVE_EVENTS.filter((e) => e.id !== lastEventId && (!e.available || e.available()));
-  waveEvent = options[Math.floor(Math.random() * options.length)];
-  lastEventId = waveEvent.id;
+// Chosen when the reward screen opens, so that it can say what's coming.
+function planWave(forWave) {
+  if (isBossWave(forWave)) {
+    // Each world's bosses begin at a different kind, so worlds don't repeat.
+    return { boss: BOSS_KINDS[(Math.round(forWave / bossEvery()) - 1 + currentWorld) % BOSS_KINDS.length].id };
+  }
+  const options = WORLDS[currentEvent ? 0 : currentWorld].enemies.filter(([, fromWave]) => forWave >= fromWave);
+  const [enemy] = options[Math.floor(Math.random() * options.length)];
+  // Plain goblins leave the wave free for a wave event.
+  if (enemy !== "goblin" || forWave < WAVE_EVENT_FIRST_WAVE || Math.random() >= WAVE_EVENT_CHANCE) return { enemy, event: null };
+  const events = WAVE_EVENTS.filter((e) => e.id !== lastEventId && (!e.available || e.available()));
+  const event = events[Math.floor(Math.random() * events.length)];
+  lastEventId = event?.id ?? lastEventId;
+  return { enemy, event: event?.id ?? null };
+}
+
+function nextWaveText(plan) {
+  if (plan.boss) {
+    const kind = BOSS_KINDS.find((k) => k.id === plan.boss);
+    return `Next: ${isFinalWave(wave) ? "Final boss, " : ""}${kind.name} (${NEXT_WAVE_HINTS[kind.id]})`;
+  }
+  if (plan.event) {
+    return `Next: ${WAVE_EVENTS.find((e) => e.id === plan.event).name} (${NEXT_WAVE_HINTS[plan.event]})`;
+  }
+  if (plan.enemy !== "goblin") return `Next: ${ENEMY_TYPES[plan.enemy].name} (${NEXT_WAVE_HINTS[plan.enemy]})`;
+  return `Next: ${enemyRank().plural}`;
+}
+
+function startWaveEvent(id) {
+  const planned = WAVE_EVENTS.find((e) => e.id === id);
+  // The board can change between planning and starting.
+  if (!planned || (planned.available && !planned.available())) return;
+  waveEvent = planned;
   eventAttackIn = EVENT_STORM_SECONDS;
   // Tied to the machine's output: each enemy takes about 2.3 soldiers to match
   // at WIN_RATIO, so this share slows a win down without making it impossible.
@@ -1782,6 +1854,7 @@ function updateMarchers(dt) {
       enemyPower = Math.max(1, enemyPower - m.value);
       damageBoss((m.value * WIN_RATIO) / (1 - WIN_RATIO));
       screenShake = Math.max(screenShake, BOMB_SHAKE);
+      buzz(25);
       playBoomSound();
     }
     else enemyPower += m.value;
@@ -1814,6 +1887,7 @@ function winWave() {
     playBoomSound();
   }
   winAt = performance.now();
+  buzz(bossBeaten ? 90 : 35);
   showWaveBanner(bossBeaten ? "Boss down!" : "Victory!");
   boss = null;
   for (const cell of grid.flat()) {
@@ -1860,22 +1934,20 @@ function startWave() {
   enemyPower = waveStartEnemy(wave);
   playerPower = enemyPower * (waveLead + nextWaveBonus);
   nextWaveBonus = 0;
-  if (isBossWave(wave)) {
+  const plan = nextWavePlan || planWave(wave);
+  nextWavePlan = null;
+  if (plan.boss) {
     const hp = bossMaxHp(wave);
-    // Each world's bosses begin at a different kind, so worlds don't repeat.
-    const kind = BOSS_KINDS[(Math.round(wave / bossEvery()) - 1 + currentWorld) % BOSS_KINDS.length];
+    const kind = BOSS_KINDS.find((k) => k.id === plan.boss);
     boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
   } else {
-    chooseEnemyType();
-    if (!enemyType && wave >= WAVE_EVENT_FIRST_WAVE && Math.random() < WAVE_EVENT_CHANCE) startWaveEvent();
+    setEnemyType(plan.enemy);
+    if (plan.event) startWaveEvent(plan.event);
   }
 }
 
-// Plain goblins mean no special type, leaving the wave free for a wave event.
-function chooseEnemyType() {
-  const options = WORLDS[currentEvent ? 0 : currentWorld].enemies.filter(([, fromWave]) => wave >= fromWave);
-  const [id] = options[Math.floor(Math.random() * options.length)];
+function setEnemyType(id) {
   enemyType = id === "goblin" ? null : ENEMY_TYPES[id];
   enemyPowerIn = ENEMY_POWER_SECONDS / 2;
   enemyReinforcePerSec = id === "runner" ? peakRate * RUNNER_SHARE : 0;
@@ -1945,9 +2017,11 @@ function rewardRarity(reward) {
 
 // One special gear (while one can be offered) plus other rewards, with the rarer
 // ones less likely to come up. The power in the sort key is a weighted shuffle.
-function pickRewards(lucky) {
+function pickRewards(lucky, exclude = []) {
   const weights = lucky ? LUCKY_RARITY_WEIGHTS : RARITY_WEIGHTS;
-  const open = REWARDS.filter(rewardIsOpen);
+  const all = REWARDS.filter(rewardIsOpen);
+  const fresh = all.filter((r) => !exclude.includes(r.id));
+  const open = fresh.length >= 3 ? fresh : all;
   const shuffled = open.map((r) => [Math.pow(Math.random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
@@ -1955,16 +2029,53 @@ function pickRewards(lucky) {
 }
 
 function offerRewards(title, lucky = false) {
-  showRewards(title, pickRewards(lucky));
+  showRewards(title, pickRewards(lucky), lucky);
   saveRun();
 }
 
-function showRewards(title, rewards) {
+function showRewards(title, rewards, lucky = false) {
   gameState = "choosing";
   drag = null;
-  offeredRewards = { title, ids: rewards.map((reward) => reward.id) };
+  offeredRewards = { title, ids: rewards.map((reward) => reward.id), lucky };
   rewardOpenedAt = performance.now() + VICTORY_MS;
   document.getElementById("reward-title").textContent = title;
+  renderRewardOptions(rewards);
+  nextWavePlan = nextWavePlan || planWave(wave);
+  document.getElementById("reward-next").textContent = nextWaveText(nextWavePlan);
+  updateRewardActions();
+  clearTimeout(rewardTimer);
+  rewardTimer = setTimeout(() => {
+    if (gameState === "choosing") document.getElementById("reward-screen").classList.remove("hidden");
+  }, VICTORY_MS);
+}
+
+function updateRewardActions() {
+  const reroll = document.getElementById("reroll-btn");
+  reroll.textContent = `Reroll (${rerollsLeft} left)`;
+  reroll.disabled = rerollsLeft <= 0;
+  document.getElementById("skip-btn").textContent = `Skip: +${SKIP_COINS} coins`;
+}
+
+function rewardTapReady() {
+  return gameState === "choosing" && performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS;
+}
+
+function rerollRewards() {
+  if (!rewardTapReady() || rerollsLeft <= 0) return;
+  rerollsLeft -= 1;
+  const rewards = pickRewards(offeredRewards.lucky, offeredRewards.ids);
+  offeredRewards.ids = rewards.map((reward) => reward.id);
+  renderRewardOptions(rewards);
+  updateRewardActions();
+  playClankSound();
+  saveRun();
+}
+
+function skipReward() {
+  if (rewardTapReady()) chooseReward(null);
+}
+
+function renderRewardOptions(rewards) {
   const list = document.getElementById("reward-options");
   list.replaceChildren();
   for (const reward of rewards) {
@@ -1986,10 +2097,6 @@ function showRewards(title, rewards) {
     });
     list.append(button);
   }
-  clearTimeout(rewardTimer);
-  rewardTimer = setTimeout(() => {
-    if (gameState === "choosing") document.getElementById("reward-screen").classList.remove("hidden");
-  }, VICTORY_MS);
 }
 
 function clearEvent() {
@@ -2120,6 +2227,19 @@ function openWorlds() {
       startNewRun();
     });
     list.append(button);
+    if (save.worldsCleared[world.id]) {
+      const later = document.createElement("button");
+      later.className = "world-head-start";
+      later.textContent = `Start ${world.name} at wave ${HEAD_START_WAVE}`;
+      later.addEventListener("click", () => {
+        currentWorld = i;
+        currentEvent = null;
+        nextRunHeadStart = true;
+        document.getElementById("worlds-screen").classList.add("hidden");
+        startNewRun();
+      });
+      list.append(later);
+    }
   });
   document.getElementById("worlds-screen").classList.remove("hidden");
 }
@@ -2144,7 +2264,10 @@ function backToWorlds() {
 
 function chooseReward(reward) {
   clearTimeout(rewardTimer);
-  if (reward.gear) {
+  if (!reward) {
+    save.coins += SKIP_COINS;
+    writeSave();
+  } else if (reward.gear) {
     placeGear(reward.gear);
     playClankSound();
   } else {
@@ -2160,7 +2283,7 @@ function chooseReward(reward) {
 }
 
 function coinsForRun() {
-  const base = (wave - 1) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
+  const base = (wave - runStartWave) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
   return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL) * (1 + partCount("warChest") * PART_COINS));
 }
 
@@ -2171,7 +2294,7 @@ function bankRun() {
   clearRunSave();
   const coins = coinsForRun();
   save.coins += coins;
-  lastRunXp = XP_PER_RUN + (wave - 1) * XP_PER_WAVE + bossesBeaten * XP_PER_BOSS;
+  lastRunXp = XP_PER_RUN + (wave - runStartWave) * XP_PER_WAVE + bossesBeaten * XP_PER_BOSS;
   lastRunLevelUps = gainXp(lastRunXp);
   if (wave > 1 || runTime >= COUNTED_RUN_SECONDS) recordStat("runs");
   writeSave();
@@ -2203,6 +2326,7 @@ function runSnapshot() {
     marchers,
     parts: runParts,
     offered: offeredRewards,
+    nextPlan: nextWavePlan,
     lastClear,
     comboCounts,
     numbers: {
@@ -2211,6 +2335,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
+      rerollsLeft, runStartWave,
     },
     flags: { endless, usedOverdrive, rallying },
     lastEventId,
@@ -2282,6 +2407,10 @@ function restoreRun(data) {
   ({ lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun } = n);
   ({ eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld } = n);
   ({ eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown } = n);
+  // Saves from before rerolls and head starts don't have these.
+  rerollsLeft = n.rerollsLeft ?? REROLLS_PER_RUN;
+  runStartWave = n.runStartWave ?? 1;
+  nextWavePlan = data.nextPlan ?? null;
   ({ endless, usedOverdrive, rallying } = data.flags);
   boss = data.boss && { ...data.boss, kind: BOSS_KINDS.find((kind) => kind.id === data.boss.kind), hitFlash: 0 };
   enemyType = data.enemyType && ENEMY_TYPES[data.enemyType];
@@ -2315,7 +2444,7 @@ function continueRun() {
   updateOverdriveButton();
   updateRallyButton();
   updateTrainButton();
-  if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)));
+  if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
     showWorldClear();
@@ -2366,6 +2495,7 @@ function nextGoals() {
 }
 
 function showRunSummary(coins) {
+  renderRunBuild();
   const hooks = document.getElementById("gameover-goals");
   hooks.replaceChildren();
   for (const goal of nextGoals()) {
@@ -2392,9 +2522,23 @@ function showRunSummary(coins) {
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
-function renderRunParts() {
-  const owned = REWARDS.filter((reward) => partCount(reward.id) > 0)
+function runPartNames() {
+  return REWARDS.filter((reward) => partCount(reward.id) > 0)
     .map((reward) => (partCount(reward.id) > 1 ? `${reward.name} x${partCount(reward.id)}` : reward.name));
+}
+
+// The machine and rewards this run ended with, so that it feels like its own build.
+function renderRunBuild() {
+  const gears = grid.flat().filter((cell) => cell && !cell.driver);
+  const top = gears.reduce((best, cell) => Math.max(best, cell.level), 0);
+  const parts = runPartNames();
+  const shown = parts.slice(0, 5).join(", ") + (parts.length > 5 ? ` +${parts.length - 5} more` : "");
+  document.getElementById("run-build-gears").textContent = `${gears.length} ${gears.length === 1 ? "gear" : "gears"}, top level ${top}`;
+  document.getElementById("run-build-parts").textContent = parts.length ? `Rewards: ${shown}` : "";
+}
+
+function renderRunParts() {
+  const owned = runPartNames();
   const line = document.getElementById("pause-parts");
   line.textContent = owned.length ? `This run: ${owned.join(", ")}` : "";
   line.classList.toggle("hidden", !owned.length);
@@ -2458,6 +2602,7 @@ function useSecondWind() {
   playerPower = enemyPower;
   marchers = marchers.filter((m) => m.side !== "enemy");
   screenShake = Math.max(screenShake, BOMB_SHAKE * 1.5);
+  buzz([40, 40, 80]);
   showWaveBanner("Second wind!");
   spawnConfetti();
   playWinSound();
@@ -2467,6 +2612,7 @@ function gameOver() {
   gameState = "gameover";
   drag = null;
   showRunSummary(bankRun());
+  buzz(150);
   showDailyReward();
   playLoseSound();
 }
@@ -3169,6 +3315,39 @@ function drawArmyFighter(ctx, x, feetY, look, facing, state, mood) {
   ctx.restore();
 }
 
+// A soldier drawn once and reused, because a crowd is drawn every frame.
+function crowdSprite(look, facing) {
+  const scale = canvasScale();
+  const key = `${look}:${facing}:${scale}:${battleArtScale()}`;
+  let sprite = crowdSprites.get(key);
+  if (!sprite) {
+    sprite = document.createElement("canvas");
+    sprite.width = sprite.height = Math.ceil(CROWD_SPRITE_SIZE * scale);
+    const ctx = sprite.getContext("2d");
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    drawSoldier(ctx, CROWD_SPRITE_SIZE / 2, CROWD_SPRITE_SIZE - 4, facing, look, "idle", 0);
+    crowdSprites.set(key, sprite);
+  }
+  return sprite;
+}
+
+// The army behind a fighter, growing with its size. Doubling the army adds one
+// soldier, so a crowd keeps growing for the whole run without filling the lane.
+function drawCrowd(ctx, frontX, edgeX, away, firstGap, look, count, groundY, cheering) {
+  const size = Math.min(CROWD_MAX, Math.floor(Math.log2(1 + Math.max(0, count))));
+  const sprite = crowdSprite(look, -away);
+  const drawn = CROWD_SPRITE_SIZE * CROWD_SCALE;
+  const time = performance.now() / 1000;
+  // Farthest first, so nearer soldiers overlap them.
+  for (let i = size - 1; i >= 0; i--) {
+    const x = frontX + away * (firstGap + i * CROWD_SPACING);
+    if ((x - edgeX) * away > 0) continue;
+    const bob = Math.abs(Math.sin(time * (cheering ? 8 : 4) + i * 1.7)) * (cheering ? 6 : 1.5);
+    const feetY = groundY - (i % 2 ? 5 : 0) - bob;
+    ctx.drawImage(sprite, x - drawn / 2, feetY - drawn + 4 * CROWD_SCALE, drawn, drawn);
+  }
+}
+
 // Big numbers are shortened so the two counts never run into each other.
 function shortNumber(value) {
   if (value >= 1000000) return `${Math.round(value / 100000) / 10}M`;
@@ -3515,6 +3694,9 @@ function drawBattle() {
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
   const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
+  drawCrowd(ctx, playerX, x0, -1, CROWD_FIRST_GAP, playerLook, playerPower / armyStrength(), groundY, won);
+  if (boss) drawCrowd(ctx, Math.min(x1 - 22, markerX + 32), x1, 1, CROWD_BOSS_GAP, enemyRank().look, enemyPower / enemyRank().strength, groundY, false);
+  else drawCrowd(ctx, enemyX, x1, 1, CROWD_FIRST_GAP, enemyLook, enemyPower / enemyRank().strength, groundY, false);
   // Behind the two fighters, so the ones still fighting are always in plain view.
   for (const f of fallers) {
     ctx.save();
@@ -3843,6 +4025,45 @@ function ensureAudio() {
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
 }
 
+function toggleSpeed() {
+  save.speed = save.speed === 2 ? 1 : 2;
+  writeSave();
+  updateSettingButtons();
+}
+
+function toggleMusic() {
+  save.music = !save.music;
+  writeSave();
+  updateSettingButtons();
+}
+
+function toggleVibrate() {
+  save.vibrate = !save.vibrate;
+  writeSave();
+  updateSettingButtons();
+  buzz(30);
+}
+
+function updateSettingButtons() {
+  const speed = document.getElementById("speed-btn");
+  speed.textContent = save.speed === 2 ? "2x" : "1x";
+  speed.setAttribute("aria-label", save.speed === 2 ? "Game speed: double" : "Game speed: normal");
+  speed.classList.toggle("fast", save.speed === 2);
+  document.getElementById("music-btn").textContent = `Music: ${save.music ? "on" : "off"}`;
+  const vibrate = document.getElementById("vibrate-btn");
+  vibrate.textContent = `Vibration: ${save.vibrate ? "on" : "off"}`;
+  // Some phones can't vibrate, iPhones among them, so there's nothing to switch.
+  vibrate.classList.toggle("hidden", !navigator.vibrate);
+}
+
+function buzz(pattern) {
+  if (!save.vibrate || !navigator.vibrate || navigator.userActivation?.hasBeenActive === false) return;
+  const now = performance.now();
+  if (now - lastBuzzAt < BUZZ_GAP_MS) return;
+  lastBuzzAt = now;
+  navigator.vibrate(pattern);
+}
+
 function setMuted(muted) {
   save.muted = muted;
   writeSave();
@@ -3868,6 +4089,83 @@ function beep(freq, duration, type, gainPeak) {
   osc.connect(gain).connect(audioCtx.destination);
   osc.start();
   osc.stop(t0 + duration + 0.02);
+}
+
+// Background music, one short loop per world. Steps are eighth notes and 0 is the
+// song's root; a null step is a rest. bass has one note per bar of eight steps.
+const MUSIC_VOLUME = 0.5; // the notes below are already quiet
+const MUSIC_LOOKAHEAD = 0.25; // seconds scheduled in advance, so frame drops don't break the beat
+const MUSIC_BOSS_TEMPO = 1.15;
+const SONGS = [
+  { // Green Forest: bright and bouncy
+    bpm: 112, root: 60, lead: "triangle", leadGain: 0.16, bassType: "sine",
+    notes: [0, null, 4, 7, 9, null, 7, 4, 2, null, 4, 7, 4, null, 2, null, 0, null, 4, 7, 9, null, 12, 9, 7, null, 4, 2, 0, null, null, null],
+    bass: [0, -3, -7, -5],
+  },
+  { // Sun Desert: a slow, winding scale
+    bpm: 100, root: 57, lead: "triangle", leadGain: 0.16, bassType: "triangle",
+    notes: [0, 1, null, 4, 5, null, 4, 1, 0, null, 7, null, 5, 4, 1, null, 0, 1, null, 4, 7, null, 8, 7, 5, 4, null, 1, 0, null, null, null],
+    bass: [0, 0, 1, 0],
+  },
+  { // Frozen Peaks: sparse, chiming arpeggios
+    bpm: 84, root: 62, lead: "sine", leadGain: 0.2, bassType: "sine",
+    notes: [0, 7, 12, 15, null, 12, 7, null, -2, 5, 10, 14, null, 10, 5, null, -4, 3, 8, 12, null, 8, 3, null, -5, 2, 7, 10, null, 14, null, null],
+    bass: [0, -2, -4, -5],
+  },
+  { // Lava Core: a low, driving riff
+    bpm: 128, root: 52, lead: "square", leadGain: 0.07, bassType: "triangle",
+    notes: [0, 0, 3, 0, 5, 0, 3, 0, 0, 0, 3, 0, 7, 6, 5, 3, 0, 0, 3, 0, 5, 0, 3, 0, 10, null, 8, null, 7, null, 5, 3],
+    bass: [0, 0, -4, -2],
+  },
+];
+
+function midiFreq(note) {
+  return 440 * Math.pow(2, (note - 69) / 12);
+}
+
+function musicNote(note, at, duration, type, peak) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = midiFreq(note);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(peak, at + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+  osc.connect(gain).connect(musicGain);
+  osc.start(at);
+  osc.stop(at + duration + 0.02);
+}
+
+function playMusicStep(song, step, at, stepSeconds) {
+  const lead = song.notes[step];
+  if (lead !== null) musicNote(song.root + lead, at, stepSeconds * 1.6, song.lead, song.leadGain);
+  // Bosses get a busier bass line.
+  if (step % (boss ? 2 : 4) === 0) {
+    const bass = song.bass[Math.floor(step / 8) % song.bass.length];
+    musicNote(song.root + bass - 24, at, stepSeconds * (boss ? 1.8 : 3.5), song.bassType, 0.22);
+  }
+}
+
+function updateMusic() {
+  const playing = gameState === "playing" || gameState === "choosing";
+  if (!audioCtx || audioCtx.state !== "running" || !playing || save.muted || !save.music || document.hidden) {
+    musicTime = 0;
+    return;
+  }
+  if (!musicGain) {
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = MUSIC_VOLUME;
+    musicGain.connect(audioCtx.destination);
+  }
+  const song = SONGS[currentWorld % SONGS.length];
+  const stepSeconds = 60 / (song.bpm * (boss ? MUSIC_BOSS_TEMPO : 1)) / 2;
+  const now = audioCtx.currentTime;
+  if (musicTime < now) musicTime = now + 0.05;
+  while (musicTime < now + MUSIC_LOOKAHEAD) {
+    playMusicStep(song, musicStep, musicTime, stepSeconds);
+    musicStep = (musicStep + 1) % song.notes.length;
+    musicTime += stepSeconds;
+  }
 }
 
 // A pitch slide, for launches and explosions.
@@ -4156,6 +4454,7 @@ function startNewRun() {
   // So does giving up a run saved last time.
   if (savedRun) {
     ({ wave, bossesBeaten, runTime } = savedRun.numbers);
+    runStartWave = savedRun.numbers.runStartWave ?? 1;
     runParts = savedRun.parts;
     runBanked = false;
   }
@@ -4183,6 +4482,8 @@ function startNewRun() {
   runBanked = false;
   runParts = {};
   offeredRewards = null;
+  nextWavePlan = null;
+  rerollsLeft = REROLLS_PER_RUN;
   lastClear = null;
   runEventWeek = currentEvent ? weekNumber() : 0;
   boss = null;
@@ -4219,6 +4520,13 @@ function startNewRun() {
   createBoard();
   for (let i = 0; i < upgradeLevel("startGears") + (heroIs("engineer") ? 1 : 0); i++) placeGear(boughtGearType());
   if (currentEvent?.id === "bombs") grid[DRIVER_ROW][DRIVER_COL + 1] = freshCell("bomb");
+  runStartWave = nextRunHeadStart ? HEAD_START_WAVE : 1;
+  if (nextRunHeadStart) {
+    nextRunHeadStart = false;
+    wave = HEAD_START_WAVE;
+    for (let i = 0; i < HEAD_START_GEARS; i++) placeGear(boughtGearType());
+    startWave();
+  }
 
   document.getElementById("title-screen").classList.add("hidden");
   document.getElementById("gameover-screen").classList.add("hidden");
@@ -4238,7 +4546,12 @@ function loop(now) {
   lastTime = now;
   // Big hits freeze the game for a moment; effects keep moving through it.
   if (hitStop > 0) hitStop -= dt;
-  else update(dt);
+  else {
+    update(dt);
+    // Two steps rather than one long one, so the rules play out the same.
+    if (save.speed === 2 && hitStop <= 0) update(dt);
+  }
+  updateMusic();
   updateScrapZone();
   updateFx(dt);
   drawBoard();
@@ -4275,6 +4588,12 @@ function init() {
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("train-btn").addEventListener("click", trainArmy);
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
+  document.getElementById("speed-btn").addEventListener("click", toggleSpeed);
+  document.getElementById("music-btn").addEventListener("click", toggleMusic);
+  document.getElementById("vibrate-btn").addEventListener("click", toggleVibrate);
+  document.getElementById("reroll-btn").addEventListener("click", rerollRewards);
+  document.getElementById("skip-btn").addEventListener("click", skipReward);
+  updateSettingButtons();
   document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
   document.getElementById("pause-btn").addEventListener("click", pauseGame);
   document.getElementById("resume-btn").addEventListener("click", resumeGame);

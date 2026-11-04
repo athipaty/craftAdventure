@@ -146,6 +146,42 @@ button {
   font-weight: 800;
 }
 
+#speed-btn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+#speed-btn.fast {
+  background: var(--accent);
+  color: #3a2414;
+}
+
+#pause-settings,
+#reward-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+#pause-settings .workshop-btn,
+#reward-actions .workshop-btn {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+
+#reward-actions {
+  margin-top: 6px;
+}
+
+#reroll-btn:disabled {
+  opacity: 0.45;
+}
+
 #pause-btn:active {
   background: rgba(255, 255, 255, 0.24);
 }
@@ -423,9 +459,10 @@ button {
 
 /* ---------- Announcements ---------- */
 
+/* At the bottom, so it covers neither the top bar nor the board. */
 #announcement {
   position: absolute;
-  top: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 38;
@@ -677,6 +714,12 @@ button {
   color: #e4d3b8;
 }
 
+#reward-screen #reward-next {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 #reward-options {
   display: flex;
   flex-direction: column;
@@ -837,6 +880,30 @@ button {
   height: 100%;
   width: 0;
   background: #8fc0ff;
+}
+
+#run-build p {
+  margin: 0;
+  max-width: 340px;
+  color: #e4d3b8;
+  font-size: 0.8rem;
+}
+
+#run-build #run-build-gears {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.world-head-start {
+  flex-shrink: 0;
+  margin-top: -2px;
+  padding: 8px 12px;
+  border: 2px solid var(--accent-dark);
+  border-radius: 10px;
+  background: #3a2414;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 #gameover-screen #level-gain {
@@ -1381,5 +1448,57 @@ button {
   .reward-option {
     flex: 1;
     min-width: 0;
+  }
+}
+
+/* Short phones: the run summary has to fit without scrolling. */
+@media (orientation: portrait) and (max-height: 700px) {
+  #gameover-screen {
+    gap: 4px;
+    padding: 8px 14px;
+  }
+
+  #gameover-screen h2 {
+    font-size: 1.4rem;
+  }
+
+  #gameover-screen p,
+  #gameover-screen #new-record,
+  #gameover-screen #coins-earned,
+  #gameover-screen #level-gain,
+  #gameover-screen #level-gain.leveled,
+  #gameover-screen #gameover-goals p {
+    font-size: 0.8rem;
+  }
+
+  #gameover-screen #run-build p {
+    font-size: 0.72rem;
+  }
+
+  #run-stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  #run-stats div {
+    padding: 3px;
+  }
+
+  #run-stats dt {
+    font-size: 0.6rem;
+  }
+
+  #run-stats dd {
+    font-size: 0.85rem;
+  }
+
+  #gameover-actions {
+    gap: 5px;
+  }
+
+  #gameover-actions button {
+    padding: 7px 12px;
+    font-size: 0.8rem;
   }
 }

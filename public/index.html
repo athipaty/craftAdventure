@@ -36,6 +36,7 @@
         <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
         <span id="score-indicator"><b id="rank-label">Recruits</b></span>
         <button id="mute-btn"></button>
+        <button id="speed-btn"></button>
         <button id="pause-btn" aria-label="Pause">II</button>
       </div>
 
@@ -76,6 +77,10 @@
       <button id="resume-btn">Resume</button>
       <button id="restart-btn" class="workshop-btn">Restart from wave 1</button>
       <p id="pause-parts" class="hidden"></p>
+      <div id="pause-settings">
+        <button id="music-btn" class="workshop-btn"></button>
+        <button id="vibrate-btn" class="workshop-btn"></button>
+      </div>
       <div id="pause-quests"></div>
     </div>
 
@@ -88,8 +93,12 @@
 
     <div id="reward-screen" class="hidden">
       <h2 id="reward-title"></h2>
-      <p>Pick a reward</p>
+      <p id="reward-next"></p>
       <div id="reward-options"></div>
+      <div id="reward-actions">
+        <button id="reroll-btn" class="workshop-btn"></button>
+        <button id="skip-btn" class="workshop-btn"></button>
+      </div>
     </div>
 
     <div id="gameover-screen" class="hidden">
@@ -102,6 +111,10 @@
         <div><dt>Enemies blasted</dt><dd id="stat-blasted">0</dd></div>
         <div><dt>Time</dt><dd id="stat-time">0:00</dd></div>
       </dl>
+      <div id="run-build">
+        <p id="run-build-gears"></p>
+        <p id="run-build-parts"></p>
+      </div>
       <p id="coins-earned"></p>
       <p id="level-gain"></p>
       <div id="gameover-goals"></div>
