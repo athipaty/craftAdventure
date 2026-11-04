@@ -30,6 +30,15 @@ const DRIVER_COL = Math.floor(COLS / 2);
 const MARCH_SECONDS = 0.9; // how long a soldier takes to reach the front line
 const MAX_MARCHERS = 24; // per army; past this, new soldiers join the newest one
 const CLASH_SECONDS = 0.3;
+const FLY_SECONDS = 0.4; // how long a soldier takes to fly from its gear to the battle
+const MAX_FLYERS = 30;
+const MAX_PARTICLES = 200;
+const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
+const BOMB_SHAKE = 5; // pixels
+const OVERDRIVE_MULTIPLIER = 3; // main gear speed while overdrive is on
+const OVERDRIVE_SECONDS = 5;
+const OVERDRIVE_COOLDOWN_SECONDS = 30;
+const OVERDRIVE_START_COOLDOWN_SECONDS = 20; // ready from the first second, it wins wave 1 with no gears bought
 const TOOTH_COUNT = 12; // teeth drawn per gear — also one tick's worth of visual spin
 const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
 const DRIVER_BASE_TURNS_PER_SEC = 1; // how fast the one-tooth gear turns at the start of a run
@@ -106,6 +115,17 @@ let driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
 let waveLead = WAVE_START_LEAD; // player's army vs the enemy's when a new wave begins
 let gearPriceScale = 1;
 let rewardOpenedAt = 0;
+let overdriveLeft = 0; // seconds of overdrive still running
+let overdriveCooldown = 0; // seconds until overdrive can be used again
+
+// Effects drawn over the whole game. They never change the outcome of a run.
+let fxCanvas, fxCtx;
+let fxCssW = 0, fxCssH = 0;
+let boardOrigin = { x: 0, y: 0 }; // where the board canvas sits on the effects canvas
+let flyTarget = { x: 0, y: 0 }; // where flying soldiers land in the battle lane
+let flyers = []; // { fromX, fromY, side, t }
+let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
+let screenShake = 0; // pixels
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "gameover"
 let wave = 1;
@@ -164,7 +184,8 @@ function connectedGears(row, col, firstSpin) {
 function tickGear(row, col, driverSpin) {
   const gears = connectedGears(row, col, -driverSpin);
   if (!gears.length) return;
-  for (const gear of gears) hitGear(grid[gear.row][gear.col], gear.spin, 1 + boostersTouching(gear.row, gear.col));
+  for (const gear of gears) hitGear(gear, 1 + boostersTouching(gear.row, gear.col));
+  spawnToothSparks(row, col);
   playTickSound();
 }
 
@@ -194,17 +215,18 @@ function soldiersPerSecond() {
 }
 
 // A full gear pays out and starts filling again, staying in place.
-function hitGear(cell, spin, hits) {
+function hitGear(gear, hits) {
+  const cell = grid[gear.row][gear.col];
   const spec = GEAR_TYPES[cell.type];
-  cell.spinTarget += spin;
+  cell.spinTarget += gear.spin;
   cell.flash = 1;
   if (!spec.hits) return;
   cell.ticks += hits;
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    if (spec.soldiers) sendSoldiers(spec.soldiers);
-    else launchBomb(spec.enemies);
+    if (spec.soldiers) sendSoldiers(spec.soldiers, gear.row, gear.col);
+    else launchBomb(spec.enemies, gear.row, gear.col);
   }
 }
 
@@ -277,26 +299,63 @@ function buyGear() {
   playerPower -= gearCost();
   gearsBought += 1;
   placeGear("soldier");
-  playFireSound();
+  playClankSound();
 }
 
-function sendSoldiers(count) {
-  sendMarcher("player", count);
+function sendSoldiers(count, row, col) {
+  launchFlyer(row, col, "player");
+  sendMarcher("player", count, FLY_SECONDS);
   totalArmyScore += count;
   showToast(`+${count}`);
   playFireSound();
 }
 
-function launchBomb(enemies) {
-  sendMarcher("bomb", enemies);
+function launchBomb(enemies, row, col) {
+  launchFlyer(row, col, "bomb");
+  sendMarcher("bomb", enemies, FLY_SECONDS);
   showToast(`-${enemies}`);
   playFireSound();
 }
 
-function sendMarcher(side, value) {
+// A delay holds the marcher back while its soldier is still flying in.
+function sendMarcher(side, value, delaySeconds = 0) {
   const team = marchers.filter((m) => m.side === side);
   if (team.length >= MAX_MARCHERS) team[team.length - 1].value += value;
-  else marchers.push({ side, value, t: 0 });
+  else marchers.push({ side, value, t: -delaySeconds / MARCH_SECONDS });
+}
+
+function overdriveReady() {
+  return overdriveLeft <= 0 && overdriveCooldown <= 0;
+}
+
+function activateOverdrive() {
+  if (gameState !== "playing" || !overdriveReady()) return;
+  overdriveLeft = OVERDRIVE_SECONDS;
+  playOverdriveSound();
+}
+
+function updateOverdrive(dt) {
+  if (overdriveLeft > 0) {
+    overdriveLeft -= dt;
+    if (overdriveLeft <= 0) {
+      overdriveLeft = 0;
+      overdriveCooldown = OVERDRIVE_COOLDOWN_SECONDS;
+    }
+  } else if (overdriveCooldown > 0) {
+    overdriveCooldown = Math.max(0, overdriveCooldown - dt);
+  }
+}
+
+function updateOverdriveButton() {
+  const button = document.getElementById("overdrive-btn");
+  const seconds = Math.ceil(overdriveLeft > 0 ? overdriveLeft : overdriveCooldown);
+  const label = overdriveReady() ? "Overdrive!" : `Overdrive ${seconds}s`;
+  if (button.textContent !== label) button.textContent = label;
+  button.disabled = !overdriveReady() || gameState !== "playing";
+  button.classList.toggle("ready", overdriveReady());
+  button.classList.toggle("active", overdriveLeft > 0);
+  const charge = overdriveLeft > 0 ? overdriveLeft / OVERDRIVE_SECONDS : 1 - overdriveCooldown / OVERDRIVE_COOLDOWN_SECONDS;
+  button.style.setProperty("--charge", `${Math.round(charge * 100)}%`);
 }
 
 // =====================================================================
@@ -343,7 +402,7 @@ function onPointerUp(e) {
   if (canDropOn(target)) {
     grid[drag.row][drag.col] = target.cell;
     grid[target.row][target.col] = drag.cell;
-    playTickSound();
+    playClankSound();
   }
   drag = null;
 }
@@ -366,7 +425,8 @@ function updateDrivers(dt) {
       const cell = grid[row][col];
       if (!cell?.driver) continue;
       const before = Math.floor(cell.angle / QUARTER_TURN);
-      cell.angle += driverTurnsPerSec * Math.PI * 2 * dt;
+      const boost = overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1;
+      cell.angle += driverTurnsPerSec * boost * Math.PI * 2 * dt;
       const after = Math.floor(cell.angle / QUARTER_TURN);
       for (let k = before + 1; k <= after; k++) {
         const [dr, dc] = TOOTH_DIRS[(((k * cell.spin) % 4) + 4) % 4];
@@ -399,7 +459,11 @@ function updateMarchers(dt) {
     m.t += dt / MARCH_SECONDS;
     if (m.t < 1) continue;
     if (m.side === "player") playerPower += m.value;
-    else if (m.side === "bomb") enemyPower = Math.max(1, enemyPower - m.value);
+    else if (m.side === "bomb") {
+      enemyPower = Math.max(1, enemyPower - m.value);
+      screenShake = Math.max(screenShake, BOMB_SHAKE);
+      playBoomSound();
+    }
     else enemyPower += m.value;
     clashes.push({ t: 0 });
   }
@@ -422,6 +486,8 @@ function winWave() {
   waveTime = 0;
   marchers = [];
   enemyBacklog = 0;
+  flyers = [];
+  spawnConfetti();
   if (wave > bestWave) {
     bestWave = wave;
     localStorage.setItem("gearfight_best_wave", String(bestWave));
@@ -474,8 +540,12 @@ function offerRewards() {
 }
 
 function chooseReward(reward) {
-  if (reward.gear) placeGear(reward.gear);
-  else reward.apply();
+  if (reward.gear) {
+    placeGear(reward.gear);
+    playClankSound();
+  } else {
+    reward.apply();
+  }
   startWave();
   document.getElementById("reward-screen").classList.add("hidden");
   gameState = "playing";
@@ -492,6 +562,7 @@ function gameOver() {
 
 function update(dt) {
   if (gameState !== "playing") return;
+  updateOverdrive(dt);
   updateDrivers(dt);
   updateGearAnim(dt);
   updateMarchers(dt);
@@ -512,6 +583,7 @@ function update(dt) {
   document.getElementById("wave-num").textContent = wave;
   document.getElementById("army-score").textContent = Math.round(totalArmyScore);
   updateBuyButton();
+  updateOverdriveButton();
 }
 
 // =====================================================================
@@ -595,6 +667,10 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(cell.angle * cell.spin);
+  if (overdriveLeft > 0) {
+    ctx.shadowColor = "#ff8a3d";
+    ctx.shadowBlur = size * 0.45;
+  }
 
   ctx.beginPath();
   ctx.moveTo(r * 0.9, -halfRoot);
@@ -822,6 +898,7 @@ function drawBattle() {
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
   for (const m of marchers) {
+    if (m.t < 0) continue;
     const x = m.side === "enemy" ? x1 - (x1 - markerX) * m.t : x0 + (markerX - x0) * m.t;
     const stride = Math.abs(Math.sin(m.t * Math.PI * 5)) * 3;
     if (m.side === "bomb") drawBombIcon(ctx, x, battleCssH * 0.6);
@@ -842,6 +919,118 @@ function drawBattle() {
   ctx.fillText(String(Math.round(playerPower)), x0, 14);
   ctx.textAlign = "right";
   ctx.fillText(String(Math.round(enemyPower)), x1, 14);
+}
+
+// =====================================================================
+// Effects — soldiers flying out of gears, sparks, confetti, screen shake
+// =====================================================================
+
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function spawnParticle(particle) {
+  if (particles.length < MAX_PARTICLES) particles.push({ age: 0, angle: 0, spin: 0, gravity: 0, ...particle });
+}
+
+function launchFlyer(row, col, side) {
+  if (flyers.length >= MAX_FLYERS) return;
+  flyers.push({
+    fromX: boardOrigin.x + (col + 0.5) * cellSize,
+    fromY: boardOrigin.y + (row + 0.5) * cellSize,
+    side,
+    t: 0,
+  });
+}
+
+// Sparks where the tooth meets the gear it just hit.
+function spawnToothSparks(row, col) {
+  const x = boardOrigin.x + ((col + DRIVER_COL) / 2 + 0.5) * cellSize;
+  const y = boardOrigin.y + ((row + DRIVER_ROW) / 2 + 0.5) * cellSize;
+  for (let i = 0; i < 6; i++) {
+    const angle = randomBetween(0, Math.PI * 2);
+    const speed = randomBetween(40, 170);
+    spawnParticle({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: 320,
+      life: randomBetween(0.15, 0.35),
+      size: randomBetween(1.5, 3),
+      color: i % 2 ? "#ffcc33" : "#fff3c4",
+    });
+  }
+}
+
+function spawnConfetti() {
+  if (REDUCED_MOTION) return;
+  const colors = ["#ffcc33", "#3a7ddb", "#8bd65a", "#ff8a3d", "#fdf6e8"];
+  for (let i = 0; i < 70; i++) {
+    spawnParticle({
+      x: randomBetween(0, fxCssW),
+      y: randomBetween(-40, 0),
+      vx: randomBetween(-50, 50),
+      vy: randomBetween(60, 220),
+      gravity: 180,
+      life: randomBetween(1, 1.8),
+      size: randomBetween(4, 8),
+      color: colors[i % colors.length],
+      angle: randomBetween(0, Math.PI),
+      spin: randomBetween(-9, 9),
+    });
+  }
+}
+
+function updateFx(dt) {
+  for (const flyer of flyers) flyer.t += dt / FLY_SECONDS;
+  flyers = flyers.filter((flyer) => flyer.t < 1);
+
+  for (const p of particles) {
+    p.age += dt;
+    p.vy += p.gravity * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.angle += p.spin * dt;
+  }
+  particles = particles.filter((p) => p.age < p.life);
+
+  screenShake = Math.max(0, screenShake - SHAKE_FADE_PER_SEC * dt);
+  const shake = REDUCED_MOTION ? 0 : screenShake;
+  document.getElementById("game-screen").style.transform = shake > 0
+    ? `translate(${randomBetween(-shake, shake)}px, ${randomBetween(-shake, shake)}px)`
+    : "";
+}
+
+function drawFx() {
+  if (!fxCtx) return;
+  const ctx = fxCtx;
+  ctx.clearRect(0, 0, fxCssW, fxCssH);
+
+  for (const flyer of flyers) {
+    // An arc from the gear up to the lane, speeding up as it goes.
+    const t = flyer.t * flyer.t;
+    const x = flyer.fromX + (flyTarget.x - flyer.fromX) * t;
+    const y = flyer.fromY + (flyTarget.y - flyer.fromY) * flyer.t;
+    ctx.save();
+    ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
+    ctx.shadowBlur = 16;
+    if (flyer.side === "bomb") drawBombIcon(ctx, x, y);
+    else drawArmyIcon(ctx, x, y, "#8fc0ff");
+    ctx.restore();
+  }
+
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = 1 - p.age / p.life;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+    ctx.restore();
+  }
 }
 
 // =====================================================================
@@ -873,23 +1062,91 @@ function beep(freq, duration, type, gainPeak) {
   osc.stop(t0 + duration + 0.02);
 }
 
+// A pitch slide, for launches and explosions.
+function sweep(fromFreq, toFreq, duration, type, gainPeak) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const t0 = audioCtx.currentTime;
+  osc.type = type;
+  osc.frequency.setValueAtTime(fromFreq, t0);
+  osc.frequency.exponentialRampToValueAtTime(toFreq, t0 + duration);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(t0 + duration + 0.02);
+}
+
+// Filtered noise is what makes these sound like metal rather than a beep.
+let noiseBuffer = null;
+function noiseBurst(duration, filterType, filterFreq, gainPeak) {
+  if (!audioCtx) return;
+  if (!noiseBuffer) {
+    noiseBuffer = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate / 2), audioCtx.sampleRate);
+    const samples = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+  }
+  const source = audioCtx.createBufferSource();
+  source.buffer = noiseBuffer;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = filterType;
+  filter.frequency.value = filterFreq;
+  const gain = audioCtx.createGain();
+  const t0 = audioCtx.currentTime;
+  gain.gain.setValueAtTime(gainPeak, t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+  source.connect(filter).connect(gain).connect(audioCtx.destination);
+  source.start();
+  source.stop(t0 + duration + 0.02);
+}
+
 // Several teeth can land close together, so limit this to a steady patter.
 let lastTickSoundAt = 0;
 function playTickSound() {
   const now = performance.now();
   if (now - lastTickSoundAt < 110) return;
   lastTickSoundAt = now;
-  beep(560, 0.05, "square", 0.05);
+  noiseBurst(0.03, "highpass", 4000, 0.1);
+  beep(1800, 0.025, "square", 0.03);
 }
 
+// Many gears can fill on the same hit, so one launch sound covers them.
+let lastFireSoundAt = 0;
 function playFireSound() {
-  beep(520, 0.16, "triangle", 0.16);
+  const now = performance.now();
+  if (now - lastFireSoundAt < 70) return;
+  lastFireSoundAt = now;
+  sweep(420, 880, 0.14, "triangle", 0.1);
+}
+
+function playClankSound() {
+  noiseBurst(0.09, "bandpass", 2400, 0.25);
+  beep(1250, 0.12, "triangle", 0.1);
+  beep(1870, 0.09, "sine", 0.06);
+}
+
+let lastBoomSoundAt = 0;
+function playBoomSound() {
+  const now = performance.now();
+  if (now - lastBoomSoundAt < 120) return;
+  lastBoomSoundAt = now;
+  sweep(140, 40, 0.35, "sine", 0.35);
+  noiseBurst(0.25, "lowpass", 700, 0.3);
+}
+
+function playOverdriveSound() {
+  sweep(200, 1200, 0.5, "sawtooth", 0.1);
 }
 
 function playWinSound() {
   beep(523, 0.12, "square", 0.2);
   setTimeout(() => beep(659, 0.12, "square", 0.2), 110);
-  setTimeout(() => beep(784, 0.22, "square", 0.22), 220);
+  setTimeout(() => {
+    beep(784, 0.22, "square", 0.22);
+    playClankSound();
+  }, 220);
 }
 
 function playLoseSound() {
@@ -961,9 +1218,23 @@ function layoutBattleCanvas() {
   battleCtx = fitCanvasDPR(battleCanvas, battleCssW, battleCssH);
 }
 
+// The effects canvas covers the whole game, so it needs to know where the
+// board and the battle lane sit on it.
+function layoutFxCanvas() {
+  const frame = document.getElementById("app-frame").getBoundingClientRect();
+  const board = boardCanvas.getBoundingClientRect();
+  const lane = document.getElementById("battle-lane").getBoundingClientRect();
+  fxCssW = frame.width;
+  fxCssH = frame.height;
+  boardOrigin = { x: board.left - frame.left, y: board.top - frame.top };
+  flyTarget = { x: lane.left - frame.left + 16, y: lane.top - frame.top + lane.height * 0.6 };
+  fxCtx = fitCanvasDPR(fxCanvas, fxCssW, fxCssH);
+}
+
 function handleResize() {
   layoutBoardCanvas();
   layoutBattleCanvas();
+  layoutFxCanvas();
 }
 
 // =====================================================================
@@ -981,6 +1252,11 @@ function startNewRun() {
   driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
   waveLead = WAVE_START_LEAD;
   gearPriceScale = 1;
+  overdriveLeft = 0;
+  overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
+  flyers = [];
+  particles = [];
+  screenShake = 0;
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER;
@@ -1001,14 +1277,17 @@ function loop(now) {
   const dt = lastTime ? Math.min(0.05, (now - lastTime) / 1000) : 0;
   lastTime = now;
   update(dt);
+  updateFx(dt);
   drawBoard();
   drawBattle();
+  drawFx();
   requestAnimationFrame(loop);
 }
 
 function init() {
   boardCanvas = document.getElementById("board-canvas");
   battleCanvas = document.getElementById("battle-canvas");
+  fxCanvas = document.getElementById("fx-canvas");
 
   if (bestWave > 1) {
     document.getElementById("best-wave").textContent = bestWave;
@@ -1019,6 +1298,7 @@ function init() {
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
+  document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
 
   wireBoardInput();
   window.addEventListener("resize", handleResize);

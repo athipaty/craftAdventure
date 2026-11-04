@@ -182,11 +182,71 @@ button {
   100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(1); }
 }
 
-#buy-gear-btn {
+#action-row {
   flex-shrink: 0;
-  align-self: center;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 60px; /* room for a two-line label, so the board never has to move */
   margin-top: 4px;
-  padding: 10px 22px;
+  padding: 0 10px;
+}
+
+@media (max-width: 360px) {
+  #action-row {
+    min-height: 80px;
+  }
+}
+
+#overdrive-btn {
+  flex: 0 0 auto;
+  min-width: 118px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #ff8a3d var(--charge, 100%), rgba(255, 255, 255, 0.12) var(--charge, 100%));
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+#overdrive-btn.ready {
+  background: linear-gradient(180deg, #ffb057, #e0651c);
+  color: #3a1500;
+  box-shadow: 0 3px 0 #94400d;
+  animation: overdrive-pulse 1s ease-in-out infinite;
+}
+
+#overdrive-btn.active {
+  box-shadow: 0 0 14px #ff8a3d;
+}
+
+#overdrive-btn.ready:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #94400d;
+}
+
+@keyframes overdrive-pulse {
+  50% { filter: brightness(1.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overdrive-btn.ready {
+    animation: none;
+  }
+}
+
+#fx-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  pointer-events: none;
+}
+
+#buy-gear-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 10px 14px;
   border-radius: 10px;
   background: linear-gradient(180deg, #8bd65a, #4f9e2d);
   color: #14300a;
@@ -404,10 +464,8 @@ button {
     grid-row: 1 / -1;
   }
 
-  #buy-gear-btn {
+  #action-row {
     margin-top: 10px;
-    justify-self: center;
-    align-self: start;
   }
 
   #title-screen {
