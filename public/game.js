@@ -1,14 +1,15 @@
 "use strict";
 
 // =====================================================================
-// Gear Fight! — tap a gear to tick it forward one tooth; any same-number
-// gear it touches meshes with it and ticks too (alternating spin
-// direction with each hop through the connected cluster, like a real
-// gear train), so one tap can chain-react through a whole cluster at
-// once. A gear fires once it's been ticked enough times, paying out
-// into a tug-of-war army battle against a steadily-growing enemy.
+// Gear Fight! — a gear machine that runs by itself. Some gears have a single
+// tooth and keep turning on their own. Each time that tooth sweeps past a
+// neighbouring gear (any number), the neighbour ticks forward once, and it
+// fires once it's been ticked enough times, paying out into a tug-of-war
+// army battle against a steadily growing enemy. The player never ticks
+// anything directly: they drag normal gears around to choose which ones sit
+// within reach of a tooth.
 // Two independent systems tied together by one number:
-//   - the board (grid[][]) is the gear-mesh puzzle
+//   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
@@ -19,13 +20,25 @@ const COLS = 6;
 const ROWS = 7;
 const BASE_POWER = 6;
 const WIN_RATIO = 0.82; // playerPower share of the total needed to take the wave
-const LOSE_RATIO = 0.12; // playerPower share at/below which the enemy overruns you
+const LOSE_RATIO = 0.3; // playerPower share at/below which the enemy overruns you
 const POP_DURATION = 0.22; // seconds a firing gear takes to shrink away before respawning
 const JACKPOT_CHANCE = 0.025; // odds a freshly spawned gear is a star "jackpot" tile
 const MULT_CHANCE = 0.06; // odds a freshly spawned (non-jackpot) gear also carries a multiplier
 const JACKPOT_TICKS = 6; // ticks a jackpot gear needs to fire
 const TOOTH_COUNT = 10; // teeth drawn per gear — also one tick's worth of visual spin
 const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
+const DRIVER_COUNT = 5; // one-tooth gears on the board
+const DRIVER_MIN_SPACING = 3; // minimum row+col distance between them
+const DRIVER_TURNS_PER_SEC = 0.2; // how fast a one-tooth gear turns
+const QUARTER_TURN = Math.PI / 2;
+// Which neighbour the tooth points at after each quarter turn, in canvas
+// rotation order (positive angles are clockwise): right, down, left, up.
+const TOOTH_DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+const ENEMY_BASE_GROWTH = 1; // enemy army per second at the start of wave 1
+const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
+const ENEMY_DOUBLING_SECONDS = 20; // enemy growth doubles every this long within a wave
+const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
+const DRIVER_PALETTE = { fill: "#8d99a6", stroke: "#3f4a55", hub: "#c3ccd5" };
 
 const VALUE_PALETTE = {
   1: { fill: "#5fb3e0", stroke: "#2f6f94", hub: "#89cdf0" },
@@ -42,25 +55,25 @@ function cellColor(cell) {
 }
 
 // How many ticks a gear needs to fire. Jackpots use a fixed count since
-// their "value" field is the non-numeric mesh key "J", not a tick count.
+// their "value" field is the non-numeric key "J", not a tick count.
 function ticksRequired(cell) {
   return cell.value === "J" ? JACKPOT_TICKS : cell.value;
 }
 
-// How many distinct gear values are in play — starts easy (lots of
-// mesh clusters) and widens as the wave climbs (smaller clusters, but
-// each gear takes more ticks to fire so it's worth more), capped at the
+// How many distinct gear values are in play — widens as the wave climbs
+// (each gear takes more ticks to fire so it's worth more), capped at the
 // size of VALUE_PALETTE.
 function valuePoolSize(wave) {
   return Math.min(6, 3 + Math.floor((wave - 1) / 2));
 }
 
-// The enemy's own army grows on its own the whole time you're playing —
-// this is the "clock" that makes a wave eventually come to a head one
-// way or the other even if you stall. Scales up per wave so later waves
-// genuinely demand faster/bigger chain reactions, not just more taps.
-function enemyGrowthPerSec(wave) {
-  return 0.45 * Math.pow(1.13, wave - 1);
+// The enemy's own army grows on its own the whole time, scaling up per
+// wave and accelerating the longer a wave drags on. The board's payout
+// rate is roughly steady, so this acceleration is what guarantees every
+// wave ends: take it out and the two sides can settle into a balance where
+// neither threshold is ever reached.
+function enemyGrowthPerSec(wave, waveTime) {
+  return ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
 }
 
 function randomCellValue(wave) {
@@ -75,13 +88,13 @@ function randomCellValue(wave) {
   return { value, mult };
 }
 
-// Reward for one gear firing. Jackpots pay a flat multiple on top since
-// they're rare and slower to spin up; any multiplier badge stacks.
+// Reward for one gear firing. It grows with the square of the ticks needed,
+// so each tooth pass is worth more on a higher-numbered gear. That's what
+// makes moving gears worthwhile: a tooth ticks at the same pace whatever it
+// touches, so what it's touching is the only thing the player can improve.
 function singleReward(cell) {
   const req = ticksRequired(cell);
-  let base = Math.round(req * 1.3);
-  if (cell.value === "J") base *= 3;
-  return Math.max(1, Math.round(base * (cell.mult || 1)));
+  return Math.max(1, Math.round(req * req * (cell.mult || 1)));
 }
 
 // =====================================================================
@@ -93,13 +106,14 @@ let boardCssW = 0, boardCssH = 0, cellSize = 0;
 let battleCssW = 0, battleCssH = 0;
 
 // grid[row][col] = { value, mult, ticks, ticksAnim, spinTarget, spinAnim,
-//                     flash, popping, popT } | null
+//                     flash, popping, popT } for a normal gear, plus
+//                  { driver: true, angle, spin } for a one-tooth gear
 let grid = [];
-let boardBusy = false; // true while a fire/respawn animation is resolving — input ignored
-let pendingFireResolve = null; // [{row,col}, ...] cells popping after the current tap's cluster fired
+let drag = null; // { cell, row, col, x, y } while a gear is being dragged
 
 let gameState = "title"; // "title" | "playing" | "gameover"
 let wave = 1;
+let waveTime = 0; // seconds since the current wave began
 let playerPower = BASE_POWER;
 let enemyPower = BASE_POWER;
 let totalArmyScore = 0;
@@ -121,6 +135,17 @@ function freshCell(wave) {
 // Board logic
 // =====================================================================
 
+// Turns a cell into a one-tooth gear. It starts at a random angle so the
+// machine doesn't tick in lockstep, and neighbours on the checkerboard
+// turn opposite ways like a real gear train.
+function makeDriver(row, col) {
+  const cell = freshCell(wave);
+  cell.driver = true;
+  cell.angle = Math.random() * Math.PI * 2;
+  cell.spin = (row + col) % 2 === 0 ? 1 : -1;
+  grid[row][col] = cell;
+}
+
 function createBoard() {
   grid = [];
   for (let row = 0; row < ROWS; row++) {
@@ -128,96 +153,99 @@ function createBoard() {
     for (let col = 0; col < COLS; col++) r.push(freshCell(wave));
     grid.push(r);
   }
+  // Scatter a few one-tooth gears, kept apart so their reach doesn't pile
+  // up in one spot. Most of the board starts out of reach on purpose:
+  // choosing what to move next to a tooth is the player's whole job.
+  const spots = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) spots.push({ row, col });
+  }
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [spots[i], spots[j]] = [spots[j], spots[i]];
+  }
+  const placed = [];
+  for (const spot of spots) {
+    if (placed.length >= DRIVER_COUNT) break;
+    const tooClose = placed.some((o) => Math.abs(o.row - spot.row) + Math.abs(o.col - spot.col) < DRIVER_MIN_SPACING);
+    if (tooClose) continue;
+    placed.push(spot);
+    makeDriver(spot.row, spot.col);
+  }
 }
 
-// Tapping (row, col) ticks it, and that tick meshes through every
-// orthogonally-connected gear sharing the same value — the whole
-// cluster moves together, alternating spin direction with each hop
-// away from the tapped gear, same as a real gear train.
-function tickCluster(row, col) {
-  const origin = grid[row][col];
-  if (!origin) return;
-  const key = origin.value;
-  const visited = new Map();
-  const queue = [{ row, col, depth: 0 }];
-  visited.set(`${row},${col}`, 0);
-  let head = 0;
-  while (head < queue.length) {
-    const cur = queue[head++];
-    const cell = grid[cur.row][cur.col];
-    const sign = cur.depth % 2 === 0 ? 1 : -1;
-    cell.ticks += 1;
-    cell.spinTarget += sign;
-    cell.flash = 1;
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    for (const [dr, dc] of dirs) {
-      const nr = cur.row + dr;
-      const nc = cur.col + dc;
-      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
-      const k = `${nr},${nc}`;
-      if (visited.has(k)) continue;
-      const neighbor = grid[nr][nc];
-      if (!neighbor || neighbor.value !== key) continue;
-      visited.set(k, cur.depth + 1);
-      queue.push({ row: nr, col: nc, depth: cur.depth + 1 });
-    }
-  }
-  playTickSound(queue.length);
-  resolveFires(queue);
+// One tooth pass: only the gear being touched ticks, whatever its number.
+function tickGear(row, col, driverSpin) {
+  const cell = grid[row]?.[col];
+  if (!cell || cell.driver || cell.popping) return;
+  cell.ticks += 1;
+  cell.spinTarget -= driverSpin; // meshed gears turn opposite ways
+  cell.flash = 1;
+  playTickSound();
+  if (cell.ticks >= ticksRequired(cell)) fireGear(cell);
 }
 
-// Only cells actually ticked this tap could have just reached their
-// threshold, so we only need to check those rather than the whole board.
-function resolveFires(tickedCells) {
-  const firing = [];
-  for (const p of tickedCells) {
-    const cell = grid[p.row][p.col];
-    if (cell.ticks >= ticksRequired(cell)) firing.push({ row: p.row, col: p.col, cell });
-  }
-  if (firing.length === 0) return;
-
-  let total = 0;
-  for (const f of firing) total += singleReward(f.cell);
-  if (firing.length >= 2) total = Math.round(total * (1 + 0.2 * (firing.length - 1)));
-
-  playerPower += total;
-  totalArmyScore += total;
-  showToast(`+${total}${firing.length >= 2 ? ` COMBO x${firing.length}!` : ""}`);
-  playMatchSound(firing.length);
-
-  for (const f of firing) {
-    f.cell.popping = true;
-    f.cell.popT = 0;
-  }
-  boardBusy = true;
-  pendingFireResolve = firing.map((f) => ({ row: f.row, col: f.col }));
+function fireGear(cell) {
+  if (drag && drag.cell === cell) drag = null;
+  const reward = singleReward(cell);
+  playerPower += reward;
+  totalArmyScore += reward;
+  showToast(`+${reward}`);
+  playFireSound();
+  cell.popping = true;
+  cell.popT = 0;
 }
 
 // =====================================================================
-// Input — tap a gear to tick its mesh cluster
+// Input — drag a gear onto another gear to swap them
 // =====================================================================
 
-function cellAt(clientX, clientY) {
+function boardPoint(e) {
   const rect = boardCanvas.getBoundingClientRect();
-  const x = clientX - rect.left;
-  const y = clientY - rect.top;
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+// The gear at a board point that can be moved, or null. One-tooth gears
+// stay bolted down, and a gear already firing is on its way out.
+function movableAt({ x, y }) {
   const col = Math.floor(x / cellSize);
   const row = Math.floor(y / cellSize);
-  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
-  return { row, col };
+  const cell = grid[row]?.[col];
+  if (!cell || cell.driver || cell.popping) return null;
+  return { row, col, cell };
 }
 
 function onPointerDown(e) {
   ensureAudio();
-  if (boardBusy || gameState !== "playing") return;
-  const pos = cellAt(e.clientX, e.clientY);
-  if (!pos || !grid[pos.row][pos.col]) return;
+  if (drag || gameState !== "playing") return;
+  const point = boardPoint(e);
+  const hit = movableAt(point);
+  if (!hit) return;
   e.preventDefault();
-  tickCluster(pos.row, pos.col);
+  boardCanvas.setPointerCapture(e.pointerId);
+  drag = { ...hit, ...point };
+}
+
+function onPointerMove(e) {
+  if (drag) Object.assign(drag, boardPoint(e));
+}
+
+function onPointerUp(e) {
+  if (!drag) return;
+  const target = movableAt(boardPoint(e));
+  if (target && target.cell !== drag.cell) {
+    grid[drag.row][drag.col] = target.cell;
+    grid[target.row][target.col] = drag.cell;
+    playTickSound();
+  }
+  drag = null;
 }
 
 function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
+  boardCanvas.addEventListener("pointermove", onPointerMove);
+  boardCanvas.addEventListener("pointerup", onPointerUp);
+  boardCanvas.addEventListener("pointercancel", () => { drag = null; });
   boardCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
@@ -225,22 +253,31 @@ function wireBoardInput() {
 // Update loop
 // =====================================================================
 
+// Gears fire independently, so each one runs its own pop and respawn.
 function updatePops(dt) {
-  if (!pendingFireResolve) return;
-  let stillPopping = false;
-  for (const p of pendingFireResolve) {
-    const cell = grid[p.row][p.col];
-    if (!cell || !cell.popping) continue;
-    cell.popT += dt / POP_DURATION;
-    if (cell.popT >= 1) {
-      grid[p.row][p.col] = freshCell(wave);
-    } else {
-      stillPopping = true;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell.popping) continue;
+      cell.popT += dt / POP_DURATION;
+      if (cell.popT >= 1) grid[row][col] = freshCell(wave);
     }
   }
-  if (!stillPopping) {
-    pendingFireResolve = null;
-    boardBusy = false;
+}
+
+function updateDrivers(dt) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell.driver) continue;
+      const before = Math.floor(cell.angle / QUARTER_TURN);
+      cell.angle += DRIVER_TURNS_PER_SEC * Math.PI * 2 * dt;
+      const after = Math.floor(cell.angle / QUARTER_TURN);
+      for (let k = before + 1; k <= after; k++) {
+        const [dr, dc] = TOOTH_DIRS[(((k * cell.spin) % 4) + 4) % 4];
+        tickGear(row + dr, col + dc, cell.spin);
+      }
+    }
   }
 }
 
@@ -263,20 +300,23 @@ function updateGearAnim(dt) {
 
 function winWave() {
   wave += 1;
+  waveTime = 0;
   if (wave > bestWave) {
     bestWave = wave;
     localStorage.setItem("gearfight_best_wave", String(bestWave));
   }
   showWaveBanner(`Wave ${wave}!`);
   playWinSound();
-  // Keep some momentum into the next wave, but reset the balance of
-  // power so the new wave actually starts contested instead of already won.
-  playerPower = Math.max(BASE_POWER, playerPower * 0.45);
+  // Reset the balance of power so the new wave starts contested. Carrying
+  // the player's total over would put them past WIN_RATIO straight away,
+  // and waves would then fall one after another with nothing happening.
   enemyPower = BASE_POWER * Math.pow(1.07, wave - 1);
+  playerPower = enemyPower * WAVE_START_LEAD;
 }
 
 function gameOver() {
   gameState = "gameover";
+  drag = null;
   document.getElementById("final-wave").textContent = wave;
   document.getElementById("gameover-screen").classList.remove("hidden");
   playLoseSound();
@@ -284,10 +324,12 @@ function gameOver() {
 
 function update(dt) {
   if (gameState !== "playing") return;
+  updateDrivers(dt);
   updatePops(dt);
   updateGearAnim(dt);
 
-  enemyPower += enemyGrowthPerSec(wave) * dt;
+  waveTime += dt;
+  enemyPower += enemyGrowthPerSec(wave, waveTime) * dt;
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
   if (ratio >= WIN_RATIO) winWave();
@@ -334,6 +376,41 @@ function drawGearShape(ctx, cx, cy, rOuter, rInner, teeth, fill, stroke) {
   ctx.stroke();
 }
 
+// A one-tooth gear: a plain disc with a single tooth long enough to visibly
+// reach into the neighbouring gear as it sweeps past.
+function drawDriverCell(ctx, cx, cy, size, cell) {
+  const r = size * 0.34;
+  const toothHalfWidth = size * 0.09;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(cell.angle * cell.spin);
+  ctx.beginPath();
+  ctx.moveTo(r * 0.8, -toothHalfWidth);
+  ctx.lineTo(size * 0.6, -toothHalfWidth * 0.55);
+  ctx.lineTo(size * 0.6, toothHalfWidth * 0.55);
+  ctx.lineTo(r * 0.8, toothHalfWidth);
+  ctx.closePath();
+  ctx.fillStyle = DRIVER_PALETTE.fill;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = DRIVER_PALETTE.stroke;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = DRIVER_PALETTE.fill;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = DRIVER_PALETTE.stroke;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.4, 0, Math.PI * 2);
+  ctx.fillStyle = DRIVER_PALETTE.hub;
+  ctx.fill();
+}
+
 function drawGearCell(ctx, cx, cy, size, cell) {
   const req = ticksRequired(cell);
   const popScale = cell.popping ? Math.max(0, 1 - cell.popT) : 1;
@@ -342,9 +419,9 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   if (r <= 0) return;
   const palette = cellColor(cell);
 
-  // The gear body itself visibly spins — alternating direction through a
-  // meshed cluster, same as real gear teeth — purely cosmetic; it never
-  // resets, so repeated taps keep it turning rather than snapping back.
+  // The gear body itself visibly spins, opposite to the tooth that ticked
+  // it. Purely cosmetic; it never resets, so it keeps turning rather than
+  // snapping back.
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(cell.spinAnim * TICK_ANGLE);
@@ -396,38 +473,6 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   }
 }
 
-// Thin connecting rods between adjacent same-value gears — these are
-// what's actually meshed, so a tap on any one of them ticks the whole
-// connected group. Drawn under the gears, always visible (not just while
-// interacting), since this is the core thing the player needs to read.
-function drawMeshLines(ctx) {
-  ctx.strokeStyle = "rgba(255, 246, 200, 0.22)";
-  ctx.lineWidth = Math.max(2, cellSize * 0.07);
-  ctx.lineCap = "round";
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = grid[row][col];
-      if (!cell) continue;
-      const cx = col * cellSize + cellSize / 2;
-      const cy = row * cellSize + cellSize / 2;
-      const right = col + 1 < COLS ? grid[row][col + 1] : null;
-      if (right && right.value === cell.value) {
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + cellSize, cy);
-        ctx.stroke();
-      }
-      const down = row + 1 < ROWS ? grid[row + 1][col] : null;
-      if (down && down.value === cell.value) {
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx, cy + cellSize);
-        ctx.stroke();
-      }
-    }
-  }
-}
-
 function drawBoard() {
   // grid isn't populated until startNewRun()/createBoard() runs (on Play).
   // A stray resize event before that — the address bar collapsing, a
@@ -439,16 +484,31 @@ function drawBoard() {
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#3a2414");
 
-  drawMeshLines(ctx);
-
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = grid[row][col];
-      if (!cell) continue;
-      const cx = col * cellSize + cellSize / 2;
-      const cy = row * cellSize + cellSize / 2;
-      drawGearCell(ctx, cx, cy, cellSize, cell);
+  // One-tooth gears go on top so their teeth overlap the gears they touch.
+  for (const drawDrivers of [false, true]) {
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const cell = grid[row][col];
+        if (Boolean(cell.driver) !== drawDrivers) continue;
+        if (drag && drag.cell === cell) continue;
+        const cx = col * cellSize + cellSize / 2;
+        const cy = row * cellSize + cellSize / 2;
+        if (drawDrivers) drawDriverCell(ctx, cx, cy, cellSize, cell);
+        else drawGearCell(ctx, cx, cy, cellSize, cell);
+      }
     }
+  }
+
+  // The dragged gear follows the pointer, above everything else, with an
+  // outline on the gear it would swap with.
+  if (drag) {
+    const target = movableAt(drag);
+    if (target && target.cell !== drag.cell) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#ffcc33";
+      ctx.strokeRect(target.col * cellSize + 3, target.row * cellSize + 3, cellSize - 6, cellSize - 6);
+    }
+    drawGearCell(ctx, drag.x, drag.y, cellSize * 1.12, drag.cell);
   }
 }
 
@@ -541,12 +601,17 @@ function beep(freq, duration, type, gainPeak) {
   osc.stop(t0 + duration + 0.02);
 }
 
-function playTickSound(clusterSize) {
-  beep(520 + Math.min(clusterSize, 8) * 30, 0.06, "square", 0.1);
+// Several teeth can land close together, so limit this to a steady patter.
+let lastTickSoundAt = 0;
+function playTickSound() {
+  const now = performance.now();
+  if (now - lastTickSoundAt < 110) return;
+  lastTickSoundAt = now;
+  beep(560, 0.05, "square", 0.05);
 }
 
-function playMatchSound(n) {
-  beep(440 + Math.min(n, 8) * 40, 0.18, "triangle", 0.2);
+function playFireSound() {
+  beep(520, 0.16, "triangle", 0.16);
 }
 
 function playWinSound() {
@@ -634,12 +699,13 @@ function handleResize() {
 // =====================================================================
 
 function startNewRun() {
+  ensureAudio();
+  drag = null;
   wave = 1;
+  waveTime = 0;
   playerPower = BASE_POWER;
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
-  boardBusy = false;
-  pendingFireResolve = null;
   createBoard();
 
   document.getElementById("title-screen").classList.add("hidden");
