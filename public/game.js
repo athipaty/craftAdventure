@@ -1,13 +1,11 @@
 "use strict";
 
 // =====================================================================
-// Gear Fight! — a gear machine that runs by itself. Some gears have a single
-// tooth and keep turning on their own. Each time that tooth sweeps past a
-// neighbouring gear (any number), the neighbour ticks forward once, and it
-// fires once it's been ticked enough times, paying out into a tug-of-war
-// army battle against a steadily growing enemy. The player never ticks
-// anything directly: they drag normal gears around to choose which ones sit
-// within reach of a tooth.
+// Gear Fight! — a gear machine that runs by itself. One gear has a single
+// tooth and keeps turning on its own. Each time that tooth hits a neighbouring
+// gear, the neighbour gains 25%. At 100% it sends one soldier to the battle
+// and starts again from 0%, staying where it is. The player can drag normal
+// gears around to swap their positions.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
@@ -18,54 +16,25 @@
 
 const COLS = 6;
 const ROWS = 7;
-const BASE_POWER = 6;
+const BASE_POWER = 3;
 const WIN_RATIO = 0.82; // playerPower share of the total needed to take the wave
 const LOSE_RATIO = 0.3; // playerPower share at/below which the enemy overruns you
-const POP_DURATION = 0.22; // seconds a firing gear takes to shrink away before respawning
-const JACKPOT_CHANCE = 0.025; // odds a freshly spawned gear is a star "jackpot" tile
-const MULT_CHANCE = 0.06; // odds a freshly spawned (non-jackpot) gear also carries a multiplier
-const JACKPOT_TICKS = 6; // ticks a jackpot gear needs to fire
+const HITS_TO_FULL = 4; // each hit fills 25% of a gear
+const SOLDIERS_PER_FULL_GEAR = 1;
 const TOOTH_COUNT = 10; // teeth drawn per gear — also one tick's worth of visual spin
 const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
-const DRIVER_COUNT = 5; // one-tooth gears on the board
-const DRIVER_MIN_SPACING = 3; // minimum row+col distance between them
-const DRIVER_TURNS_PER_SEC = 0.2; // how fast a one-tooth gear turns
+const DRIVER_TURNS_PER_SEC = 1; // how fast the one-tooth gear turns
 const QUARTER_TURN = Math.PI / 2;
 // Which neighbour the tooth points at after each quarter turn, in canvas
 // rotation order (positive angles are clockwise): right, down, left, up.
 const TOOTH_DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
-const ENEMY_BASE_GROWTH = 1; // enemy army per second at the start of wave 1
-const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
+const ENEMY_BASE_GROWTH = 0.05; // enemy army per second at the start of wave 1
+const ENEMY_WAVE_SCALE = 1.15; // enemy growth multiplier per wave
 const ENEMY_DOUBLING_SECONDS = 20; // enemy growth doubles every this long within a wave
 const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
 const DRIVER_PALETTE = { fill: "#8d99a6", stroke: "#3f4a55", hub: "#c3ccd5" };
 
-const VALUE_PALETTE = {
-  1: { fill: "#5fb3e0", stroke: "#2f6f94", hub: "#89cdf0" },
-  2: { fill: "#6fcf6f", stroke: "#357a35", hub: "#9fe39f" },
-  3: { fill: "#e0c355", stroke: "#8a6a1c", hub: "#f0dd8a" },
-  4: { fill: "#e08a4b", stroke: "#8a4f1c", hub: "#f0ae7c" },
-  5: { fill: "#c15fd0", stroke: "#6e2f78", hub: "#dd94e8" },
-  6: { fill: "#e0586f", stroke: "#8a2436", hub: "#f08b9c" },
-};
-const JACKPOT_PALETTE = { fill: "#ffd24d", stroke: "#a66a00", hub: "#fff0b0" };
-
-function cellColor(cell) {
-  return cell.value === "J" ? JACKPOT_PALETTE : VALUE_PALETTE[cell.value] || VALUE_PALETTE[1];
-}
-
-// How many ticks a gear needs to fire. Jackpots use a fixed count since
-// their "value" field is the non-numeric key "J", not a tick count.
-function ticksRequired(cell) {
-  return cell.value === "J" ? JACKPOT_TICKS : cell.value;
-}
-
-// How many distinct gear values are in play — widens as the wave climbs
-// (each gear takes more ticks to fire so it's worth more), capped at the
-// size of VALUE_PALETTE.
-function valuePoolSize(wave) {
-  return Math.min(6, 3 + Math.floor((wave - 1) / 2));
-}
+const GEAR_PALETTE = { fill: "#e0c355", stroke: "#8a6a1c", hub: "#f0dd8a" };
 
 // The enemy's own army grows on its own the whole time, scaling up per
 // wave and accelerating the longer a wave drags on. The board's payout
@@ -76,27 +45,6 @@ function enemyGrowthPerSec(wave, waveTime) {
   return ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
 }
 
-function randomCellValue(wave) {
-  if (Math.random() < JACKPOT_CHANCE) return { value: "J", mult: null };
-  const pool = valuePoolSize(wave);
-  const value = 1 + Math.floor(Math.random() * pool);
-  let mult = null;
-  if (Math.random() < MULT_CHANCE) {
-    const r = Math.random();
-    mult = r < 0.6 ? 1.5 : r < 0.9 ? 2 : 3;
-  }
-  return { value, mult };
-}
-
-// Reward for one gear firing. It grows with the square of the ticks needed,
-// so each tooth pass is worth more on a higher-numbered gear. That's what
-// makes moving gears worthwhile: a tooth ticks at the same pace whatever it
-// touches, so what it's touching is the only thing the player can improve.
-function singleReward(cell) {
-  const req = ticksRequired(cell);
-  return Math.max(1, Math.round(req * req * (cell.mult || 1)));
-}
-
 // =====================================================================
 // State
 // =====================================================================
@@ -105,9 +53,9 @@ let boardCanvas, boardCtx, battleCanvas, battleCtx;
 let boardCssW = 0, boardCssH = 0, cellSize = 0;
 let battleCssW = 0, battleCssH = 0;
 
-// grid[row][col] = { value, mult, ticks, ticksAnim, spinTarget, spinAnim,
-//                     flash, popping, popT } for a normal gear, plus
-//                  { driver: true, angle, spin } for a one-tooth gear
+// grid[row][col] = { ticks, ticksAnim, spinTarget, spinAnim, flash } for a
+//                  normal gear, plus { driver: true, angle, spin } for the
+//                  one-tooth gear
 let grid = [];
 let drag = null; // { cell, row, col, x, y } while a gear is being dragged
 
@@ -119,30 +67,20 @@ let enemyPower = BASE_POWER;
 let totalArmyScore = 0;
 let bestWave = Number(localStorage.getItem("gearfight_best_wave") || 1);
 
-function freshCell(wave) {
-  const cell = randomCellValue(wave);
-  cell.ticks = 0;
-  cell.ticksAnim = 0;
-  cell.spinTarget = 0;
-  cell.spinAnim = 0;
-  cell.flash = 0;
-  cell.popping = false;
-  cell.popT = 0;
-  return cell;
+function freshCell() {
+  return { ticks: 0, ticksAnim: 0, spinTarget: 0, spinAnim: 0, flash: 0 };
 }
 
 // =====================================================================
 // Board logic
 // =====================================================================
 
-// Turns a cell into a one-tooth gear. It starts at a random angle so the
-// machine doesn't tick in lockstep, and neighbours on the checkerboard
-// turn opposite ways like a real gear train.
+// Turns a cell into the one-tooth gear, starting at a random angle.
 function makeDriver(row, col) {
-  const cell = freshCell(wave);
+  const cell = freshCell();
   cell.driver = true;
   cell.angle = Math.random() * Math.PI * 2;
-  cell.spin = (row + col) % 2 === 0 ? 1 : -1;
+  cell.spin = 1;
   grid[row][col] = cell;
 }
 
@@ -150,50 +88,34 @@ function createBoard() {
   grid = [];
   for (let row = 0; row < ROWS; row++) {
     const r = [];
-    for (let col = 0; col < COLS; col++) r.push(freshCell(wave));
+    for (let col = 0; col < COLS; col++) r.push(freshCell());
     grid.push(r);
   }
-  // Scatter a few one-tooth gears, kept apart so their reach doesn't pile
-  // up in one spot. Most of the board starts out of reach on purpose:
-  // choosing what to move next to a tooth is the player's whole job.
-  const spots = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) spots.push({ row, col });
-  }
-  for (let i = spots.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [spots[i], spots[j]] = [spots[j], spots[i]];
-  }
-  const placed = [];
-  for (const spot of spots) {
-    if (placed.length >= DRIVER_COUNT) break;
-    const tooClose = placed.some((o) => Math.abs(o.row - spot.row) + Math.abs(o.col - spot.col) < DRIVER_MIN_SPACING);
-    if (tooClose) continue;
-    placed.push(spot);
-    makeDriver(spot.row, spot.col);
-  }
+  // The one-tooth gear sits mid-board so all four sides are in reach.
+  makeDriver(Math.floor(ROWS / 2), Math.floor(COLS / 2));
 }
 
-// One tooth pass: only the gear being touched ticks, whatever its number.
+// One tooth hit: only the gear being touched fills up. A full gear sends a
+// soldier and restarts from 0%, staying in place.
 function tickGear(row, col, driverSpin) {
   const cell = grid[row]?.[col];
-  if (!cell || cell.driver || cell.popping) return;
+  if (!cell || cell.driver) return;
   cell.ticks += 1;
   cell.spinTarget -= driverSpin; // meshed gears turn opposite ways
   cell.flash = 1;
   playTickSound();
-  if (cell.ticks >= ticksRequired(cell)) fireGear(cell);
+  if (cell.ticks >= HITS_TO_FULL) {
+    cell.ticks = 0;
+    cell.ticksAnim = 0;
+    sendSoldier();
+  }
 }
 
-function fireGear(cell) {
-  if (drag && drag.cell === cell) drag = null;
-  const reward = singleReward(cell);
-  playerPower += reward;
-  totalArmyScore += reward;
-  showToast(`+${reward}`);
+function sendSoldier() {
+  playerPower += SOLDIERS_PER_FULL_GEAR;
+  totalArmyScore += SOLDIERS_PER_FULL_GEAR;
+  showToast(`+${SOLDIERS_PER_FULL_GEAR}`);
   playFireSound();
-  cell.popping = true;
-  cell.popT = 0;
 }
 
 // =====================================================================
@@ -205,13 +127,13 @@ function boardPoint(e) {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-// The gear at a board point that can be moved, or null. One-tooth gears
-// stay bolted down, and a gear already firing is on its way out.
+// The gear at a board point that can be moved, or null. The one-tooth gear
+// stays bolted down.
 function movableAt({ x, y }) {
   const col = Math.floor(x / cellSize);
   const row = Math.floor(y / cellSize);
   const cell = grid[row]?.[col];
-  if (!cell || cell.driver || cell.popping) return null;
+  if (!cell || cell.driver) return null;
   return { row, col, cell };
 }
 
@@ -252,18 +174,6 @@ function wireBoardInput() {
 // =====================================================================
 // Update loop
 // =====================================================================
-
-// Gears fire independently, so each one runs its own pop and respawn.
-function updatePops(dt) {
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = grid[row][col];
-      if (!cell.popping) continue;
-      cell.popT += dt / POP_DURATION;
-      if (cell.popT >= 1) grid[row][col] = freshCell(wave);
-    }
-  }
-}
 
 function updateDrivers(dt) {
   for (let row = 0; row < ROWS; row++) {
@@ -325,7 +235,6 @@ function gameOver() {
 function update(dt) {
   if (gameState !== "playing") return;
   updateDrivers(dt);
-  updatePops(dt);
   updateGearAnim(dt);
 
   waveTime += dt;
@@ -412,12 +321,9 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
 }
 
 function drawGearCell(ctx, cx, cy, size, cell) {
-  const req = ticksRequired(cell);
-  const popScale = cell.popping ? Math.max(0, 1 - cell.popT) : 1;
   const flashBoost = 1 + cell.flash * 0.12;
-  const r = size * 0.42 * popScale * flashBoost;
-  if (r <= 0) return;
-  const palette = cellColor(cell);
+  const r = size * 0.42 * flashBoost;
+  const palette = GEAR_PALETTE;
 
   // The gear body itself visibly spins, opposite to the tooth that ticked
   // it. Purely cosmetic; it never resets, so it keeps turning rather than
@@ -437,10 +343,10 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.arc(cx, cy, r * 0.58, 0, Math.PI * 2);
   ctx.fill();
 
-  // Progress ring — how close this gear is to firing. Decoupled from the
-  // decorative spin above so "about to fire" always reads as "ring is
-  // nearly full," regardless of which way the gear has been spun.
-  const progress = Math.max(0, Math.min(1, cell.ticksAnim / req));
+  // Progress ring — how close this gear is to sending a soldier. Decoupled
+  // from the decorative spin above so it always reads the same way,
+  // regardless of which way the gear has been spun.
+  const progress = Math.max(0, Math.min(1, cell.ticksAnim / HITS_TO_FULL));
   if (progress > 0) {
     ctx.beginPath();
     ctx.lineWidth = Math.max(2, size * 0.06);
@@ -451,26 +357,11 @@ function drawGearCell(ctx, cx, cy, size, cell) {
     ctx.stroke();
   }
 
-  if (cell.mult) {
-    ctx.beginPath();
-    ctx.lineWidth = Math.max(2, size * 0.04);
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
   ctx.fillStyle = "#1c130a";
-  ctx.font = `800 ${Math.round(r * 0.72)}px system-ui, sans-serif`;
+  ctx.font = `800 ${Math.round(r * 0.46)}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const remaining = Math.max(0, req - cell.ticks);
-  ctx.fillText(cell.value === "J" ? "★" : String(remaining), cx, cy + 1);
-
-  if (cell.mult) {
-    ctx.font = `700 ${Math.round(size * 0.15)}px system-ui, sans-serif`;
-    ctx.fillStyle = "#3a2414";
-    ctx.fillText(`×${cell.mult}`, cx, cy + r + size * 0.14);
-  }
+  ctx.fillText(`${(cell.ticks / HITS_TO_FULL) * 100}%`, cx, cy + 1);
 }
 
 function drawBoard() {
@@ -484,7 +375,7 @@ function drawBoard() {
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   roundRectFill(ctx, 0, 0, boardCssW, boardCssH, 14, "#3a2414");
 
-  // One-tooth gears go on top so their teeth overlap the gears they touch.
+  // The one-tooth gear goes on top so its tooth overlaps the gears it touches.
   for (const drawDrivers of [false, true]) {
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS; col++) {
