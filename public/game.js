@@ -9,7 +9,8 @@
 // one-tooth gear. Soldiers can be spent on more gears, which the player drags
 // into place to connect them. Soldiers from both armies march to the front
 // line and only count once they get there. Winning a wave offers a choice of
-// three rewards, including special gears that make placement matter.
+// three rewards, including special gears that make placement matter. Every
+// fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
@@ -35,6 +36,14 @@ const MAX_FLYERS = 30;
 const MAX_PARTICLES = 200;
 const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
+const BOSS_EVERY_WAVES = 5;
+const BOSS_HP_SCALE = 1.5; // boss health vs the soldiers a normal wave would take to win
+const BOSS_PRESSURE = 0.12; // enemies the boss brings per second, as a share of the wave's starting army
+const BOSS_FIRST_ATTACK_SECONDS = 5;
+const BOSS_ATTACK_SECONDS = 8; // time between rust attacks
+const BOSS_WARNING_SECONDS = 1; // the boss glows for this long before it attacks
+const BOSS_RUST_SHARE = 0.25; // share of working gears rusted by each attack
+const BOSS_RUST_MAX_PER_ATTACK = 5; // keeps a big machine possible to repair by hand
 const OVERDRIVE_MULTIPLIER = 3; // main gear speed while overdrive is on
 const OVERDRIVE_SECONDS = 5;
 const OVERDRIVE_COOLDOWN_SECONDS = 30;
@@ -57,6 +66,7 @@ const DRIVER_PALETTE = { light: "#dfe5ea", mid: "#8d99a6", dark: "#3f4a55", rece
 const GEAR_PALETTE = { light: "#f3d98a", mid: "#c99a35", dark: "#7a5716", recess: "#a97f28", hub: "#f6e6ae" };
 const BIG_PALETTE = { light: "#a9d4ff", mid: "#4f8fd0", dark: "#1f4a7a", recess: "#3a74b0", hub: "#d8ecff" };
 const BOOSTER_PALETTE = { light: "#c8f59a", mid: "#6fb83f", dark: "#2f6d18", recess: "#559a2c", hub: "#e4fbc9" };
+const RUST_PALETTE = { light: "#a58a78", mid: "#6e5343", dark: "#33241b", recess: "#594234", hub: "#c9b3a3" };
 const BOMB_PALETTE = { light: "#ffb3a0", mid: "#cf5238", dark: "#6e1f10", recess: "#ad3f28", hub: "#ffe0d6" };
 
 // hits: how many hits fill the gear (0 means it never fills). A full gear
@@ -89,6 +99,10 @@ const REWARDS = [
 // rate is roughly steady, so this acceleration is what guarantees every
 // wave ends: take it out and the two sides can settle into a balance where
 // neither threshold is ever reached.
+function isBossWave(forWave) {
+  return forWave % BOSS_EVERY_WAVES === 0;
+}
+
 function enemyGrowthPerSec(wave, waveTime) {
   return ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
 }
@@ -101,7 +115,7 @@ let boardCanvas, boardCtx, battleCanvas, battleCtx;
 let boardCssW = 0, boardCssH = 0, cellSize = 0;
 let battleCssW = 0, battleCssH = 0;
 
-// grid[row][col] = { type, ticks, ticksAnim, spinTarget, spinAnim, flash } for a
+// grid[row][col] = { type, ticks, ticksAnim, spinTarget, spinAnim, flash, rusted } for a
 //                  normal gear, plus { driver: true, angle, spin } for the
 //                  one-tooth gear, or null for an empty cell
 let grid = [];
@@ -115,6 +129,7 @@ let driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
 let waveLead = WAVE_START_LEAD; // player's army vs the enemy's when a new wave begins
 let gearPriceScale = 1;
 let rewardOpenedAt = 0;
+let boss = null; // { hp, maxHp, attackIn, hitFlash, reinforcePerSec } during a boss wave
 let overdriveLeft = 0; // seconds of overdrive still running
 let overdriveCooldown = 0; // seconds until overdrive can be used again
 
@@ -163,16 +178,17 @@ function createBoard() {
 
 // The gear at a cell plus every gear connected to it, each spinning opposite
 // to the gear that drives it. Each gear appears once, even when a loop gives
-// it two routes. Empty when the cell has no normal gear.
+// it two routes. Rusted gears are stuck, so hits stop there. Empty when the
+// cell has no working normal gear.
 function connectedGears(row, col, firstSpin) {
   const first = grid[row]?.[col];
-  if (!first || first.driver) return [];
+  if (!first || first.driver || first.rusted) return [];
   const seen = new Set([first]);
   const queue = [{ row, col, spin: firstSpin }];
   for (const cur of queue) {
     for (const [dr, dc] of TOOTH_DIRS) {
       const next = grid[cur.row + dr]?.[cur.col + dc];
-      if (!next || next.driver || seen.has(next)) continue;
+      if (!next || next.driver || next.rusted || seen.has(next)) continue;
       seen.add(next);
       queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin });
     }
@@ -192,7 +208,8 @@ function tickGear(row, col, driverSpin) {
 function boostersTouching(row, col) {
   let count = 0;
   for (const [dr, dc] of TOOTH_DIRS) {
-    if (grid[row + dr]?.[col + dc]?.type === "booster") count += 1;
+    const other = grid[row + dr]?.[col + dc];
+    if (other?.type === "booster" && !other.rusted) count += 1;
   }
   return count;
 }
@@ -324,6 +341,61 @@ function sendMarcher(side, value, delaySeconds = 0) {
   else marchers.push({ side, value, t: -delaySeconds / MARCH_SECONDS });
 }
 
+function bossMaxHp(forWave) {
+  const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
+  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE;
+}
+
+function damageBoss(amount) {
+  if (!boss) return;
+  boss.hp = Math.max(0, boss.hp - amount);
+  boss.hitFlash = 1;
+}
+
+function bossReinforcePerSec(enemyStart) {
+  return enemyStart * BOSS_PRESSURE;
+}
+
+function rustPerAttack(workingGears) {
+  return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * BOSS_RUST_SHARE));
+}
+
+// Every working gear the tooth can reach, so an attack always hurts the machine.
+function rustTargets() {
+  const targets = new Map();
+  for (const [dr, dc] of TOOTH_DIRS) {
+    for (const gear of connectedGears(DRIVER_ROW + dr, DRIVER_COL + dc, 1)) {
+      targets.set(grid[gear.row][gear.col], gear);
+    }
+  }
+  return [...targets.values()];
+}
+
+function bossAttack() {
+  const targets = rustTargets();
+  if (!targets.length) return;
+  const count = rustPerAttack(targets.length);
+  for (let i = 0; i < count; i++) {
+    const [{ row, col }] = targets.splice(Math.floor(Math.random() * targets.length), 1);
+    grid[row][col].rusted = true;
+    if (drag?.cell === grid[row][col]) drag = null;
+    spawnRustBurst(row, col);
+  }
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Rust! Tap the gears");
+  playRustSound();
+}
+
+function updateBoss(dt) {
+  if (!boss) return;
+  boss.hitFlash = Math.max(0, boss.hitFlash - dt / 0.2);
+  boss.attackIn -= dt;
+  if (boss.attackIn <= 0) {
+    boss.attackIn = BOSS_ATTACK_SECONDS;
+    bossAttack();
+  }
+}
+
 function overdriveReady() {
   return overdriveLeft <= 0 && overdriveCooldown <= 0;
 }
@@ -398,6 +470,11 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   if (!drag) return;
+  // Handling a rusted gear frees it, whether it was tapped or moved.
+  if (drag.cell.rusted) {
+    drag.cell.rusted = false;
+    playClankSound();
+  }
   const target = cellAt(boardPoint(e));
   if (canDropOn(target)) {
     grid[drag.row][drag.col] = target.cell;
@@ -458,9 +535,13 @@ function updateMarchers(dt) {
   for (const m of marchers) {
     m.t += dt / MARCH_SECONDS;
     if (m.t < 1) continue;
-    if (m.side === "player") playerPower += m.value;
+    if (m.side === "player") {
+      playerPower += m.value;
+      damageBoss(m.value);
+    }
     else if (m.side === "bomb") {
       enemyPower = Math.max(1, enemyPower - m.value);
+      damageBoss((m.value * WIN_RATIO) / (1 - WIN_RATIO));
       screenShake = Math.max(screenShake, BOMB_SHAKE);
       playBoomSound();
     }
@@ -482,6 +563,16 @@ function waveStartEnemy(forWave) {
 }
 
 function winWave() {
+  const bossBeaten = Boolean(boss);
+  boss = null;
+  for (const cell of grid.flat()) {
+    if (cell) cell.rusted = false;
+  }
+  if (bossBeaten) {
+    // Beating a boss recharges Overdrive on top of the usual reward.
+    overdriveLeft = 0;
+    overdriveCooldown = 0;
+  }
   wave += 1;
   waveTime = 0;
   marchers = [];
@@ -493,7 +584,7 @@ function winWave() {
     localStorage.setItem("gearfight_best_wave", String(bestWave));
   }
   playWinSound();
-  offerRewards();
+  offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`);
 }
 
 // Reset the balance of power so the new wave starts contested. Carrying the
@@ -504,6 +595,11 @@ function startWave() {
   peakRate = Math.max(peakRate, soldiersPerSecond());
   enemyPower = waveStartEnemy(wave);
   playerPower = enemyPower * waveLead;
+  if (isBossWave(wave)) {
+    const hp = bossMaxHp(wave);
+    boss = { hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower) };
+    playBossSound();
+  }
 }
 
 // One special gear (while there's room) plus two other rewards, so a choice
@@ -516,11 +612,11 @@ function pickRewards() {
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3);
 }
 
-function offerRewards() {
+function offerRewards(title) {
   gameState = "choosing";
   drag = null;
   rewardOpenedAt = performance.now();
-  document.getElementById("reward-title").textContent = `Wave ${wave - 1} won!`;
+  document.getElementById("reward-title").textContent = title;
   const list = document.getElementById("reward-options");
   list.replaceChildren();
   for (const reward of pickRewards()) {
@@ -549,7 +645,7 @@ function chooseReward(reward) {
   startWave();
   document.getElementById("reward-screen").classList.add("hidden");
   gameState = "playing";
-  showWaveBanner(`Wave ${wave}!`);
+  showWaveBanner(boss ? "Boss wave!" : `Wave ${wave}!`);
 }
 
 function gameOver() {
@@ -563,13 +659,14 @@ function gameOver() {
 function update(dt) {
   if (gameState !== "playing") return;
   updateOverdrive(dt);
+  updateBoss(dt);
   updateDrivers(dt);
   updateGearAnim(dt);
   updateMarchers(dt);
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  enemyBacklog += enemyGrowthPerSec(wave, waveTime) * dt;
+  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0)) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
     enemyBacklog -= newEnemies;
@@ -577,7 +674,8 @@ function update(dt) {
   }
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
-  if (ratio >= WIN_RATIO) winWave();
+  const won = boss ? boss.hp <= 0 : ratio >= WIN_RATIO;
+  if (won) winWave();
   else if (ratio <= LOSE_RATIO) gameOver();
 
   document.getElementById("wave-num").textContent = wave;
@@ -700,7 +798,7 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   const flashBoost = 1 + cell.flash * 0.06;
   const r = size * 0.48 * flashBoost;
   const spec = GEAR_TYPES[cell.type];
-  const palette = spec.palette;
+  const palette = cell.rusted ? RUST_PALETTE : spec.palette;
 
   // The gear body visibly turns one tooth per hit. It never resets, so it
   // keeps turning rather than snapping back.
@@ -723,7 +821,7 @@ function drawGearCell(ctx, cx, cy, size, cell) {
 
   // Progress ring — how close this gear is to sending a soldier. It stays
   // still while the body turns, so it always reads the same way.
-  const progress = spec.hits ? Math.max(0, Math.min(1, cell.ticksAnim / spec.hits)) : 0;
+  const progress = spec.hits && !cell.rusted ? Math.max(0, Math.min(1, cell.ticksAnim / spec.hits)) : 0;
   if (progress > 0) {
     ctx.beginPath();
     ctx.lineWidth = Math.max(2, size * 0.05);
@@ -734,6 +832,14 @@ function drawGearCell(ctx, cx, cy, size, cell) {
     ctx.stroke();
   }
 
+  if (cell.rusted) {
+    ctx.fillStyle = "#2a1b08";
+    ctx.font = `800 ${Math.round(r * 0.34)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("TAP", cx, cy + 1);
+    return;
+  }
   if (!spec.hits) {
     drawBolt(ctx, cx, cy, r * 0.34, palette.dark);
     return;
@@ -768,10 +874,10 @@ function drawBoostLinks(ctx) {
   ctx.fillStyle = `rgba(190, 255, 120, ${pulse})`;
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (grid[row][col]?.type !== "booster") continue;
+      if (grid[row][col]?.type !== "booster" || grid[row][col].rusted) continue;
       for (const [dr, dc] of TOOTH_DIRS) {
         const other = grid[row + dr]?.[col + dc];
-        if (!other || other.driver) continue;
+        if (!other || other.driver || other.rusted) continue;
         ctx.beginPath();
         ctx.arc((col + 0.5 + dc / 2) * cellSize, (row + 0.5 + dr / 2) * cellSize, cellSize * 0.09, 0, Math.PI * 2);
         ctx.fill();
@@ -866,6 +972,50 @@ function drawArmyRow(ctx, xStart, xEnd, y, power, color, dir) {
   }
 }
 
+// The boss stands just past the front line, glowing before each attack, and
+// flashes when soldiers hit it.
+function drawBoss(ctx, markerX, x1, y) {
+  const x = Math.min(x1 - 22, markerX + 30);
+  const warning = boss.attackIn < BOSS_WARNING_SECONDS;
+  ctx.save();
+  if (warning) {
+    ctx.shadowColor = "#ff3b1f";
+    ctx.shadowBlur = 18;
+  }
+  ctx.beginPath();
+  ctx.fillStyle = boss.hitFlash > 0 ? "#ffd9cf" : "#8c1d10";
+  ctx.arc(x, y, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a0d06";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(x + side * 6, y - 15);
+    ctx.lineTo(x + side * 16, y - 29);
+    ctx.lineTo(x + side * 15, y - 11);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = warning ? "#ffe14d" : "#fdf6e8";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(x + side * 7, y - 3, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBossBar(ctx, x0, x1) {
+  const barX = x0 + 36;
+  const barW = x1 - x0 - 72;
+  roundRectFill(ctx, barX, 4, barW, 12, 6, "#1c130a");
+  roundRectFill(ctx, barX, 4, barW * (boss.hp / boss.maxHp), 12, 6, "#d8432f");
+  ctx.font = "800 10px system-ui, sans-serif";
+  ctx.fillStyle = "#fdf6e8";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`BOSS ${Math.ceil(boss.hp)}`, barX + barW / 2, 10.5);
+}
+
 function drawBattle() {
   if (!battleCtx || battleCssW <= 0) return;
   const ctx = battleCtx;
@@ -904,6 +1054,7 @@ function drawBattle() {
     if (m.side === "bomb") drawBombIcon(ctx, x, battleCssH * 0.6);
     else drawArmyIcon(ctx, x, battleCssH * 0.6 - stride, m.side === "player" ? "#8fc0ff" : "#ff9a85");
   }
+  if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.5);
   for (const c of clashes) {
     ctx.beginPath();
     ctx.lineWidth = 2;
@@ -919,6 +1070,7 @@ function drawBattle() {
   ctx.fillText(String(Math.round(playerPower)), x0, 14);
   ctx.textAlign = "right";
   ctx.fillText(String(Math.round(enemyPower)), x1, 14);
+  if (boss) drawBossBar(ctx, x0, x1);
 }
 
 // =====================================================================
@@ -961,6 +1113,25 @@ function spawnToothSparks(row, col) {
       life: randomBetween(0.15, 0.35),
       size: randomBetween(1.5, 3),
       color: i % 2 ? "#ffcc33" : "#fff3c4",
+    });
+  }
+}
+
+function spawnRustBurst(row, col) {
+  const x = boardOrigin.x + (col + 0.5) * cellSize;
+  const y = boardOrigin.y + (row + 0.5) * cellSize;
+  for (let i = 0; i < 18; i++) {
+    const angle = randomBetween(0, Math.PI * 2);
+    const speed = randomBetween(30, 130);
+    spawnParticle({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: 120,
+      life: randomBetween(0.3, 0.7),
+      size: randomBetween(2, 5),
+      color: i % 2 ? "#a4552a" : "#6e3a1c",
     });
   }
 }
@@ -1136,6 +1307,16 @@ function playBoomSound() {
   noiseBurst(0.25, "lowpass", 700, 0.3);
 }
 
+function playBossSound() {
+  sweep(95, 45, 0.7, "sawtooth", 0.25);
+  noiseBurst(0.4, "lowpass", 500, 0.25);
+}
+
+function playRustSound() {
+  sweep(320, 90, 0.3, "sawtooth", 0.14);
+  noiseBurst(0.3, "bandpass", 900, 0.3);
+}
+
 function playOverdriveSound() {
   sweep(200, 1200, 0.5, "sawtooth", 0.1);
 }
@@ -1252,6 +1433,7 @@ function startNewRun() {
   driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
   waveLead = WAVE_START_LEAD;
   gearPriceScale = 1;
+  boss = null;
   overdriveLeft = 0;
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
   flyers = [];
