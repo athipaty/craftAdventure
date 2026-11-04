@@ -60,6 +60,32 @@ const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
 const SAVE_KEY = "gearfight_save";
 const RUN_SAVE_KEY = "gearfight_run";
+const BACKUP_FORMAT = "gearfight_backup";
+const BACKUP_VERSION = 1;
+const AWAY_MIN_MINUTES = 30; // shorter gaps pay nothing
+const AWAY_MAX_HOURS = 8;
+const AWAY_COINS_PER_HOUR = 4; // plus one per player level
+const DAILY_GOAL_WAVE = 10; // reach this in the daily challenge for its coins
+const DAILY_GOAL_COINS = 60;
+const HERO_LEVEL_WAVES = [0, 10, 30, 60, 100]; // waves won with a hero to reach each level
+const HERO_LEVEL_SPEED = 0.02; // main gear speed per hero level after the first
+const KNIGHT_RALLY_SECONDS = 3;
+const ARCHER_TRIPLE_EVERY = 3; // this strike hits three times as hard
+const BERSERKER_OVERDRIVE_SOLDIERS = 2;
+const FAR_PAYOUT_PER_STEP = 0.25;
+const LONE_PAYOUT_PER_SIDE = 0.5;
+const RULE_RUST_SECONDS = 12;
+const RULE_PRICY = 1.25;
+const RULE_SLOW_OVERDRIVE = 1.5;
+const RULE_SWARM = 1.25;
+const RULE_BOSS_EVERY = 4;
+const WARLORD_REINFORCE_SHARE = 0.12; // of the enemy's army, per attack
+const WYRM_DRAIN = 0.5; // share of each gear's progress left after an attack
+const QUEEN_FREEZE_SECONDS = 5;
+const MAGMA_MIN_GEARS = 6; // the Magma King only melts gears from a machine bigger than this
+const FINAL_BOSS_DRAW_SCALE = 1.25;
+const PACE_FIRST_WAVE = 4;
+const PACE_CHANCE = 0.35;
 const REROLLS_PER_RUN = 2;
 const SKIP_COINS = 3; // paid for passing on a reward choice
 const HEAD_START_WAVE = 6; // cleared worlds can start here
@@ -102,12 +128,16 @@ const PLAYER_TITLES = [
   { fromLevel: 50, name: "Gear Legend" },
 ];
 // Lifetime totals that keep the highest value reached instead of adding up.
-const BEST_STATS = ["owned", "worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
+const BEST_STATS = ["worldTier", "owned", "worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
 const ACHIEVEMENTS = [
   { id: "world1", name: "Out of the woods", text: "Clear Green Forest", stat: "worlds", target: 1, coins: 30 },
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "tier2", name: "Not so hard", text: "Clear a world on Hard", stat: "worldTier", target: 2, coins: 150 },
+  { id: "tier3", name: "Expert engineer", text: "Clear a world on Expert", stat: "worldTier", target: 3, coins: 300 },
+  { id: "daily1", name: "Daily driver", text: "Reach the goal of a daily challenge", stat: "dailyGoals", target: 1, coins: 30 },
+  { id: "daily7", name: "Habit forming", text: "Reach the goal of 7 daily challenges", stat: "dailyGoals", target: 7, coins: 120 },
   { id: "event1", name: "Challenger", text: "Finish a weekly challenge", stat: "events", target: 1, coins: 30 },
   { id: "event5", name: "Week after week", text: "Finish 5 weekly challenges", stat: "events", target: 5, coins: 100 },
   { id: "owned5", name: "Collector", text: "Unlock 5 heroes or colours", stat: "owned", target: 5, coins: 40 },
@@ -186,6 +216,31 @@ const WORLDS = [
     theme: { skyTop: "#2a1020", skyBottom: "#a8381c", hillBack: "#4a2020", hillFront: "#301418", ground: "#3a2018", groundDark: "#2a1610", deco: "embers" },
   },
 ];
+// Rules that change a run, for a world's harder levels and the daily challenge.
+const RULES = {
+  pricy: "gears cost 25% more",
+  rusty: "rust attacks on every wave",
+  bossy: "a boss every 4 waves",
+  slowOverdrive: "Overdrive recharges slower",
+  swarm: "enemies grow 25% faster",
+};
+// Level 0 is the world as it is. scale: added to how much bigger each wave starts.
+// waveSeconds: multiplies how long the machine's best output takes to win a wave,
+// which is what sets a wave's size once a machine is big. growth: how fast enemies
+// grow during a wave.
+const WORLD_LEVELS = [
+  { name: "Normal", scale: 0, waveSeconds: 1, growth: 1, coins: 1, clearCoins: 1 },
+  { name: "Hard", scale: 0.04, waveSeconds: 1.3, growth: 1.3, coins: 1.25, clearCoins: 1.5 },
+  { name: "Expert", scale: 0.08, waveSeconds: 1.6, growth: 1.6, coins: 1.5, clearCoins: 2 },
+];
+const WORLD_LEVEL_RULES = {
+  forest: [[], ["pricy"], ["pricy", "rusty"]],
+  desert: [[], ["bossy"], ["bossy", "swarm"]],
+  ice: [[], ["slowOverdrive"], ["slowOverdrive", "rusty"]],
+  lava: [[], ["swarm"], ["swarm", "pricy"]],
+};
+// Mixed day by day for the daily challenge, so that everyone gets the same one.
+const DAILY_RULE_SETS = [["pricy"], ["rusty"], ["swarm"], ["bossy"], ["slowOverdrive"], ["pricy", "swarm"], ["rusty", "slowOverdrive"], ["bossy", "pricy"]];
 const EVENT_CLEAR_COINS = 150;
 const EVENT_FINAL_WAVE = 15;
 const EVENT_BASE_SCALE = 1.55;
@@ -198,11 +253,11 @@ const GUARDIAN_BOSS = 0.85; // bosses have this share of their health and enemie
 
 // Each hero changes how a run plays. helmet and plume colour the fighter.
 const HEROES = [
-  { id: "knight", name: "Knight", text: "The all-rounder", cost: 0, level: 1, helmet: "#c3ccd5", plume: null },
-  { id: "archer", name: "Stormcaller", text: "Lightning hits 50% harder and recharges faster", cost: 150, level: 1, helmet: "#7fb85a", plume: "#ffe14d" },
-  { id: "engineer", name: "Engineer", text: "Start with 1 more gear, main gear 5% faster", cost: 250, level: 3, helmet: "#e0a92e", plume: "#3a7ddb" },
-  { id: "berserker", name: "Berserker", text: "Overdrive lasts 3 seconds longer", cost: 350, level: 5, helmet: "#a32a1c", plume: "#ff8a3d" },
-  { id: "guardian", name: "Guardian", text: "Bosses have 15% less health and help", cost: 500, level: 8, helmet: "#e8f2fa", plume: "#8fe7ff" },
+  { id: "knight", name: "Knight", text: "A full Rally takes 3 seconds, not 5", cost: 0, level: 1, helmet: "#c3ccd5", plume: null },
+  { id: "archer", name: "Stormcaller", text: "Lightning hits harder and recharges faster, and every 3rd strike is triple", cost: 150, level: 1, helmet: "#7fb85a", plume: "#ffe14d" },
+  { id: "engineer", name: "Engineer", text: "Starts with a Booster gear, main gear 5% faster", cost: 250, level: 3, helmet: "#e0a92e", plume: "#3a7ddb" },
+  { id: "berserker", name: "Berserker", text: "Overdrive lasts 3 seconds longer, and soldiers count double during it", cost: 350, level: 5, helmet: "#a32a1c", plume: "#ff8a3d" },
+  { id: "guardian", name: "Guardian", text: "Bosses are 15% weaker, and the first rust attack of each wave is blocked", cost: 500, level: 8, helmet: "#e8f2fa", plume: "#8fe7ff" },
 ];
 const ARMY_SKINS = [
   { id: "blue", name: "Blue army", cost: 0, level: 1, tunic: null, swatch: "#3a7ddb" },
@@ -277,11 +332,15 @@ const BOMB_PALETTE = { light: "#ffb3a0", mid: "#cf5238", dark: "#6e1f10", recess
 // hits: how many hits fill the gear (0 means it never fills). A full gear
 // sends `soldiers` or blasts `enemies`. A booster gives the gears touching it
 // one extra hit each time they are hit.
+const FAR_PALETTE = { light: "#d8bdf5", mid: "#8a5ad0", dark: "#46257a", recess: "#6f44b0", hub: "#efe2fb" };
+const LONE_PALETTE = { light: "#a8ecd8", mid: "#35a890", dark: "#155e50", recess: "#278a76", hub: "#d8f8ee" };
 const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
   big: { hits: 8, soldiers: 5, palette: BIG_PALETTE },
   booster: { hits: 0, palette: BOOSTER_PALETTE },
   bomb: { hits: 8, enemies: 2, palette: BOMB_PALETTE },
+  far: { hits: 4, soldiers: 1, palette: FAR_PALETTE, mark: "FAR" },
+  lone: { hits: 4, soldiers: 1, palette: LONE_PALETTE, mark: "LONE" },
 };
 
 const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
@@ -312,6 +371,24 @@ const NEXT_WAVE_HINTS = {
   storm: "rust attacks",
   double: "your soldiers count double",
   blocked: "a row is blocked",
+  warlord: "calls reinforcements",
+  wyrm: "drains gear progress",
+  queen: "freezes the main gear",
+  magma: "melts your gears",
+  paceRush: "short and fierce",
+  paceSiege: "long, pays 5 coins",
+};
+// Each world's last boss has an attack no other boss has.
+const FINAL_BOSSES = {
+  forest: { id: "warlord", name: "Goblin Warlord", color: "#3f7d2a", final: true },
+  desert: { id: "wyrm", name: "Sand Wyrm", color: "#b5823c", final: true },
+  ice: { id: "queen", name: "Frost Queen", color: "#3f7fc0", final: true },
+  lava: { id: "magma", name: "Magma King", color: "#c9402f", final: true },
+};
+// enemy: size of the army at the start. growth: how fast it grows after that.
+const WAVE_PACES = {
+  rush: { id: "rush", name: "Rush wave", enemy: 0.55, growth: 1.6 },
+  siege: { id: "siege", name: "Siege wave", enemy: 1.5, growth: 0.7, coins: 5 },
 };
 const BOSS_KINDS = [
   { id: "rust", name: "Rust King", color: "#8c1d10" },
@@ -418,6 +495,8 @@ const REWARDS = [
   { id: "veterans", name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
   { id: "cheaperGears", name: "Cheaper gears", text: "New gears cost 20% less", apply: () => { gearPriceScale *= DISCOUNT_REWARD; } },
   { id: "reinforcements", oneOff: true, name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
+  { id: "farGear", name: "Far gear", text: "Pays 25% more for each step away from the main gear", gear: "far" },
+  { id: "loneGear", name: "Lone gear", text: "Pays 50% more for each empty space beside it", gear: "lone" },
   { id: "cooling", name: "Cooling oil", text: "Overdrive recharges 20% faster", max: 2 },
   { id: "staticCharge", name: "Static charge", text: "Lightning strikes hit 30% harder", max: 3 },
   { id: "scrapDealer", name: "Scrap dealer", text: "Scrapping gives 30% more soldiers", max: 1 },
@@ -481,7 +560,7 @@ const TIPS = [
 // wave ends: take it out and the two sides can settle into a balance where
 // neither threshold is ever reached.
 function isBossWave(forWave) {
-  return forWave % bossEvery() === 0;
+  return forWave % bossEvery() === 0 || isFinalWave(forWave);
 }
 
 function enemyGrowthPerSec(wave, waveTime) {
@@ -530,6 +609,16 @@ let runEventWeek = 0; // the week this run's weekly challenge belongs to
 let savedRun = null; // a run left unfinished last time, until it's continued or given up
 let runSaveIn = RUN_SAVE_SECONDS;
 let rerollsLeft = REROLLS_PER_RUN;
+let worldLevel = 0; // index into WORLD_LEVELS for the run being chosen or played
+let currentDaily = null; // { day, world, rules } during a daily challenge
+let runRules = []; // ids from RULES in force this run
+let runCoinScale = 1;
+let runBonusCoins = 0;
+let runKey = ""; // which world or challenge the run belongs to, for the play record
+let wavePace = null; // this wave's entry in WAVE_PACES
+let strikeCount = 0;
+let rustBlocked = false; // the Guardian's block has been used this wave
+let restoringBackup = false;
 let nextWavePlan = null; // { boss } or { enemy, event }: the wave after this reward choice
 let runStartWave = 1; // later than 1 for a head start, which earns nothing for the waves skipped
 let nextRunHeadStart = false;
@@ -617,9 +706,17 @@ function loadSave() {
       music: data?.music !== false,
       vibrate: data?.vibrate !== false,
       speed: data?.speed === 2 ? 2 : 1,
+      worldLevels: data?.worldLevels && typeof data.worldLevels === "object" ? data.worldLevels : {},
+      heroWaves: data?.heroWaves && typeof data.heroWaves === "object" ? data.heroWaves : {},
+      funnel: data?.funnel && typeof data.funnel === "object" ? data.funnel : {},
+      playSeconds: Math.max(0, Number(data?.playSeconds) || 0),
+      lastSeen: Number(data?.lastSeen) || 0,
+      dailyChallengeDay: typeof data?.dailyChallengeDay === "string" ? data.dailyChallengeDay : "",
+      dailyChallengeBest: Number(data?.dailyChallengeBest) || 0,
+      dailyChallengePaid: typeof data?.dailyChallengePaid === "string" ? data.dailyChallengePaid : "",
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
+    return { worldLevels: {}, heroWaves: {}, funnel: {}, playSeconds: 0, lastSeen: 0, dailyChallengeDay: "", dailyChallengeBest: 0, dailyChallengePaid: "", music: true, vibrate: true, speed: 1, coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
   }
 }
 
@@ -630,6 +727,7 @@ function isValidQuest(quest) {
 
 function writeSave() {
   try {
+    save.lastSeen = Date.now();
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   } catch {
     // Without storage, progress simply lasts until the page closes.
@@ -877,6 +975,29 @@ function closeQuests() {
   renderWorkshop();
 }
 
+function ruleOn(id) {
+  return runRules.includes(id);
+}
+
+// Daily and weekly challenges play at the normal level.
+function runLevel() {
+  return WORLD_LEVELS[currentDaily || currentEvent ? 0 : worldLevel];
+}
+
+function levelRules(world, level) {
+  return WORLD_LEVEL_RULES[WORLDS[world].id][level];
+}
+
+function rulesText(rules) {
+  return rules.map((rule) => RULES[rule]).join(", ");
+}
+
+// How many waves have been won with a hero decides its level, from 1.
+function heroLevel(id) {
+  const waves = Number(save.heroWaves[id]) || 0;
+  return HERO_LEVEL_WAVES.filter((needed) => waves >= needed).length;
+}
+
 function heroIs(id) {
   return save.hero === id;
 }
@@ -892,7 +1013,8 @@ function weeklyEvent() {
 }
 
 function worldScale() {
-  return currentEvent ? EVENT_BASE_SCALE + (currentEvent.scaleBonus || 0) : WORLDS[currentWorld].scale;
+  if (currentDaily) return EVENT_BASE_SCALE;
+  return currentEvent ? EVENT_BASE_SCALE + (currentEvent.scaleBonus || 0) : WORLDS[currentWorld].scale + WORLD_LEVELS[worldLevel].scale;
 }
 
 function finalWaveNumber() {
@@ -900,7 +1022,8 @@ function finalWaveNumber() {
 }
 
 function bossEvery() {
-  return currentEvent?.id === "bossRush" ? 3 : BOSS_EVERY_WAVES;
+  if (currentEvent?.id === "bossRush") return 3;
+  return ruleOn("bossy") ? RULE_BOSS_EVERY : BOSS_EVERY_WAVES;
 }
 
 // Applies the chosen gear colour. Special gears keep theirs so they stay easy to read.
@@ -977,6 +1100,11 @@ function renderCollection() {
       }
       const text = document.createElement("span");
       text.textContent = item.text || (owned ? "Tap to use" : "A new look");
+      if (group === "hero" && owned) {
+        const level = heroLevel(item.id);
+        const next = HERO_LEVEL_WAVES[level];
+        text.textContent += `. Level ${level}${next ? ` (${Number(save.heroWaves[item.id]) || 0}/${next} waves)` : " (top)"}`;
+      }
       const state = document.createElement("em");
       state.textContent = selected ? "In use" : owned ? "Use" : !levelOk ? `Level ${item.level}` : `${item.cost} coins`;
       button.append(name, text, state);
@@ -1121,6 +1249,24 @@ function worldHasEnemy(id) {
   return WORLDS[currentEvent ? 0 : currentWorld].enemies.some(([enemy]) => enemy === id);
 }
 
+// Far and Lone gears pay for where they are, so placing them is a real choice.
+function gearPlacePayout(row, col) {
+  const cell = grid[row][col];
+  if (cell.type === "far") {
+    const steps = Math.abs(row - DRIVER_ROW) + Math.abs(col - DRIVER_COL);
+    return 1 + Math.max(0, steps - 1) * FAR_PAYOUT_PER_STEP;
+  }
+  if (cell.type === "lone") {
+    const empty = TOOTH_DIRS.filter(([dr, dc]) => {
+      const r = row + dr;
+      const c = col + dc;
+      return r >= 0 && r < ROWS && c >= 0 && c < COLS && !grid[r][c];
+    }).length;
+    return 1 + empty * LONE_PAYOUT_PER_SIDE;
+  }
+  return 1;
+}
+
 function comboLinePayout() {
   return COMBO_LINE_PAYOUT + partCount("patterns") * PART_COMBO;
 }
@@ -1148,7 +1294,7 @@ function soldiersPerSecond() {
       if (!spec.hits) continue;
       const level = levelPayout(grid[gear.row][gear.col].level) * armyStrength();
       const cell = grid[gear.row][gear.col];
-      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * gearPartPayout(cell.type) * (cell.comboLine ? comboLinePayout() : 1);
+      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1);
       const fill = cell.comboBlock ? comboBlockFill() : 1;
       perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * fill * payout) / spec.hits;
     }
@@ -1167,7 +1313,7 @@ function hitGear(gear, hits) {
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    const level = levelPayout(cell.level) * gearPartPayout(cell.type) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
+    const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
     else launchBomb(spec.enemies * level);
   }
@@ -1243,7 +1389,7 @@ function mergeGears(fromRow, fromCol, toRow, toCol) {
 }
 
 function gearCost() {
-  const eventScale = currentEvent?.id === "bargain" ? 0.5 : 1;
+  const eventScale = (currentEvent?.id === "bargain" ? 0.5 : 1) * (ruleOn("pricy") ? RULE_PRICY : 1);
   return Math.max(1, Math.round(GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gearsBought) * gearPriceScale * eventScale));
 }
 
@@ -1370,7 +1516,8 @@ function updateScrapZone() {
 }
 
 function sendSoldiers(baseCount) {
-  const count = waveEvent?.id === "double" ? baseCount * 2 : baseCount;
+  const berserk = heroIs("berserker") && overdriveLeft > 0 ? BERSERKER_OVERDRIVE_SOLDIERS : 1;
+  const count = baseCount * berserk * (waveEvent?.id === "double" ? 2 : 1);
   sendMarcher("player", count, MARCH_ARRIVED);
   totalArmyScore += count / armyStrength();
   playFireSound();
@@ -1444,6 +1591,12 @@ function rustTargets() {
 }
 
 function rustAttack() {
+  if (heroIs("guardian") && !rustBlocked) {
+    rustBlocked = true;
+    showToast("Rust blocked!");
+    playClankSound();
+    return;
+  }
   const targets = rustTargets();
   if (!targets.length) return;
   const count = rustPerAttack(targets.length);
@@ -1510,10 +1663,60 @@ function shieldAttack() {
   playRustSound();
 }
 
+function warlordAttack() {
+  enemyPower *= 1 + WARLORD_REINFORCE_SHARE;
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Reinforcements!");
+  playRustSound();
+}
+
+function wyrmAttack() {
+  for (const cell of grid.flat()) {
+    if (cell && !cell.driver) cell.ticks *= WYRM_DRAIN;
+  }
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Sandstorm! Progress lost");
+  playRustSound();
+}
+
+function queenAttack() {
+  frozenFor = QUEEN_FREEZE_SECONDS / (1 + partCount("antifreeze"));
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("Frozen! Strike to thaw");
+  playRustSound();
+}
+
+// Melts the weakest gear, but never takes a small machine apart.
+function magmaAttack() {
+  const gears = [];
+  grid.forEach((row, r) => row.forEach((cell, c) => {
+    if (cell && !cell.driver) gears.push({ r, c, level: cell.level });
+  }));
+  if (gears.length <= MAGMA_MIN_GEARS) {
+    burnGears();
+    return;
+  }
+  const { r, c } = gears.reduce((weakest, gear) => (gear.level < weakest.level ? gear : weakest));
+  if (drag?.cell === grid[r][c]) drag = null;
+  grid[r][c] = null;
+  spawnRustBurst(r, c, "#ff8a3d", "#ffcc33");
+  screenShake = Math.max(screenShake, BOMB_SHAKE);
+  showToast("A gear melted!");
+  playRustSound();
+}
+
+function bossKind(id) {
+  return BOSS_KINDS.find((kind) => kind.id === id) || Object.values(FINAL_BOSSES).find((kind) => kind.id === id);
+}
+
 function bossAttack() {
   if (boss.kind.id === "wall") wallAttack();
   else if (boss.kind.id === "scramble") scrambleAttack();
   else if (boss.kind.id === "shield") shieldAttack();
+  else if (boss.kind.id === "warlord") warlordAttack();
+  else if (boss.kind.id === "wyrm") wyrmAttack();
+  else if (boss.kind.id === "queen") queenAttack();
+  else if (boss.kind.id === "magma") magmaAttack();
   else rustAttack();
 }
 
@@ -1534,7 +1737,9 @@ function strikeEnemy() {
   questEvent("strikes");
   buzz(15);
   frozenFor = 0;
-  const boost = (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
+  strikeCount += 1;
+  const triple = heroIs("archer") && strikeCount % ARCHER_TRIPLE_EVERY === 0 ? 3 : 1;
+  const boost = triple * (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
@@ -1582,27 +1787,38 @@ function blockableRows() {
 
 // Chosen when the reward screen opens, so that it can say what's coming.
 function planWave(forWave) {
+  const random = runRandom(`wave${forWave}`);
+  if (isFinalWave(forWave) && !currentEvent) return { boss: FINAL_BOSSES[WORLDS[currentWorld].id].id };
   if (isBossWave(forWave)) {
     // Each world's bosses begin at a different kind, so worlds don't repeat.
     return { boss: BOSS_KINDS[(Math.round(forWave / bossEvery()) - 1 + currentWorld) % BOSS_KINDS.length].id };
   }
   const options = WORLDS[currentEvent ? 0 : currentWorld].enemies.filter(([, fromWave]) => forWave >= fromWave);
-  const [enemy] = options[Math.floor(Math.random() * options.length)];
-  // Plain goblins leave the wave free for a wave event.
-  if (enemy !== "goblin" || forWave < WAVE_EVENT_FIRST_WAVE || Math.random() >= WAVE_EVENT_CHANCE) return { enemy, event: null };
-  const events = WAVE_EVENTS.filter((e) => e.id !== lastEventId && (!e.available || e.available()));
-  const event = events[Math.floor(Math.random() * events.length)];
-  lastEventId = event?.id ?? lastEventId;
-  return { enemy, event: event?.id ?? null };
+  const [enemy] = options[Math.floor(random() * options.length)];
+  // Plain goblins leave the wave free for a wave event. Any other wave can change pace.
+  if (enemy === "goblin" && forWave >= WAVE_EVENT_FIRST_WAVE && random() < WAVE_EVENT_CHANCE) {
+    const events = WAVE_EVENTS.filter((e) => e.id !== lastEventId && (!e.available || e.available()));
+    const event = events[Math.floor(random() * events.length)];
+    if (event) {
+      lastEventId = event.id;
+      return { enemy, event: event.id, pace: null };
+    }
+  }
+  const pace = forWave >= PACE_FIRST_WAVE && random() < PACE_CHANCE ? (random() < 0.5 ? "rush" : "siege") : null;
+  return { enemy, event: null, pace };
 }
 
 function nextWaveText(plan) {
   if (plan.boss) {
-    const kind = BOSS_KINDS.find((k) => k.id === plan.boss);
+    const kind = bossKind(plan.boss);
     return `Next: ${isFinalWave(wave) ? "Final boss, " : ""}${kind.name} (${NEXT_WAVE_HINTS[kind.id]})`;
   }
   if (plan.event) {
     return `Next: ${WAVE_EVENTS.find((e) => e.id === plan.event).name} (${NEXT_WAVE_HINTS[plan.event]})`;
+  }
+  if (plan.pace) {
+    const who = plan.enemy !== "goblin" ? `, ${ENEMY_TYPES[plan.enemy].name}` : "";
+    return `Next: ${WAVE_PACES[plan.pace].name}${who} (${NEXT_WAVE_HINTS[plan.pace === "rush" ? "paceRush" : "paceSiege"]})`;
   }
   if (plan.enemy !== "goblin") return `Next: ${ENEMY_TYPES[plan.enemy].name} (${NEXT_WAVE_HINTS[plan.enemy]})`;
   return `Next: ${enemyRank().plural}`;
@@ -1645,6 +1861,10 @@ function updateBoss(dt) {
   }
 }
 
+function rallyFullSeconds() {
+  return heroIs("knight") ? KNIGHT_RALLY_SECONDS : RALLY_FULL_SECONDS;
+}
+
 function rallyBonus() {
   return RALLY_BONUS + partCount("warDrums") * PART_RALLY_BONUS;
 }
@@ -1658,7 +1878,7 @@ function toggleRally() {
   }
   rallying = false;
   if (rallyReserve > 0) {
-    const bonus = rallyHeld >= RALLY_FULL_SECONDS ? rallyBonus() : 1;
+    const bonus = rallyHeld >= rallyFullSeconds() ? rallyBonus() : 1;
     marchers.push({ side: "player", value: rallyReserve * bonus, t: RALLY_CHARGE_START, charge: true });
     rallyReserve = 0;
     screenShake = Math.max(screenShake, BOMB_SHAKE);
@@ -1674,7 +1894,7 @@ function resetRally() {
 
 function updateRallyButton() {
   const button = document.getElementById("rally-btn");
-  const full = rallying && rallyHeld >= RALLY_FULL_SECONDS;
+  const full = rallying && rallyHeld >= rallyFullSeconds();
   const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.round(rallyReserve)}`;
   if (button.textContent !== label) button.textContent = label;
   button.disabled = gameState !== "playing";
@@ -1684,7 +1904,7 @@ function updateRallyButton() {
 
 function overdriveRecharge() {
   const seconds = OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
-  const cooled = seconds * Math.pow(PART_COOLING, partCount("cooling"));
+  const cooled = seconds * Math.pow(PART_COOLING, partCount("cooling")) * (ruleOn("slowOverdrive") ? RULE_SLOW_OVERDRIVE : 1);
   return currentEvent?.id === "overdrive" ? cooled / 3 : cooled;
 }
 
@@ -1872,7 +2092,7 @@ function updateMarchers(dt) {
 function waveStartEnemy(forWave) {
   const scheduled = BASE_POWER * Math.pow(worldScale(), forWave - 1);
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
-  return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS) / soldiersToWinPerEnemy);
+  return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS * runLevel().waveSeconds) / soldiersToWinPerEnemy);
 }
 
 function winWave() {
@@ -1911,6 +2131,8 @@ function winWave() {
   eventReinforcePerSec = 0;
   blockedCells.clear();
   resetRally();
+  if (wavePace?.coins) runBonusCoins += wavePace.coins;
+  wavePace = null;
   spawnConfetti();
   if (wave > bestWave) {
     bestWave = wave;
@@ -1921,6 +2143,7 @@ function winWave() {
   enemyReinforcePerSec = 0;
   frozenFor = 0;
   if (!currentEvent) save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
+  checkDailyGoal();
   if (clearedWorld) clearWorld();
   else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`, bossBeaten);
 }
@@ -1931,14 +2154,16 @@ function winWave() {
 // the reward is picked so the wave is sized for the machine it will face.
 function startWave() {
   peakRate = Math.max(peakRate, soldiersPerSecond());
-  enemyPower = waveStartEnemy(wave);
-  playerPower = enemyPower * (waveLead + nextWaveBonus);
-  nextWaveBonus = 0;
   const plan = nextWavePlan || planWave(wave);
   nextWavePlan = null;
+  wavePace = WAVE_PACES[plan.pace] || null;
+  rustBlocked = false;
+  enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1);
+  playerPower = enemyPower * (waveLead + nextWaveBonus);
+  nextWaveBonus = 0;
   if (plan.boss) {
     const hp = bossMaxHp(wave);
-    const kind = BOSS_KINDS.find((k) => k.id === plan.boss);
+    const kind = bossKind(plan.boss);
     boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
   } else {
@@ -1971,10 +2196,10 @@ function burnGears() {
 
 function updateEnemyType(dt) {
   frozenFor = Math.max(0, frozenFor - dt);
-  if (currentEvent?.id === "rust" && !boss) {
+  if ((currentEvent?.id === "rust" || ruleOn("rusty")) && !boss) {
     eventRustIn -= dt;
     if (eventRustIn <= 0) {
-      eventRustIn = EVENT_RUST_SECONDS;
+      eventRustIn = ruleOn("rusty") ? RULE_RUST_SECONDS : EVENT_RUST_SECONDS;
       rustAttack();
     }
   }
@@ -2019,10 +2244,11 @@ function rewardRarity(reward) {
 // ones less likely to come up. The power in the sort key is a weighted shuffle.
 function pickRewards(lucky, exclude = []) {
   const weights = lucky ? LUCKY_RARITY_WEIGHTS : RARITY_WEIGHTS;
+  const random = runRandom(`reward${wave}:${rerollsLeft}`);
   const all = REWARDS.filter(rewardIsOpen);
   const fresh = all.filter((r) => !exclude.includes(r.id));
   const open = fresh.length >= 3 ? fresh : all;
-  const shuffled = open.map((r) => [Math.pow(Math.random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
+  const shuffled = open.map((r) => [Math.pow(random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
@@ -2124,9 +2350,12 @@ function clearWorld() {
   }
   gameState = "worldclear";
   const world = WORLDS[currentWorld];
-  const firstTime = !save.worldsCleared[world.id];
-  const coins = firstTime ? world.clearCoins : REPEAT_CLEAR_COINS;
+  const tier = worldLevel + 1;
+  const firstTime = clearedTier(world) < tier;
+  const coins = firstTime ? Math.round(world.clearCoins * WORLD_LEVELS[worldLevel].clearCoins) : REPEAT_CLEAR_COINS;
   save.worldsCleared[world.id] = true;
+  save.worldLevels[world.id] = Math.max(clearedTier(world), tier);
+  recordStat("worldTier", tier);
   save.coins += coins;
   gainXp(WORLD_CLEAR_XP);
   recordStat("worlds", clearedWorldCount());
@@ -2137,6 +2366,11 @@ function clearWorld() {
   rewardTimer = setTimeout(showWorldClear, VICTORY_MS);
 }
 
+// The highest level of a world cleared: 0 for none, 1 for Normal, then Hard and Expert.
+function clearedTier(world) {
+  return Math.max(Number(save.worldLevels[world.id]) || 0, save.worldsCleared[world.id] ? 1 : 0);
+}
+
 function clearedWorldCount() {
   return WORLDS.filter((w) => save.worldsCleared[w.id]).length;
 }
@@ -2145,7 +2379,7 @@ function showWorldClear() {
   if (gameState !== "worldclear") return;
   const world = WORLDS[currentWorld];
   const next = currentEvent ? null : WORLDS[currentWorld + 1];
-  document.getElementById("world-clear-title").textContent = `${currentEvent ? currentEvent.name : world.name} ${currentEvent ? "complete" : "cleared"}!`;
+  document.getElementById("world-clear-title").textContent = `${currentEvent ? currentEvent.name : world.name}${!currentEvent && worldLevel ? ` (${WORLD_LEVELS[worldLevel].name})` : ""} ${currentEvent ? "complete" : "cleared"}!`;
   document.getElementById("world-clear-coins").textContent = `+${lastClear.coins} coins`;
   document.getElementById("world-clear-next").textContent = next
     ? (lastClear.firstTime ? `${next.name} unlocked!` : "")
@@ -2164,6 +2398,7 @@ function goToNextWorld() {
   if (currentEvent || !WORLDS[currentWorld + 1]) return;
   bankRun();
   currentWorld += 1;
+  worldLevel = 0;
   startNewRun();
 }
 
@@ -2178,6 +2413,96 @@ function worldUnlocked(index) {
   return index === 0 || Boolean(save.worldsCleared[WORLDS[index - 1].id]);
 }
 
+function startChosenRun({ world, event = null, level = 0, daily = null, headStart = false }) {
+  currentWorld = world;
+  currentEvent = event;
+  worldLevel = level;
+  currentDaily = daily;
+  nextRunHeadStart = headStart;
+  document.getElementById("worlds-screen").classList.add("hidden");
+  startNewRun();
+}
+
+// A small, repeatable random number source, so a day's challenge is the same for
+// everyone without a server.
+function hashText(text) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededRandom(seed) {
+  let state = seed;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function runRandom(salt) {
+  return currentDaily ? seededRandom(hashText(`${currentDaily.day}:${salt}`)) : Math.random;
+}
+
+function makeDaily(day) {
+  const random = seededRandom(hashText(`daily:${day}`));
+  const world = Math.floor(random() * WORLDS.length);
+  return { day, world, rules: DAILY_RULE_SETS[Math.floor(random() * DAILY_RULE_SETS.length)] };
+}
+
+function dailyBestToday() {
+  return save.dailyChallengeDay === todayKey() ? save.dailyChallengeBest : 0;
+}
+
+function checkDailyGoal() {
+  if (!currentDaily || currentDaily.day !== todayKey() || wave < DAILY_GOAL_WAVE || save.dailyChallengePaid === currentDaily.day) return;
+  save.dailyChallengePaid = currentDaily.day;
+  save.coins += DAILY_GOAL_COINS;
+  recordStat("dailyGoals");
+  writeSave();
+  announce(`Daily goal reached! +${DAILY_GOAL_COINS} coins`);
+}
+
+function dailyCard() {
+  const daily = makeDaily(todayKey());
+  const button = document.createElement("button");
+  button.className = "world-card weekly";
+  const name = document.createElement("b");
+  name.textContent = "Daily challenge";
+  const detail = document.createElement("span");
+  const best = dailyBestToday();
+  detail.textContent = `${WORLDS[daily.world].name}: ${rulesText(daily.rules)}. Reach wave ${DAILY_GOAL_WAVE} for ${DAILY_GOAL_COINS} coins${best ? `. Best today: wave ${best}` : ""}`;
+  const mark = document.createElement("em");
+  mark.textContent = save.dailyChallengePaid === daily.day ? "\u2713" : "";
+  button.append(name, detail, mark);
+  button.addEventListener("click", () => startChosenRun({ world: daily.world, daily }));
+  return button;
+}
+
+function shareText() {
+  return `Gear Fight! daily challenge ${currentDaily.day}: I reached wave ${wave}. Can you beat it? ${location.origin}${location.pathname}`;
+}
+
+async function shareRun() {
+  const button = document.getElementById("share-btn");
+  const text = shareText();
+  try {
+    if (navigator.share) {
+      await navigator.share({ text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied!";
+  } catch (error) {
+    // Closing the share sheet isn't a problem; anything else falls back to showing the text.
+    if (error?.name !== "AbortError") button.textContent = "Couldn't share";
+  }
+}
+
 function weeklyCard() {
   const event = weeklyEvent();
   const done = save.eventClearedWeek === weekNumber();
@@ -2190,19 +2515,14 @@ function weeklyCard() {
   const mark = document.createElement("em");
   mark.textContent = done ? "\u2713" : "";
   button.append(name, detail, mark);
-  button.addEventListener("click", () => {
-    currentEvent = event;
-    currentWorld = weekNumber() % WORLDS.length;
-    document.getElementById("worlds-screen").classList.add("hidden");
-    startNewRun();
-  });
+  button.addEventListener("click", () => startChosenRun({ world: weekNumber() % WORLDS.length, event }));
   return button;
 }
 
 function openWorlds() {
   const list = document.getElementById("worlds-list");
   list.replaceChildren();
-  list.append(weeklyCard());
+  list.append(dailyCard(), weeklyCard());
   WORLDS.forEach((world, i) => {
     const unlocked = worldUnlocked(i);
     const button = document.createElement("button");
@@ -2220,25 +2540,22 @@ function openWorlds() {
     const mark = document.createElement("em");
     mark.textContent = save.worldsCleared[world.id] ? "\u2713" : "";
     button.append(name, detail, mark);
-    button.addEventListener("click", () => {
-      currentWorld = i;
-      currentEvent = null;
-      document.getElementById("worlds-screen").classList.add("hidden");
-      startNewRun();
-    });
+    button.addEventListener("click", () => startChosenRun({ world: i }));
     list.append(button);
     if (save.worldsCleared[world.id]) {
       const later = document.createElement("button");
       later.className = "world-head-start";
       later.textContent = `Start ${world.name} at wave ${HEAD_START_WAVE}`;
-      later.addEventListener("click", () => {
-        currentWorld = i;
-        currentEvent = null;
-        nextRunHeadStart = true;
-        document.getElementById("worlds-screen").classList.add("hidden");
-        startNewRun();
-      });
+      later.addEventListener("click", () => startChosenRun({ world: i, headStart: true }));
       list.append(later);
+      for (let level = 1; level < WORLD_LEVELS.length && clearedTier(world) >= level; level++) {
+        const harder = document.createElement("button");
+        harder.className = "world-level-btn";
+        const done = clearedTier(world) > level ? " \u2713" : "";
+        harder.textContent = `${WORLD_LEVELS[level].name}: ${rulesText(levelRules(i, level))}${done}`;
+        harder.addEventListener("click", () => startChosenRun({ world: i, level }));
+        list.append(harder);
+      }
     }
   });
   document.getElementById("worlds-screen").classList.remove("hidden");
@@ -2278,13 +2595,13 @@ function chooseReward(reward) {
   startWave();
   document.getElementById("reward-screen").classList.add("hidden");
   gameState = "playing";
-  showWaveBanner(boss ? "Boss wave!" : waveEvent ? `${waveEvent.name}!` : `Wave ${wave}!`);
+  showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
   saveRun();
 }
 
 function coinsForRun() {
-  const base = (wave - runStartWave) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
-  return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL) * (1 + partCount("warChest") * PART_COINS));
+  const base = (wave - runStartWave) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS + runBonusCoins;
+  return Math.round(base * (1 + upgradeLevel("coinPurse") * COIN_PURSE_PER_LEVEL) * (1 + partCount("warChest") * PART_COINS) * runCoinScale);
 }
 
 // Pays out once per run, whether it ended in defeat or with Restart.
@@ -2292,6 +2609,7 @@ function bankRun() {
   if (runBanked) return 0;
   runBanked = true;
   clearRunSave();
+  recordRunEnd();
   const coins = coinsForRun();
   save.coins += coins;
   lastRunXp = XP_PER_RUN + (wave - runStartWave) * XP_PER_WAVE + bossesBeaten * XP_PER_BOSS;
@@ -2299,6 +2617,26 @@ function bankRun() {
   if (wave > 1 || runTime >= COUNTED_RUN_SECONDS) recordStat("runs");
   writeSave();
   return coins;
+}
+
+// Kept only on this device, and included in backups: which wave each run ended
+// on, so that it's possible to see where a game tends to stop.
+function recordRunEnd() {
+  const record = save.funnel[runKey] || (save.funnel[runKey] = {});
+  record[wave] = (Number(record[wave]) || 0) + 1;
+  save.playSeconds += runTime;
+  if (currentDaily && currentDaily.day === todayKey()) {
+    save.dailyChallengeBest = Math.max(dailyBestToday(), wave);
+    save.dailyChallengeDay = currentDaily.day;
+  }
+  const levelBefore = heroLevel(save.hero);
+  save.heroWaves[save.hero] = (Number(save.heroWaves[save.hero]) || 0) + Math.max(0, wave - runStartWave);
+  const levelAfter = heroLevel(save.hero);
+  if (levelAfter > levelBefore) announce(`${HEROES.find((h) => h.id === save.hero)?.name} reached level ${levelAfter}!`);
+}
+
+function runKeyFor(world, event, daily) {
+  return daily ? "daily" : event ? `weekly:${event.id}` : WORLDS[world].id;
 }
 
 // The run in progress, as plain data. Effects and animation are left out: they
@@ -2327,6 +2665,9 @@ function runSnapshot() {
     parts: runParts,
     offered: offeredRewards,
     nextPlan: nextWavePlan,
+    daily: currentDaily,
+    rules: runRules,
+    wavePace: wavePace?.id ?? null,
     lastClear,
     comboCounts,
     numbers: {
@@ -2335,9 +2676,9 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      rerollsLeft, runStartWave,
+      rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount,
     },
-    flags: { endless, usedOverdrive, rallying },
+    flags: { endless, usedOverdrive, rallying, rustBlocked },
     lastEventId,
   };
 }
@@ -2374,7 +2715,7 @@ function isValidRunSave(data) {
   if (!(data.numbers.wave >= 1) || !ARMY_RANKS[data.numbers.armyRank]) return false;
   if (!Array.isArray(data.marchers) || !Array.isArray(data.blockedCells)) return false;
   if (!data.parts || typeof data.parts !== "object" || !data.comboCounts || !data.flags) return false;
-  if (data.boss && !BOSS_KINDS.some((kind) => kind.id === data.boss.kind)) return false;
+  if (data.boss && !bossKind(data.boss.kind)) return false;
   if (data.enemyType !== null && !ENEMY_TYPES[data.enemyType]) return false;
   if (data.waveEvent !== null && !WAVE_EVENTS.some((e) => e.id === data.waveEvent)) return false;
   if (data.state === "choosing" && !data.offered?.ids?.every((id) => REWARDS.some((r) => r.id === id))) return false;
@@ -2412,7 +2753,17 @@ function restoreRun(data) {
   runStartWave = n.runStartWave ?? 1;
   nextWavePlan = data.nextPlan ?? null;
   ({ endless, usedOverdrive, rallying } = data.flags);
-  boss = data.boss && { ...data.boss, kind: BOSS_KINDS.find((kind) => kind.id === data.boss.kind), hitFlash: 0 };
+  // Saves from before harder levels and the daily challenge don't have these.
+  currentDaily = data.daily ?? null;
+  runRules = data.rules ?? [];
+  worldLevel = n.worldLevel ?? 0;
+  runCoinScale = n.runCoinScale ?? 1;
+  runBonusCoins = n.runBonusCoins ?? 0;
+  strikeCount = n.strikeCount ?? 0;
+  rustBlocked = Boolean(data.flags.rustBlocked);
+  wavePace = WAVE_PACES[data.wavePace] || null;
+  runKey = runKeyFor(currentWorld, currentEvent, currentDaily);
+  boss = data.boss && { ...data.boss, kind: bossKind(data.boss.kind), hitFlash: 0 };
   enemyType = data.enemyType && ENEMY_TYPES[data.enemyType];
   waveEvent = data.waveEvent && WAVE_EVENTS.find((e) => e.id === data.waveEvent);
   lastEventId = data.lastEventId;
@@ -2453,7 +2804,8 @@ function continueRun() {
 }
 
 function runDescription(data) {
-  const name = data.event !== null ? WEEKLY_EVENTS.find((e) => e.id === data.event).name : WORLDS[data.world].name;
+  const level = data.numbers.worldLevel ? ` (${WORLD_LEVELS[data.numbers.worldLevel].name})` : "";
+  const name = data.daily ? "Daily challenge" : data.event !== null ? WEEKLY_EVENTS.find((e) => e.id === data.event).name : `${WORLDS[data.world].name}${level}`;
   return `${name}, wave ${data.numbers.wave}`;
 }
 
@@ -2494,6 +2846,114 @@ function nextGoals() {
   return goals.slice(0, 2);
 }
 
+// The machine keeps turning while the game is closed, up to a limit.
+function checkAwayEarnings() {
+  const minutes = (Date.now() - save.lastSeen) / 60000;
+  if (!save.lastSeen || minutes < AWAY_MIN_MINUTES || statValue("runs") === 0) return;
+  const hours = Math.min(AWAY_MAX_HOURS, minutes / 60);
+  const coins = Math.floor(hours * (AWAY_COINS_PER_HOUR + save.playerLevel));
+  if (coins < 1) return;
+  save.coins += coins;
+  writeSave();
+  renderWorkshop();
+  document.getElementById("away-coins").textContent = coins;
+  document.getElementById("away-screen").classList.remove("hidden");
+}
+
+function backupText() {
+  return JSON.stringify({
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    save,
+    bestWave,
+    run: localStorage.getItem(RUN_SAVE_KEY),
+  });
+}
+
+// Returns what to restore, or null when the text isn't a Gear Fight backup.
+function parseBackup(text) {
+  try {
+    const data = JSON.parse(text);
+    if (data?.format !== BACKUP_FORMAT || data.version !== BACKUP_VERSION) return null;
+    if (!data.save || typeof data.save !== "object" || !Number.isFinite(data.save.coins)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function backupMessage(text) {
+  document.getElementById("backup-message").textContent = text;
+}
+
+function openBackup() {
+  document.getElementById("backup-text").value = backupText();
+  backupMessage("Keep this somewhere safe. Restoring it brings back your progress on any device.");
+  document.getElementById("restore-btn").textContent = "Restore from text above";
+  document.getElementById("backup-screen").classList.remove("hidden");
+}
+
+function downloadBackup() {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([backupText()], { type: "application/json" }));
+  link.download = `gear-fight-backup-${todayKey()}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  backupMessage("Backup file saved.");
+}
+
+async function copyBackup() {
+  try {
+    await navigator.clipboard.writeText(backupText());
+    backupMessage("Backup copied.");
+  } catch {
+    document.getElementById("backup-text").select();
+    backupMessage("Couldn't copy by itself. Select the text above and copy it.");
+  }
+}
+
+async function loadBackupFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  document.getElementById("backup-text").value = await file.text();
+  event.target.value = "";
+  backupMessage("Backup loaded. Tap Restore to use it.");
+}
+
+// Replaces everything, so the first tap only asks for a second.
+function restoreBackup() {
+  const button = document.getElementById("restore-btn");
+  const data = parseBackup(document.getElementById("backup-text").value);
+  if (!data) {
+    backupMessage("That isn't a Gear Fight backup. Nothing was changed.");
+    return;
+  }
+  if (button.dataset.armed !== "yes") {
+    button.dataset.armed = "yes";
+    button.textContent = "Tap again to replace your progress";
+    return;
+  }
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data.save));
+    localStorage.setItem("gearfight_best_wave", String(Number(data.bestWave) || 1));
+    if (typeof data.run === "string") localStorage.setItem(RUN_SAVE_KEY, data.run);
+    else localStorage.removeItem(RUN_SAVE_KEY);
+  } catch {
+    backupMessage("Couldn't save on this device. Nothing was changed.");
+    return;
+  }
+  // The page leaving must not write the old progress back over the backup.
+  restoringBackup = true;
+  location.reload();
+}
+
+function leavingPage() {
+  if (restoringBackup) return;
+  writeSave();
+  saveRun();
+}
+
 function showRunSummary(coins) {
   renderRunBuild();
   const hooks = document.getElementById("gameover-goals");
@@ -2519,6 +2979,9 @@ function showRunSummary(coins) {
     ? `+${lastRunXp} XP. Level ${lastUp.level}! +${levelCoins} coins`
     : `+${lastRunXp} XP. Level ${save.playerLevel}: ${save.xp} / ${xpForNextLevel()}`;
   levelLine.classList.toggle("leveled", Boolean(lastUp));
+  const share = document.getElementById("share-btn");
+  share.classList.toggle("hidden", !currentDaily);
+  share.textContent = "Share your score";
   document.getElementById("gameover-screen").classList.remove("hidden");
 }
 
@@ -2633,7 +3096,8 @@ function update(dt) {
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
+  const growthScale = (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth;
+  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
     enemyBacklog -= newEnemies;
@@ -2875,7 +3339,7 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   ctx.fillText(`${Math.round((cell.ticks / spec.hits) * 100)}%`, cx, cy + 1);
 
   const payout = levelPayout(cell.level);
-  const badge = spec.enemies ? `-${spec.enemies * payout}` : spec.soldiers * payout > 1 ? `x${spec.soldiers * payout}` : "";
+  const badge = spec.mark ? spec.mark : spec.enemies ? `-${spec.enemies * payout}` : spec.soldiers * payout > 1 ? `x${spec.soldiers * payout}` : "";
   if (badge) {
     roundRectFill(ctx, cx - r * 0.38, cy + r * 0.52, r * 0.76, r * 0.4, r * 0.15, palette.dark);
     ctx.fillStyle = "#ffffff";
@@ -3374,7 +3838,8 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
   const breathe = Math.sin(time * 3) * 0.03;
   ctx.save();
   ctx.translate(x, feetY);
-  ctx.scale(1 - breathe, 1 + breathe + (warning ? 0.05 : 0));
+  const size = who.kind.final ? FINAL_BOSS_DRAW_SCALE : 1;
+  ctx.scale(size * (1 - breathe), size * (1 + breathe + (warning ? 0.05 : 0)));
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   if (warning) {
@@ -4455,6 +4920,9 @@ function startNewRun() {
   if (savedRun) {
     ({ wave, bossesBeaten, runTime } = savedRun.numbers);
     runStartWave = savedRun.numbers.runStartWave ?? 1;
+    runCoinScale = savedRun.numbers.runCoinScale ?? 1;
+    runBonusCoins = savedRun.numbers.runBonusCoins ?? 0;
+    runKey = runKeyFor(savedRun.world, WEEKLY_EVENTS.find((e) => e.id === savedRun.event), savedRun.daily);
     runParts = savedRun.parts;
     runBanked = false;
   }
@@ -4465,7 +4933,7 @@ function startNewRun() {
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
-  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL) * (heroIs("engineer") ? ENGINEER_SPEED : 1);
+  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL) * (heroIs("engineer") ? ENGINEER_SPEED : 1) * (1 + (heroLevel(save.hero) - 1) * HERO_LEVEL_SPEED);
   waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
   gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
   nextWaveBonus = 0;
@@ -4484,13 +4952,25 @@ function startNewRun() {
   offeredRewards = null;
   nextWavePlan = null;
   rerollsLeft = REROLLS_PER_RUN;
+  // A daily run tried again after midnight becomes the new day's challenge.
+  if (currentDaily && currentDaily.day !== todayKey()) {
+    currentDaily = makeDaily(todayKey());
+    currentWorld = currentDaily.world;
+  }
+  runRules = currentDaily ? currentDaily.rules : currentEvent ? [] : levelRules(currentWorld, worldLevel);
+  runCoinScale = currentDaily || currentEvent ? 1 : WORLD_LEVELS[worldLevel].coins;
+  runBonusCoins = 0;
+  runKey = runKeyFor(currentWorld, currentEvent, currentDaily);
+  wavePace = null;
+  strikeCount = 0;
+  rustBlocked = false;
   lastClear = null;
   runEventWeek = currentEvent ? weekNumber() : 0;
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
   armyRank = 0;
   eventRustIn = EVENT_RUST_SECONDS;
-  endless = false;
+  endless = Boolean(currentDaily);
   enemyType = null;
   enemyReinforcePerSec = 0;
   enemyPowerIn = 0;
@@ -4518,7 +4998,8 @@ function startNewRun() {
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
   createBoard();
-  for (let i = 0; i < upgradeLevel("startGears") + (heroIs("engineer") ? 1 : 0); i++) placeGear(boughtGearType());
+  for (let i = 0; i < upgradeLevel("startGears"); i++) placeGear(boughtGearType());
+  if (heroIs("engineer")) placeGear("booster");
   if (currentEvent?.id === "bombs") grid[DRIVER_ROW][DRIVER_COL + 1] = freshCell("bomb");
   runStartWave = nextRunHeadStart ? HEAD_START_WAVE : 1;
   if (nextRunHeadStart) {
@@ -4536,7 +5017,7 @@ function startNewRun() {
   gameState = "playing";
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
-  showWaveBanner(currentEvent ? currentEvent.name : WORLDS[currentWorld].name);
+  showWaveBanner(currentDaily ? "Daily challenge" : currentEvent ? currentEvent.name : worldLevel ? `${WORLDS[currentWorld].name}: ${WORLD_LEVELS[worldLevel].name}` : WORLDS[currentWorld].name);
   saveRun();
 }
 
@@ -4570,6 +5051,7 @@ function init() {
     document.getElementById("best-line").classList.remove("hidden");
   }
 
+  checkAwayEarnings();
   savedRun = loadRunSave();
   updateContinueButton();
   document.getElementById("continue-btn").addEventListener("click", continueRun);
@@ -4593,6 +5075,22 @@ function init() {
   document.getElementById("vibrate-btn").addEventListener("click", toggleVibrate);
   document.getElementById("reroll-btn").addEventListener("click", rerollRewards);
   document.getElementById("skip-btn").addEventListener("click", skipReward);
+  document.getElementById("share-btn").addEventListener("click", shareRun);
+  document.getElementById("away-claim-btn").addEventListener("click", () => document.getElementById("away-screen").classList.add("hidden"));
+  document.getElementById("title-backup-btn").addEventListener("click", openBackup);
+  document.getElementById("backup-close-btn").addEventListener("click", () => document.getElementById("backup-screen").classList.add("hidden"));
+  document.getElementById("download-backup-btn").addEventListener("click", downloadBackup);
+  document.getElementById("copy-backup-btn").addEventListener("click", copyBackup);
+  document.getElementById("backup-file").addEventListener("change", loadBackupFile);
+  document.getElementById("restore-btn").addEventListener("click", restoreBackup);
+  document.getElementById("backup-text").addEventListener("input", () => {
+    delete document.getElementById("restore-btn").dataset.armed;
+    document.getElementById("restore-btn").textContent = "Restore from text above";
+  });
+  // Lets the game open with no connection. Not available when opened as a local file.
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
   updateSettingButtons();
   document.getElementById("tip-ok-btn").addEventListener("click", closeTip);
   document.getElementById("pause-btn").addEventListener("click", pauseGame);
@@ -4601,10 +5099,12 @@ function init() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       pauseGame();
-      saveRun();
+      leavingPage();
+    } else {
+      checkAwayEarnings();
     }
   });
-  window.addEventListener("pagehide", saveRun);
+  window.addEventListener("pagehide", leavingPage);
   document.getElementById("how-to-play-btn").addEventListener("click", replayTips);
   document.getElementById("title-quests-btn").addEventListener("click", openQuests);
   document.getElementById("gameover-quests-btn").addEventListener("click", openQuests);

@@ -22,6 +22,7 @@
         <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
         <button id="title-quests-btn" class="workshop-btn">Quests &amp; awards</button>
         <button id="how-to-play-btn" class="workshop-btn">How to play</button>
+        <button id="title-backup-btn" class="workshop-btn">Backup</button>
       </div>
       <div id="player-level">
         <b id="player-level-name">Level 1 Apprentice</b>
@@ -119,6 +120,7 @@
       <p id="level-gain"></p>
       <div id="gameover-goals"></div>
       <div id="gameover-actions">
+        <button id="share-btn" class="workshop-btn hidden">Share your score</button>
         <button id="retry-btn">Try again</button>
         <button id="gameover-worlds-btn" class="workshop-btn">Worlds</button>
         <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
@@ -131,6 +133,25 @@
       <p>Day streak: <b id="daily-streak">0</b>. Missing a day won't reset it.</p>
       <div id="daily-days"></div>
       <button id="daily-claim-btn">Claim <b id="daily-amount">10</b> coins</button>
+    </div>
+
+    <div id="away-screen" class="hidden">
+      <h2>Welcome back!</h2>
+      <p>Your machine earned <b id="away-coins">0</b> coins while you were away.</p>
+      <button id="away-claim-btn">Collect</button>
+    </div>
+
+    <div id="backup-screen" class="hidden">
+      <h2>Backup</h2>
+      <p id="backup-message"></p>
+      <textarea id="backup-text" spellcheck="false" aria-label="Backup text"></textarea>
+      <div id="backup-actions">
+        <button id="download-backup-btn" class="workshop-btn">Save file</button>
+        <button id="copy-backup-btn" class="workshop-btn">Copy</button>
+        <label id="backup-file-label" class="workshop-btn">Open file<input id="backup-file" type="file" accept=".json,application/json" /></label>
+      </div>
+      <button id="restore-btn" class="workshop-btn"></button>
+      <button id="backup-close-btn" class="workshop-btn">Back</button>
     </div>
 
     <div id="world-clear-screen" class="hidden">
