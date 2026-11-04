@@ -95,6 +95,8 @@ const VETERANS_REWARD = 0.15; // added to the player's lead each wave
 const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave outright
 const DISCOUNT_REWARD = 0.8; // gear price multiplier
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
+const CHAIN_FALLOFF = 0.85; // strength kept by a hit at each gear it passes through
+const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
@@ -134,6 +136,7 @@ const TIPS = [
   { id: "booster", text: "A booster sends no soldiers. Gears touching it fill faster, so put it in the middle of your best gears.", when: () => boardHasGear("booster") },
   { id: "bomb", text: "A bomb gear fills half as fast, then blasts 2 enemies.", when: () => boardHasGear("bomb") },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
+  { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -259,20 +262,22 @@ function createBoard() {
 }
 
 // The gear at a cell plus every gear connected to it, each spinning opposite
-// to the gear that drives it. Each gear appears once, even when a loop gives
-// it two routes. Rusted gears are stuck, so hits stop there. Empty when the
+// to the gear that drives it, with the strength the hit still has when it gets
+// there. Each gear appears once, by its shortest route, even when a loop gives
+// it two. Rusted gears are stuck, so hits stop there. Empty when the
 // cell has no working normal gear.
 function connectedGears(row, col, firstSpin) {
   const first = grid[row]?.[col];
   if (!first || first.driver || first.rusted) return [];
   const seen = new Set([first]);
-  const queue = [{ row, col, spin: firstSpin }];
+  const queue = [{ row, col, spin: firstSpin, power: 1 }];
   for (const cur of queue) {
     for (const [dr, dc] of TOOTH_DIRS) {
       const next = grid[cur.row + dr]?.[cur.col + dc];
       if (!next || next.driver || next.rusted || seen.has(next)) continue;
       seen.add(next);
-      queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin });
+      const power = grid[cur.row][cur.col].type === "booster" ? 1 : Math.max(CHAIN_MIN_POWER, cur.power * CHAIN_FALLOFF);
+      queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin, power });
     }
   }
   return queue;
@@ -282,7 +287,7 @@ function connectedGears(row, col, firstSpin) {
 function tickGear(row, col, driverSpin) {
   const gears = connectedGears(row, col, -driverSpin);
   if (!gears.length) return;
-  for (const gear of gears) hitGear(gear, 1 + boostersTouching(gear.row, gear.col));
+  for (const gear of gears) hitGear(gear, (1 + boostersTouching(gear.row, gear.col)) * gear.power);
   spawnToothSparks(row, col);
   playTickSound();
 }
@@ -308,7 +313,7 @@ function soldiersPerSecond() {
       if (!spec.hits) continue;
       const level = levelPayout(grid[gear.row][gear.col].level);
       const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level;
-      perTurn += ((1 + boostersTouching(gear.row, gear.col)) * payout) / spec.hits;
+      perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * payout) / spec.hits;
     }
   }
   return perTurn * driverTurnsPerSec;
