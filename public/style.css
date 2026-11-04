@@ -609,16 +609,127 @@ button {
   color: var(--accent);
 }
 
-#quests-list {
+/* The page blocks touch scrolling for the board, so this turns it back on. */
+#quests-scroll {
   flex: 1;
   min-height: 0;
   width: 100%;
   max-width: 420px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#quests-scroll h3 {
+  margin: 6px 0;
+  font-size: 0.9rem;
+  color: var(--accent);
+  text-align: left;
+}
+
+#quests-list,
+#daily-quests-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
-  touch-action: pan-y;
+}
+
+.quest.done {
+  opacity: 0.6;
+  border-color: #6fb83f;
+}
+
+#daily-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 36;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.92);
+}
+
+#daily-screen h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  color: var(--accent);
+}
+
+#daily-screen p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #e4d3b8;
+}
+
+#daily-screen p b {
+  color: var(--accent);
+}
+
+#daily-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.daily-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 1px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: #3a2414;
+  font-size: 0.9rem;
+}
+
+.daily-day small {
+  font-size: 0.6rem;
+  color: #c9b896;
+}
+
+.daily-day b {
+  color: var(--accent);
+}
+
+.daily-day.claimed {
+  opacity: 0.55;
+}
+
+.daily-day.today {
+  border-color: var(--accent);
+  background: #5a3a20;
+}
+
+#daily-claim-btn {
+  padding: 14px 34px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.1rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
+#daily-claim-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #2f6b18;
+}
+
+#gameover-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#gameover-goals p {
+  color: #bff29a;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
 #pause-quests {

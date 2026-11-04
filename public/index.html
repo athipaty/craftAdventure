@@ -94,6 +94,7 @@
         <div><dt>Time</dt><dd id="stat-time">0:00</dd></div>
       </dl>
       <p id="coins-earned"></p>
+      <div id="gameover-goals"></div>
       <div id="gameover-actions">
         <button id="retry-btn">Try again</button>
         <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
@@ -101,10 +102,22 @@
       </div>
     </div>
 
+    <div id="daily-screen" class="hidden">
+      <h2>Daily reward</h2>
+      <p>Day streak: <b id="daily-streak">0</b>. Missing a day won't reset it.</p>
+      <div id="daily-days"></div>
+      <button id="daily-claim-btn">Claim <b id="daily-amount">10</b> coins</button>
+    </div>
+
     <div id="quests-screen" class="hidden">
       <h2>Quests</h2>
       <p>Finish these over any number of runs. <b id="quests-done-count">0</b> done so far.</p>
-      <div id="quests-list"></div>
+      <div id="quests-scroll">
+        <h3>Today</h3>
+        <div id="daily-quests-list"></div>
+        <h3>Goals</h3>
+        <div id="quests-list"></div>
+      </div>
       <button id="quests-close-btn" class="workshop-btn">Back</button>
     </div>
 

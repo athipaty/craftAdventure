@@ -59,6 +59,10 @@ const OVERDRIVE_RECHARGE_PER_LEVEL = 3; // seconds off the recharge per level
 const RUST_GUARD_PER_LEVEL = 0.05; // share of gears rusted per attack removed by each level
 const TRAIN_DISCOUNT_PER_LEVEL = 0.1;
 const ACTIVE_QUESTS = 3;
+const DAILY_REWARDS = [10, 15, 20, 25, 30, 40, 75]; // coins for each day of the weekly cycle
+const DAILY_QUEST_KINDS = ["waves", "bosses", "merges", "strikes", "buys", "blasted"];
+const DAILY_QUESTS = 3;
+const DAILY_QUEST_SIZE = 0.5; // daily quests are this much of a normal first-tier quest
 const QUESTS_PER_TIER = 5; // quests get harder and pay more after this many
 const RECRUITS_FIRST_WAVE_PER_LEVEL = 0.1; // extra share of the army in wave 1; level 5 stays under WIN_RATIO
 const RECRUITS_LEAD_PER_LEVEL = 0.05; // added to the player's lead in later waves
@@ -328,9 +332,13 @@ function loadSave() {
       tips: data?.tips && typeof data.tips === "object" ? data.tips : {},
       quests: Array.isArray(data?.quests) ? data.quests.filter(isValidQuest) : [],
       questsDone: Math.max(0, Math.floor(Number(data?.questsDone)) || 0),
+      dailyClaimedOn: typeof data?.dailyClaimedOn === "string" ? data.dailyClaimedOn : "",
+      dailyStreak: Math.max(0, Math.floor(Number(data?.dailyStreak)) || 0),
+      dailyQuestsOn: typeof data?.dailyQuestsOn === "string" ? data.dailyQuestsOn : "",
+      dailyQuests: Array.isArray(data?.dailyQuests) ? data.dailyQuests.filter(isValidQuest) : [],
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0 };
+    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [] };
   }
 }
 
@@ -372,11 +380,95 @@ function fillQuests() {
 
 function questEvent(kind, value = 1) {
   const quest = save.quests.find((q) => q.kind === kind);
-  if (!quest) return;
-  const before = quest.progress;
-  quest.progress = questInfo(quest).best ? Math.max(quest.progress, value) : quest.progress + value;
-  if (quest.progress >= quest.target) completeQuest(quest);
-  else if (quest.progress !== before) writeSave();
+  if (quest) {
+    const before = quest.progress;
+    quest.progress = questInfo(quest).best ? Math.max(quest.progress, value) : quest.progress + value;
+    if (quest.progress >= quest.target) completeQuest(quest);
+    else if (quest.progress !== before) writeSave();
+  }
+  const daily = save.dailyQuests.find((q) => q.kind === kind && !q.done);
+  if (daily) {
+    daily.progress += value;
+    if (daily.progress >= daily.target) completeDailyQuest(daily);
+    else writeSave();
+  }
+}
+
+// Finished daily quests stay on the list, ticked, until tomorrow's replace them.
+function completeDailyQuest(quest) {
+  quest.done = true;
+  save.coins += quest.reward;
+  runQuestCoins += quest.reward;
+  writeSave();
+  showToast(`Daily quest done! +${quest.reward} coins`);
+  playClankSound();
+}
+
+// The local calendar day, so "tomorrow" means what the player expects.
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function refreshDailyQuests() {
+  if (save.dailyQuestsOn === todayKey() && save.dailyQuests.length) return;
+  const kinds = [...DAILY_QUEST_KINDS];
+  save.dailyQuests = [];
+  for (let i = 0; i < DAILY_QUESTS; i++) {
+    const [kind] = kinds.splice(Math.floor(Math.random() * kinds.length), 1);
+    const info = QUEST_KINDS.find((k) => k.kind === kind);
+    save.dailyQuests.push({
+      kind,
+      target: Math.max(1, Math.round(info.base * DAILY_QUEST_SIZE)),
+      reward: info.coins,
+      progress: 0,
+      done: false,
+    });
+  }
+  save.dailyQuestsOn = todayKey();
+  writeSave();
+}
+
+function dailyRewardReady() {
+  return save.dailyClaimedOn !== todayKey();
+}
+
+// Which day of the weekly cycle today's reward is.
+function dailyRewardIndex() {
+  return save.dailyStreak % DAILY_REWARDS.length;
+}
+
+function showDailyReward() {
+  if (!dailyRewardReady()) return;
+  const row = document.getElementById("daily-days");
+  row.replaceChildren();
+  DAILY_REWARDS.forEach((coins, i) => {
+    const day = document.createElement("div");
+    const today = dailyRewardIndex();
+    day.className = `daily-day${i === today ? " today" : i < today ? " claimed" : ""}`;
+    const label = document.createElement("small");
+    label.textContent = `Day ${i + 1}`;
+    const value = document.createElement("b");
+    value.textContent = i < today ? "\u2713" : coins;
+    day.append(label, value);
+    row.append(day);
+  });
+  document.getElementById("daily-amount").textContent = DAILY_REWARDS[dailyRewardIndex()];
+  document.getElementById("daily-streak").textContent = save.dailyStreak;
+  document.getElementById("daily-screen").classList.remove("hidden");
+}
+
+// A missed day doesn't reset the streak: it just carries on from where it was.
+function claimDailyReward() {
+  if (!dailyRewardReady()) return;
+  save.coins += DAILY_REWARDS[dailyRewardIndex()];
+  save.dailyStreak += 1;
+  save.dailyClaimedOn = todayKey();
+  writeSave();
+  ensureAudio();
+  playClankSound();
+  document.getElementById("daily-screen").classList.add("hidden");
+  renderWorkshop();
 }
 
 function completeQuest(quest) {
@@ -390,16 +482,16 @@ function completeQuest(quest) {
   playClankSound();
 }
 
-function renderQuestList(listId) {
+function renderQuestList(listId, quests = save.quests) {
   const list = document.getElementById(listId);
   list.replaceChildren();
-  for (const quest of save.quests) {
+  for (const quest of quests) {
     const row = document.createElement("div");
-    row.className = "quest";
+    row.className = quest.done ? "quest done" : "quest";
     const name = document.createElement("b");
     name.textContent = questInfo(quest).text(quest.target);
     const reward = document.createElement("em");
-    reward.textContent = `${quest.reward} coins`;
+    reward.textContent = quest.done ? "Done \u2713" : `${quest.reward} coins`;
     const bar = document.createElement("div");
     bar.className = "quest-bar";
     const fill = document.createElement("span");
@@ -413,7 +505,9 @@ function renderQuestList(listId) {
 }
 
 function openQuests() {
+  refreshDailyQuests();
   renderQuestList("quests-list");
+  renderQuestList("daily-quests-list", save.dailyQuests);
   document.getElementById("quests-done-count").textContent = save.questsDone;
   document.getElementById("quests-screen").classList.remove("hidden");
 }
@@ -1365,7 +1459,36 @@ function formatTime(seconds) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
+// The goals that are nearly in reach, to make the next run tempting.
+function nextGoals() {
+  const goals = [];
+  if (wave > 1 && wave <= bestWaveBeforeRun) {
+    const gap = bestWaveBeforeRun - wave + 1;
+    goals.push(`${gap} ${gap === 1 ? "wave" : "waves"} to beat your record of ${bestWaveBeforeRun}!`);
+  }
+  const options = UPGRADES.filter((u) => upgradeLevel(u.id) < u.costs.length).map((u) => ({ name: u.name, cost: u.costs[upgradeLevel(u.id)] }));
+  if (options.length) {
+    const cheapest = options.reduce((a, b) => (b.cost < a.cost ? b : a));
+    goals.push(save.coins >= cheapest.cost
+      ? `You can afford ${cheapest.name} in the Workshop!`
+      : `Only ${cheapest.cost - save.coins} coins to ${cheapest.name}`);
+  }
+  const open = [...save.quests, ...save.dailyQuests.filter((q) => !q.done)];
+  if (open.length) {
+    const closest = open.reduce((a, b) => (b.progress / b.target > a.progress / a.target ? b : a));
+    if (closest.progress > 0) goals.push(`Quest: ${questInfo(closest).text(closest.target)} (${Math.floor(closest.progress)}/${closest.target})`);
+  }
+  return goals.slice(0, 2);
+}
+
 function showRunSummary(coins) {
+  const hooks = document.getElementById("gameover-goals");
+  hooks.replaceChildren();
+  for (const goal of nextGoals()) {
+    const line = document.createElement("p");
+    line.textContent = goal;
+    hooks.append(line);
+  }
   document.getElementById("final-wave").textContent = wave;
   document.getElementById("new-record").classList.toggle("hidden", wave <= bestWaveBeforeRun);
   document.getElementById("stat-soldiers").textContent = Math.round(totalArmyScore);
@@ -1432,6 +1555,7 @@ function gameOver() {
   gameState = "gameover";
   drag = null;
   showRunSummary(bankRun());
+  showDailyReward();
   playLoseSound();
 }
 
@@ -3003,6 +3127,7 @@ function startNewRun() {
   enemiesBlasted = 0;
   usedOverdrive = false;
   runQuestCoins = 0;
+  refreshDailyQuests();
   runTime = 0;
   bestWaveBeforeRun = bestWave;
   runBanked = false;
@@ -3088,8 +3213,11 @@ function init() {
   document.getElementById("title-quests-btn").addEventListener("click", openQuests);
   document.getElementById("gameover-quests-btn").addEventListener("click", openQuests);
   document.getElementById("quests-close-btn").addEventListener("click", closeQuests);
+  document.getElementById("daily-claim-btn").addEventListener("click", claimDailyReward);
   fillQuests();
+  refreshDailyQuests();
   writeSave();
+  showDailyReward();
   document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
   document.getElementById("workshop-close-btn").addEventListener("click", closeWorkshop);
