@@ -13,7 +13,8 @@
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
 // Runs and quests earn coins, spent in the Workshop on upgrades that last
 // between runs. Every run also earns experience toward a player level, and
-// lifetime totals unlock achievements.
+// lifetime totals unlock achievements. Runs happen in worlds, each with its own
+// enemies and a final boss; beating one unlocks the next.
 // Tips pause the game the first time something new happens. Training raises the
 // army's rank, so each soldier is worth more; prices are counted in soldiers of
 // the current rank, so a stronger army doesn't make everything free.
@@ -80,8 +81,12 @@ const PLAYER_TITLES = [
   { fromLevel: 50, name: "Gear Legend" },
 ];
 // Lifetime totals that keep the highest value reached instead of adding up.
-const BEST_STATS = ["topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
+const BEST_STATS = ["worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
 const ACHIEVEMENTS = [
+  { id: "world1", name: "Out of the woods", text: "Clear Green Forest", stat: "worlds", target: 1, coins: 30 },
+  { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
+  { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
+  { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
   { id: "wave1", name: "First win", text: "Win a wave", stat: "waves", target: 1, coins: 10 },
   { id: "wave50", name: "Veteran", text: "Win 50 waves", stat: "waves", target: 50, coins: 30 },
   { id: "wave250", name: "Warlord", text: "Win 250 waves", stat: "waves", target: 250, coins: 75 },
@@ -112,6 +117,50 @@ const ACHIEVEMENTS = [
   { id: "run10", name: "Back for more", text: "Play 10 runs", stat: "runs", target: 10, coins: 20 },
   { id: "run50", name: "Regular", text: "Play 50 runs", stat: "runs", target: 50, coins: 60 },
   { id: "upgrades10", name: "Well equipped", text: "Buy 10 Workshop upgrades", stat: "upgrades", target: 10, coins: 30 },
+];
+const FINAL_BOSS_HP = 1.5; // final bosses have this much more health than a normal boss
+const WORLD_CLEAR_XP = 100;
+const REPEAT_CLEAR_COINS = 20;
+const RUNNER_SHARE = 0.12; // extra enemies per second, as a share of the machine's best output
+const BRUTE_SOLDIER_DAMAGE = 0.75; // soldiers count for this much against armoured brutes
+const ENEMY_POWER_SECONDS = 9; // time between enemy special moves
+const FROST_SECONDS = 4; // how long a freeze lasts
+const FROST_SLOW = 0.5; // main gear speed while frozen
+const IMP_GEARS_BURNED = 2; // gears that lose their progress per attack
+
+// A wave's enemy. look: which fighter to draw. fromWave: first wave it can appear.
+const ENEMY_TYPES = {
+  goblin: { id: "goblin" },
+  runner: { id: "runner", name: "Goblin runners", look: "runner" },
+  brute: { id: "brute", name: "Armoured brutes", look: "brute" },
+  shaman: { id: "shaman", name: "Rust shamans", look: "shaman" },
+  frost: { id: "frost", name: "Frost trolls", look: "frost" },
+  imp: { id: "imp", name: "Fire imps", look: "imp" },
+};
+
+// finalWave: beat this wave's boss to clear the world. scale: how much bigger each
+// wave starts. clearCoins: paid the first time. theme: how the battlefield looks.
+const WORLDS = [
+  {
+    id: "forest", name: "Green Forest", finalWave: 15, scale: 1.55, clearCoins: 100,
+    enemies: [["goblin", 1], ["runner", 6]],
+    theme: { skyTop: "#58b8ee", skyBottom: "#c6ecfb", hillBack: "#8ed36a", hillFront: "#6fbf4e", ground: "#57a63a", groundDark: "#4a9231", deco: "trees" },
+  },
+  {
+    id: "desert", name: "Sun Desert", finalWave: 20, scale: 1.6, clearCoins: 200,
+    enemies: [["goblin", 1], ["runner", 3], ["brute", 6]],
+    theme: { skyTop: "#f0a64f", skyBottom: "#fbe6b0", hillBack: "#e8c27a", hillFront: "#d9a95c", ground: "#c9954a", groundDark: "#b5823c", deco: "cactus" },
+  },
+  {
+    id: "ice", name: "Frozen Peaks", finalWave: 25, scale: 1.66, clearCoins: 400,
+    enemies: [["frost", 1], ["runner", 3], ["brute", 8], ["shaman", 12]],
+    theme: { skyTop: "#8fb8e0", skyBottom: "#eaf6ff", hillBack: "#dcecf8", hillFront: "#c2dcef", ground: "#e8f2fa", groundDark: "#cfe2f0", deco: "snow" },
+  },
+  {
+    id: "lava", name: "Lava Core", finalWave: 25, scale: 1.7, clearCoins: 800,
+    enemies: [["imp", 1], ["shaman", 4], ["brute", 8], ["frost", 14]],
+    theme: { skyTop: "#2a1020", skyBottom: "#a8381c", hillBack: "#4a2020", hillFront: "#301418", ground: "#3a2018", groundDark: "#2a1610", deco: "embers" },
+  },
 ];
 const ACTIVE_QUESTS = 3;
 const DAILY_REWARDS = [10, 15, 20, 25, 30, 40, 75]; // coins for each day of the weekly cycle
@@ -149,7 +198,6 @@ const ENEMY_BASE_GROWTH = 0.08; // enemy army per second at the start of wave 1
 const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
 const ENEMY_DOUBLING_SECONDS = 30; // enemy growth doubles every this long within a wave
 const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
-const WAVE_START_SCALE = 1.55; // how much bigger both armies start each wave
 const DRIVER_PALETTE = { light: "#dfe5ea", mid: "#8d99a6", dark: "#3f4a55", recess: "#6d7884", hub: "#c3ccd5" };
 
 const GEAR_PALETTE = { light: "#f3d98a", mid: "#c99a35", dark: "#7a5716", recess: "#a97f28", hub: "#f6e6ae" };
@@ -284,6 +332,10 @@ const TIPS = [
   { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
   { id: "strike", text: "Tap the battle to strike the enemy with lightning! The ring around the yellow marker shows when it is ready again.", target: "#battle-lane", when: () => waveTime > 8 },
+  { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute" },
+  { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost" },
+  { id: "imp", urgent: true, text: "Fire imps burn the progress out of your gears. Win fast, before they burn it all.", when: () => enemyType?.id === "imp" },
+  { id: "shaman", urgent: true, text: "Rust shamans keep rusting your gears. Tap rusted gears to fix them.", when: () => enemyType?.id === "shaman" },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -337,6 +389,13 @@ let runTime = 0; // seconds played this run, not counting reward choices
 let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
+let currentWorld = 0; // index into WORLDS
+let endless = false; // playing on past the final boss
+let enemyType = null; // this wave's special enemy, from ENEMY_TYPES
+let enemyPowerIn = 0; // seconds until its next special move
+let frozenFor = 0; // seconds the main gear stays frozen
+let enemyReinforcePerSec = 0;
+let lastClear = null; // { coins, firstTime } for the world-clear screen
 let armyRank = 0; // index into ARMY_RANKS
 let rallying = false;
 let rallyReserve = 0; // soldiers waiting for the charge
@@ -369,7 +428,7 @@ let hitNumbers = []; // { x, y, text, color, age } floating up from the front li
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 
-let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "gameover"
+let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
 let wave = 1;
 let waveTime = 0; // seconds since the current wave began
 let playerPower = BASE_POWER;
@@ -396,10 +455,12 @@ function loadSave() {
       xp: Math.max(0, Math.floor(Number(data?.xp)) || 0),
       playerLevel: Math.max(1, Math.floor(Number(data?.playerLevel)) || 1),
       stats: data?.stats && typeof data.stats === "object" ? data.stats : {},
+      worldsCleared: data?.worldsCleared && typeof data.worldsCleared === "object" ? data.worldsCleared : {},
+      worldBest: data?.worldBest && typeof data.worldBest === "object" ? data.worldBest : {},
       achievements: data?.achievements && typeof data.achievements === "object" ? data.achievements : {},
     };
   } catch {
-    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, achievements: {} };
+    return { coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, achievements: {} };
   }
 }
 
@@ -1032,13 +1093,18 @@ function sendMarcher(side, value, delaySeconds = 0) {
   else marchers.push({ side, value, t: -delaySeconds / MARCH_SECONDS });
 }
 
+function isFinalWave(forWave) {
+  return !endless && forWave === WORLDS[currentWorld].finalWave;
+}
+
 function bossWeakening() {
   return 1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL;
 }
 
 function bossMaxHp(forWave) {
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
-  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening();
+  const finalScale = isFinalWave(forWave) ? FINAL_BOSS_HP : 1;
+  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening() * finalScale;
 }
 
 function damageBoss(amount) {
@@ -1154,6 +1220,7 @@ function strikeEnemy() {
   if (gameState !== "playing" || strikeCooldown > 0) return;
   strikeCooldown = strikeRecharge();
   questEvent("strikes");
+  frozenFor = 0;
   const boost = 1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL;
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
@@ -1390,7 +1457,7 @@ function updateDrivers(dt) {
       const cell = grid[row][col];
       if (!cell?.driver) continue;
       const before = Math.floor(cell.angle / QUARTER_TURN);
-      const boost = overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1;
+      const boost = (overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1) * (frozenFor > 0 ? FROST_SLOW : 1);
       cell.angle += driverTurnsPerSec * boost * Math.PI * 2 * dt;
       const after = Math.floor(cell.angle / QUARTER_TURN);
       for (let k = before + 1; k <= after; k++) {
@@ -1424,11 +1491,12 @@ function updateMarchers(dt) {
     m.t += dt / MARCH_SECONDS;
     if (m.t < 1) continue;
     if (m.side === "player") {
+      const value = m.value * (enemyType?.id === "brute" ? BRUTE_SOLDIER_DAMAGE : 1);
       if (rallying && !m.charge) {
-        rallyReserve += m.value;
+        rallyReserve += value;
       } else {
-        playerPower += m.value;
-        damageBoss(m.value);
+        playerPower += value;
+        damageBoss(value);
       }
     }
     else if (m.side === "bomb") {
@@ -1450,13 +1518,14 @@ function updateMarchers(dt) {
 // machine would otherwise beat it almost at once. Uses the run's best output so
 // unplugging gears just before a wave ends doesn't make the next one smaller.
 function waveStartEnemy(forWave) {
-  const scheduled = BASE_POWER * Math.pow(WAVE_START_SCALE, forWave - 1);
+  const scheduled = BASE_POWER * Math.pow(WORLDS[currentWorld].scale, forWave - 1);
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
   return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS) / soldiersToWinPerEnemy);
 }
 
 function winWave() {
   const bossBeaten = Boolean(boss);
+  const clearedWorld = isFinalWave(wave);
   if (boss) {
     const total = playerPower + enemyPower;
     const markerX = 16 + (battleCssW - 32) * (total > 0 ? playerPower / total : 0.5);
@@ -1496,7 +1565,12 @@ function winWave() {
     localStorage.setItem("gearfight_best_wave", String(bestWave));
   }
   playWinSound();
-  offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`);
+  enemyType = null;
+  enemyReinforcePerSec = 0;
+  frozenFor = 0;
+  save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
+  if (clearedWorld) clearWorld();
+  else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`);
 }
 
 // Reset the balance of power so the new wave starts contested. Carrying the
@@ -1510,11 +1584,52 @@ function startWave() {
   nextWaveBonus = 0;
   if (isBossWave(wave)) {
     const hp = bossMaxHp(wave);
-    const kind = BOSS_KINDS[(wave / BOSS_EVERY_WAVES - 1) % BOSS_KINDS.length];
+    // Each world's bosses begin at a different kind, so worlds don't repeat.
+    const kind = BOSS_KINDS[(wave / BOSS_EVERY_WAVES - 1 + currentWorld) % BOSS_KINDS.length];
     boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
-  } else if (wave >= WAVE_EVENT_FIRST_WAVE && Math.random() < WAVE_EVENT_CHANCE) {
-    startWaveEvent();
+  } else {
+    chooseEnemyType();
+    if (!enemyType && wave >= WAVE_EVENT_FIRST_WAVE && Math.random() < WAVE_EVENT_CHANCE) startWaveEvent();
+  }
+}
+
+// Plain goblins mean no special type, leaving the wave free for a wave event.
+function chooseEnemyType() {
+  const options = WORLDS[currentWorld].enemies.filter(([, fromWave]) => wave >= fromWave);
+  const [id] = options[Math.floor(Math.random() * options.length)];
+  enemyType = id === "goblin" ? null : ENEMY_TYPES[id];
+  enemyPowerIn = ENEMY_POWER_SECONDS / 2;
+  enemyReinforcePerSec = id === "runner" ? peakRate * RUNNER_SHARE : 0;
+}
+
+function burnGears() {
+  const lit = [];
+  grid.forEach((row, r) => row.forEach((cell, c) => {
+    if (cell && !cell.driver && cell.ticks > 0) lit.push({ r, c });
+  }));
+  for (let i = 0; i < IMP_GEARS_BURNED && lit.length; i++) {
+    const [{ r, c }] = lit.splice(Math.floor(Math.random() * lit.length), 1);
+    grid[r][c].ticks = 0;
+    grid[r][c].ticksAnim = 0;
+    spawnRustBurst(r, c, "#ff8a3d", "#ffcc33");
+  }
+  showToast("Burned!");
+  playRustSound();
+}
+
+function updateEnemyType(dt) {
+  frozenFor = Math.max(0, frozenFor - dt);
+  if (!enemyType || (enemyType.id !== "shaman" && enemyType.id !== "frost" && enemyType.id !== "imp")) return;
+  enemyPowerIn -= dt;
+  if (enemyPowerIn > 0) return;
+  enemyPowerIn = ENEMY_POWER_SECONDS;
+  if (enemyType.id === "shaman") rustAttack();
+  else if (enemyType.id === "imp") burnGears();
+  else {
+    frozenFor = FROST_SECONDS;
+    showToast("Frozen! Strike to thaw");
+    playRustSound();
   }
 }
 
@@ -1565,6 +1680,110 @@ function offerRewards(title) {
   rewardTimer = setTimeout(() => {
     if (gameState === "choosing") document.getElementById("reward-screen").classList.remove("hidden");
   }, VICTORY_MS);
+}
+
+function clearWorld() {
+  gameState = "worldclear";
+  const world = WORLDS[currentWorld];
+  const firstTime = !save.worldsCleared[world.id];
+  const coins = firstTime ? world.clearCoins : REPEAT_CLEAR_COINS;
+  save.worldsCleared[world.id] = true;
+  save.coins += coins;
+  gainXp(WORLD_CLEAR_XP);
+  recordStat("worlds", clearedWorldCount());
+  writeSave();
+  lastClear = { coins, firstTime };
+  clearTimeout(rewardTimer);
+  rewardTimer = setTimeout(showWorldClear, VICTORY_MS);
+}
+
+function clearedWorldCount() {
+  return WORLDS.filter((w) => save.worldsCleared[w.id]).length;
+}
+
+function showWorldClear() {
+  if (gameState !== "worldclear") return;
+  const world = WORLDS[currentWorld];
+  const next = WORLDS[currentWorld + 1];
+  document.getElementById("world-clear-title").textContent = `${world.name} cleared!`;
+  document.getElementById("world-clear-coins").textContent = `+${lastClear.coins} coins`;
+  document.getElementById("world-clear-next").textContent = next
+    ? (lastClear.firstTime ? `${next.name} unlocked!` : "")
+    : "You have cleared every world!";
+  const nextBtn = document.getElementById("next-world-btn");
+  nextBtn.classList.toggle("hidden", !next);
+  if (next) nextBtn.textContent = `Go to ${next.name}`;
+  document.getElementById("world-clear-screen").classList.remove("hidden");
+}
+
+function hideWorldClear() {
+  document.getElementById("world-clear-screen").classList.add("hidden");
+}
+
+function goToNextWorld() {
+  if (!WORLDS[currentWorld + 1]) return;
+  bankRun();
+  currentWorld += 1;
+  startNewRun();
+}
+
+// Endless: the run carries on past the final boss, for coins and records.
+function keepGoing() {
+  endless = true;
+  hideWorldClear();
+  offerRewards("Endless mode!");
+}
+
+function worldUnlocked(index) {
+  return index === 0 || Boolean(save.worldsCleared[WORLDS[index - 1].id]);
+}
+
+function openWorlds() {
+  const list = document.getElementById("worlds-list");
+  list.replaceChildren();
+  WORLDS.forEach((world, i) => {
+    const unlocked = worldUnlocked(i);
+    const button = document.createElement("button");
+    button.className = "world-card";
+    button.disabled = !unlocked;
+    button.style.setProperty("--world-sky", world.theme.skyTop);
+    button.style.setProperty("--world-ground", world.theme.ground);
+    const name = document.createElement("b");
+    name.textContent = world.name;
+    const detail = document.createElement("span");
+    const best = Number(save.worldBest[world.id]) || 0;
+    detail.textContent = !unlocked
+      ? `Locked: clear ${WORLDS[i - 1].name}`
+      : `Final boss on wave ${world.finalWave}${best ? `, best wave ${best}` : ""}`;
+    const mark = document.createElement("em");
+    mark.textContent = save.worldsCleared[world.id] ? "\u2713" : "";
+    button.append(name, detail, mark);
+    button.addEventListener("click", () => {
+      currentWorld = i;
+      document.getElementById("worlds-screen").classList.add("hidden");
+      startNewRun();
+    });
+    list.append(button);
+  });
+  document.getElementById("worlds-screen").classList.remove("hidden");
+}
+
+// Play goes straight in until there is a choice to make.
+function pressPlay() {
+  if (worldUnlocked(1)) openWorlds();
+  else startNewRun();
+}
+
+// From the end of a run back to the world list.
+function backToWorlds() {
+  bankRun();
+  gameState = "title";
+  hideWorldClear();
+  document.getElementById("gameover-screen").classList.add("hidden");
+  document.getElementById("game-screen").classList.add("hidden");
+  document.getElementById("title-screen").classList.remove("hidden");
+  renderWorkshop();
+  openWorlds();
 }
 
 function chooseReward(reward) {
@@ -1720,13 +1939,14 @@ function update(dt) {
   if (rallying) rallyHeld += dt;
   updateBoss(dt);
   updateWaveEvent(dt);
+  updateEnemyType(dt);
   updateDrivers(dt);
   updateGearAnim(dt);
   updateMarchers(dt);
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec) * dt;
+  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
     enemyBacklog -= newEnemies;
@@ -1824,7 +2044,10 @@ function drawDriverCell(ctx, cx, cy, size, cell) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(cell.angle * cell.spin);
-  if (overdriveLeft > 0) {
+  if (frozenFor > 0) {
+    ctx.shadowColor = "#a8e6ff";
+    ctx.shadowBlur = size * 0.45;
+  } else if (overdriveLeft > 0) {
     ctx.shadowColor = "#ff8a3d";
     ctx.shadowBlur = size * 0.45;
   }
@@ -2097,6 +2320,11 @@ function drawBoard() {
 }
 
 const SOLDIER_LOOKS = {
+  runner: { tunic: "#d6b13a", trim: "#7a5716", skin: "#9ccc5a", horns: "#2f2410", blade: "#c3ccd5", size: 0.92 },
+  brute: { tunic: "#59606b", trim: "#2a2f36", skin: "#6f8f45", horns: "#c3ccd5", blade: "#3f4a55", size: 1.35 },
+  shaman: { tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
+  frost: { tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
+  imp: { tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
   r0: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
   r1: { tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
   r2: { tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
@@ -2366,12 +2594,19 @@ function drawArmyFighter(ctx, x, feetY, look, facing, state, mood) {
   ctx.restore();
 }
 
+// Big numbers are shortened so the two counts never run into each other.
+function shortNumber(value) {
+  if (value >= 1000000) return `${Math.round(value / 100000) / 10}M`;
+  if (value >= 10000) return `${Math.round(value / 1000)}K`;
+  return String(value);
+}
+
 function drawArmyCount(ctx, x, y, count) {
   ctx.font = "800 16px system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  drawLaneText(ctx, String(count), x, y);
+  drawLaneText(ctx, shortNumber(count), x, y);
 }
 
 // The boss stands just past the front line, glowing before each attack, and
@@ -2517,7 +2752,7 @@ function drawBossBar(ctx, x0, x1) {
   roundRectFill(ctx, barX, 4, barW, 12, 6, "#1c130a");
   roundRectFill(ctx, barX, 4, barW * (boss.hp / boss.maxHp), 12, 6, "#d8432f");
   ctx.font = "800 10px system-ui, sans-serif";
-  const label = `${boss.kind.name.toUpperCase()} ${Math.ceil(boss.hp)}`;
+  const label = `${isFinalWave(wave) ? "FINAL BOSS: " : ""}${boss.kind.name.toUpperCase()} ${Math.ceil(boss.hp)}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 3;
@@ -2527,30 +2762,93 @@ function drawBossBar(ctx, x0, x1) {
   ctx.fillText(label, barX + barW / 2, 10.5);
 }
 
-// A sunny cartoon battlefield, with a banner at each army's camp.
+function drawWorldDeco(ctx, deco, w, groundY, time) {
+  for (let i = 0; i < 5; i++) {
+    const x = ((i + 0.5) / 5) * w + (i % 2 ? 9 : -7);
+    if (deco === "trees") {
+      ctx.beginPath();
+      ctx.rect(x - 2, groundY - 8, 4, 8);
+      inked(ctx, "#7a5430", 1);
+      ctx.beginPath();
+      ctx.moveTo(x - 9, groundY - 7);
+      ctx.lineTo(x, groundY - 26);
+      ctx.lineTo(x + 9, groundY - 7);
+      ctx.closePath();
+      inked(ctx, "#3f8f3a", 1);
+    } else if (deco === "cactus") {
+      ctx.beginPath();
+      ctx.roundRect(x - 2.5, groundY - 20, 5, 20, 2.5);
+      ctx.roundRect(x - 8, groundY - 15, 4, 8, 2);
+      ctx.roundRect(x + 4, groundY - 17, 4, 8, 2);
+      inked(ctx, "#5c9a3f", 1);
+    } else if (deco === "snow") {
+      ctx.beginPath();
+      ctx.moveTo(x - 12, groundY);
+      ctx.lineTo(x, groundY - 22);
+      ctx.lineTo(x + 12, groundY);
+      ctx.closePath();
+      inked(ctx, "#9fc4dc", 1);
+      ctx.beginPath();
+      ctx.moveTo(x - 4.5, groundY - 14);
+      ctx.lineTo(x, groundY - 22);
+      ctx.lineTo(x + 4.5, groundY - 14);
+      ctx.closePath();
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x - 10, groundY);
+      ctx.lineTo(x - 3, groundY - 18);
+      ctx.lineTo(x + 3, groundY - 18);
+      ctx.lineTo(x + 10, groundY);
+      ctx.closePath();
+      inked(ctx, "#2a1410", 1);
+      ctx.beginPath();
+      ctx.fillStyle = "#ff8a3d";
+      ctx.ellipse(x, groundY - 18, 3.5, 1.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // Falling snow or rising embers.
+  if (deco === "snow" || deco === "embers") {
+    ctx.fillStyle = deco === "snow" ? "#ffffff" : "#ff9a4a";
+    for (let i = 0; i < 12; i++) {
+      const drift = (time * (deco === "snow" ? 14 : -18) + i * 37) % groundY;
+      const y = drift < 0 ? drift + groundY : drift;
+      const x = (i * 83 + Math.sin(time + i) * 8) % w;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// The world's cartoon battlefield, with a banner at each army's camp.
 function drawBattlefield(ctx, x0, x1, groundY) {
   const w = battleCssW;
   const h = battleCssH;
   const time = performance.now() / 1000;
+  const theme = WORLDS[currentWorld].theme;
   const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-  sky.addColorStop(0, "#58b8ee");
-  sky.addColorStop(1, "#c6ecfb");
+  sky.addColorStop(0, theme.skyTop);
+  sky.addColorStop(1, theme.skyBottom);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, groundY);
 
-  // Fluffy clouds drifting by.
-  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-  for (const [speed, start, y, r] of [[5, 0.15, 0.2, 7], [3, 0.55, 0.28, 9], [4, 0.85, 0.14, 6]]) {
-    const cx = ((start * w + time * speed) % (w + 60)) - 30;
-    for (const [dx, dy, size] of [[-r, 0, 0.8], [0, -r * 0.4, 1], [r, 0, 0.8]]) {
-      ctx.beginPath();
-      ctx.arc(cx + dx, y * h + dy, r * size, 0, Math.PI * 2);
-      ctx.fill();
+  // Clouds, except in the smoke of the Lava Core.
+  if (theme.deco !== "embers") {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+    for (const [speed, start, y, r] of [[5, 0.15, 0.2, 7], [3, 0.55, 0.28, 9], [4, 0.85, 0.14, 6]]) {
+      const cx = ((start * w + time * speed) % (w + 60)) - 30;
+      for (const [dx, dy, size] of [[-r, 0, 0.8], [0, -r * 0.4, 1], [r, 0, 0.8]]) {
+        ctx.beginPath();
+        ctx.arc(cx + dx, y * h + dy, r * size, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
-  // Round green hills.
-  for (const [color, baseUp, bumps, phase] of [["#8ed36a", 15, 3, 0.4], ["#6fbf4e", 8, 4, 1.8]]) {
+  for (const [color, baseUp, bumps, phase] of [[theme.hillBack, 15, 3, 0.4], [theme.hillFront, 8, 4, 1.8]]) {
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(0, groundY);
@@ -2562,11 +2860,11 @@ function drawBattlefield(ctx, x0, x1, groundY) {
     ctx.closePath();
     ctx.fill();
   }
+  drawWorldDeco(ctx, theme.deco, w, groundY, time);
 
-  // Grass in front.
-  ctx.fillStyle = "#57a63a";
+  ctx.fillStyle = theme.ground;
   ctx.fillRect(0, groundY, w, h - groundY);
-  ctx.fillStyle = "#4a9231";
+  ctx.fillStyle = theme.groundDark;
   ctx.fillRect(0, groundY + 8, w, h - groundY - 8);
   ctx.strokeStyle = OUTLINE;
   ctx.lineWidth = 1.5;
@@ -2638,7 +2936,7 @@ function drawBattle() {
   const won = gameState === "choosing";
   const fleeing = won ? (performance.now() - winAt) * 0.16 : 0;
   const playerLook = ARMY_RANKS[armyRank].look;
-  const enemyLook = enemyRank().look;
+  const enemyLook = enemyType ? enemyType.look : enemyRank().look;
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
   const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
@@ -2712,12 +3010,12 @@ function drawBattle() {
     drawLaneText(ctx, `RALLY ${Math.round(rallyReserve)}`, x0, battleCssH * 0.74);
   }
   if (boss) drawBossBar(ctx, x0, x1);
-  else if (waveEvent) {
+  else if (enemyType || waveEvent) {
     ctx.font = "800 12px system-ui, sans-serif";
     ctx.fillStyle = "#ffcc33";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    drawLaneText(ctx, waveEvent.name.toUpperCase(), battleCssW / 2, battleCssH - 5);
+    drawLaneText(ctx, (enemyType || waveEvent).name.toUpperCase(), battleCssW / 2, battleCssH - 5);
   }
 }
 
@@ -3285,7 +3583,7 @@ function handleResize() {
 function startNewRun() {
   ensureAudio();
   // Restart ends a run in progress, which still earns its coins.
-  const restarted = ["playing", "choosing", "tip", "paused"].includes(gameState);
+  const restarted = ["playing", "choosing", "tip", "paused", "worldclear"].includes(gameState);
   const coinsFromRestart = restarted ? bankRun() : 0;
   drag = null;
   gearsBought = 0;
@@ -3311,6 +3609,12 @@ function startNewRun() {
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
   armyRank = 0;
+  endless = false;
+  enemyType = null;
+  enemyReinforcePerSec = 0;
+  enemyPowerIn = 0;
+  frozenFor = 0;
+  hideWorldClear();
   resetRally();
   waveEvent = null;
   lastEventId = null;
@@ -3344,6 +3648,7 @@ function startNewRun() {
   gameState = "playing";
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
+  showWaveBanner(WORLDS[currentWorld].name);
 }
 
 let lastTime = 0;
@@ -3371,7 +3676,14 @@ function init() {
     document.getElementById("best-line").classList.remove("hidden");
   }
 
-  document.getElementById("play-btn").addEventListener("click", startNewRun);
+  document.getElementById("play-btn").addEventListener("click", pressPlay);
+  document.getElementById("next-world-btn").addEventListener("click", goToNextWorld);
+  document.getElementById("keep-going-btn").addEventListener("click", keepGoing);
+  document.getElementById("clear-worlds-btn").addEventListener("click", backToWorlds);
+  document.getElementById("gameover-worlds-btn").addEventListener("click", backToWorlds);
+  document.getElementById("worlds-close-btn").addEventListener("click", () => {
+    document.getElementById("worlds-screen").classList.add("hidden");
+  });
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
