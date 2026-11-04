@@ -28,7 +28,7 @@
 // setting, via localStorage.
 // =====================================================================
 
-const COLS = 6;
+const COLS = 7;
 const ROWS = 7;
 const BASE_POWER = 3;
 const WIN_RATIO = 0.7; // playerPower share of the total needed to take the wave
