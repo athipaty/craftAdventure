@@ -100,6 +100,10 @@ const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
 const COMBO_LINE_PAYOUT = 1.25; // three matching gears in a row
 const COMBO_BLOCK_FILL = 1.25; // four matching gears in a square
 const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
+const WAVE_EVENT_FIRST_WAVE = 3;
+const WAVE_EVENT_CHANCE = 0.4;
+const EVENT_RUSH_PRESSURE = 0.06; // enemies per second, as a share of the wave's starting army
+const EVENT_STORM_SECONDS = 8; // time between rust attacks in a storm
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
@@ -127,6 +131,13 @@ const REWARDS = [
   { name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
 ];
 
+const WAVE_EVENTS = [
+  { id: "rush", name: "Enemy rush" },
+  { id: "storm", name: "Rust storm" },
+  { id: "double", name: "Double soldiers" },
+  { id: "blocked", name: "Blocked row", available: () => blockableRows().length > 0 },
+];
+
 // Shown once each, the first time `when` is true. Earlier entries go first.
 const TIPS = [
   { id: "start", text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
@@ -141,6 +152,7 @@ const TIPS = [
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
+  { id: "event", text: "Some waves have a twist, like an enemy rush or double soldiers. Its name shows at the top of the battle.", when: () => waveEvent },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -190,6 +202,11 @@ let bestWaveBeforeRun = 1; // decides whether this run set a new record
 let runBanked = false; // whether this run's coins have been paid out
 let save = loadSave();
 let comboCounts = { line: 0, block: 0, ring: 0 };
+let waveEvent = null; // the twist on this wave, from WAVE_EVENTS
+let lastEventId = null; // so the same twist doesn't come twice in a row
+let eventAttackIn = 0;
+let eventReinforcePerSec = 0;
+let blockedCells = new Set(); // "row,col" of empty cells no gear can use for now
 let overdriveLeft = 0; // seconds of overdrive still running
 let overdriveCooldown = 0; // seconds until overdrive can be used again
 
@@ -432,7 +449,10 @@ function bestEmptyCell() {
       const c = col + dc;
       if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
       const cell = grid[r][c];
-      if (!cell) return { row: r, col: c };
+      if (!cell) {
+        if (!isBlocked(r, c)) return { row: r, col: c };
+        continue;
+      }
       if (!seen.has(cell)) {
         seen.add(cell);
         queue.push({ row: r, col: c });
@@ -441,10 +461,14 @@ function bestEmptyCell() {
   }
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (!grid[row][col]) return { row, col };
+      if (!grid[row][col] && !isBlocked(row, col)) return { row, col };
     }
   }
   return null;
+}
+
+function isBlocked(row, col) {
+  return blockedCells.has(`${row},${col}`);
 }
 
 function placeGear(type) {
@@ -517,7 +541,8 @@ function updateScrapZone() {
   if (zone.textContent !== label) zone.textContent = label;
 }
 
-function sendSoldiers(count, row, col) {
+function sendSoldiers(baseCount, row, col) {
+  const count = waveEvent?.id === "double" ? baseCount * 2 : baseCount;
   launchFlyer(row, col, "player");
   sendMarcher("player", count, FLY_SECONDS);
   totalArmyScore += count;
@@ -574,7 +599,7 @@ function rustTargets() {
   return [...targets.values()];
 }
 
-function bossAttack() {
+function rustAttack() {
   const targets = rustTargets();
   if (!targets.length) return;
   const count = rustPerAttack(targets.length);
@@ -587,6 +612,42 @@ function bossAttack() {
   screenShake = Math.max(screenShake, BOMB_SHAKE);
   showToast("Rust! Tap the gears");
   playRustSound();
+}
+
+function bossAttack() {
+  rustAttack();
+}
+
+function blockableRows() {
+  const rows = [];
+  for (let row = 0; row < ROWS; row++) {
+    if (row !== DRIVER_ROW && grid[row].some((cell) => !cell)) rows.push(row);
+  }
+  return rows;
+}
+
+function startWaveEvent() {
+  const options = WAVE_EVENTS.filter((e) => e.id !== lastEventId && (!e.available || e.available()));
+  waveEvent = options[Math.floor(Math.random() * options.length)];
+  lastEventId = waveEvent.id;
+  eventAttackIn = EVENT_STORM_SECONDS;
+  eventReinforcePerSec = waveEvent.id === "rush" ? enemyPower * EVENT_RUSH_PRESSURE : 0;
+  if (waveEvent.id === "blocked") {
+    const rows = blockableRows();
+    const row = rows[Math.floor(Math.random() * rows.length)];
+    for (let col = 0; col < COLS; col++) {
+      if (!grid[row][col]) blockedCells.add(`${row},${col}`);
+    }
+  }
+}
+
+function updateWaveEvent(dt) {
+  if (waveEvent?.id !== "storm") return;
+  eventAttackIn -= dt;
+  if (eventAttackIn <= 0) {
+    eventAttackIn = EVENT_STORM_SECONDS;
+    rustAttack();
+  }
 }
 
 function updateBoss(dt) {
@@ -657,7 +718,7 @@ function cellAt({ x, y }) {
 // A dragged gear can land on an empty cell or swap with another normal gear.
 // The one-tooth gear stays bolted down.
 function canDropOn(target) {
-  return target && !target.cell?.driver && target.cell !== drag.cell;
+  return target && !target.cell?.driver && target.cell !== drag.cell && !isBlocked(target.row, target.col);
 }
 
 function onPointerDown(e) {
@@ -793,6 +854,9 @@ function winWave() {
   marchers = [];
   enemyBacklog = 0;
   flyers = [];
+  waveEvent = null;
+  eventReinforcePerSec = 0;
+  blockedCells.clear();
   spawnConfetti();
   if (wave > bestWave) {
     bestWave = wave;
@@ -815,6 +879,8 @@ function startWave() {
     const hp = bossMaxHp(wave);
     boss = { hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower) };
     playBossSound();
+  } else if (wave >= WAVE_EVENT_FIRST_WAVE && Math.random() < WAVE_EVENT_CHANCE) {
+    startWaveEvent();
   }
 }
 
@@ -874,7 +940,7 @@ function chooseReward(reward) {
   startWave();
   document.getElementById("reward-screen").classList.add("hidden");
   gameState = "playing";
-  showWaveBanner(boss ? "Boss wave!" : `Wave ${wave}!`);
+  showWaveBanner(boss ? "Boss wave!" : waveEvent ? `${waveEvent.name}!` : `Wave ${wave}!`);
 }
 
 function coinsForRun() {
@@ -954,13 +1020,14 @@ function update(dt) {
   updateCombos();
   updateOverdrive(dt);
   updateBoss(dt);
+  updateWaveEvent(dt);
   updateDrivers(dt);
   updateGearAnim(dt);
   updateMarchers(dt);
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0)) * dt;
+  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
     enemyBacklog -= newEnemies;
@@ -1213,6 +1280,18 @@ function drawEmptyCell(ctx, cx, cy, size) {
   ctx.fill();
 }
 
+function drawBlockedCell(ctx, cx, cy, size) {
+  const half = size * 0.2;
+  ctx.lineWidth = Math.max(2, size * 0.05);
+  ctx.strokeStyle = "rgba(216, 67, 47, 0.75)";
+  ctx.beginPath();
+  ctx.moveTo(cx - half, cy - half);
+  ctx.lineTo(cx + half, cy + half);
+  ctx.moveTo(cx + half, cy - half);
+  ctx.lineTo(cx - half, cy + half);
+  ctx.stroke();
+}
+
 function drawBoard() {
   // grid isn't populated until startNewRun()/createBoard() runs (on Play).
   // A stray resize event before that — the address bar collapsing, a
@@ -1232,7 +1311,10 @@ function drawBoard() {
         const cx = col * cellSize + cellSize / 2;
         const cy = row * cellSize + cellSize / 2;
         if (!cell) {
-          if (!drawDrivers) drawEmptyCell(ctx, cx, cy, cellSize);
+          if (!drawDrivers) {
+            if (isBlocked(row, col)) drawBlockedCell(ctx, cx, cy, cellSize);
+            else drawEmptyCell(ctx, cx, cy, cellSize);
+          }
           continue;
         }
         if (Boolean(cell.driver) !== drawDrivers) continue;
@@ -1390,6 +1472,12 @@ function drawBattle() {
   ctx.textAlign = "right";
   ctx.fillText(String(Math.round(enemyPower)), x1, 14);
   if (boss) drawBossBar(ctx, x0, x1);
+  else if (waveEvent) {
+    ctx.font = "800 12px system-ui, sans-serif";
+    ctx.fillStyle = "#ffcc33";
+    ctx.textAlign = "center";
+    ctx.fillText(waveEvent.name.toUpperCase(), (x0 + x1) / 2, 14);
+  }
 }
 
 // =====================================================================
@@ -1824,6 +1912,10 @@ function startNewRun() {
   runBanked = false;
   boss = null;
   comboCounts = { line: 0, block: 0, ring: 0 };
+  waveEvent = null;
+  lastEventId = null;
+  eventReinforcePerSec = 0;
+  blockedCells.clear();
   overdriveLeft = 0;
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
   flyers = [];
