@@ -170,7 +170,7 @@ button {
 }
 
 #battle-lane {
-  height: 112px;
+  height: 124px;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.18);
   border-bottom: 2px solid rgba(0, 0, 0, 0.3);
@@ -238,7 +238,7 @@ button {
   }
 
   #battle-lane {
-    height: 96px;
+    height: 104px;
   }
 }
 
@@ -795,7 +795,7 @@ button {
   #game-screen {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto 112px auto minmax(0, 1fr);
+    grid-template-rows: auto 124px auto minmax(0, 1fr);
   }
 
   #board-wrap {

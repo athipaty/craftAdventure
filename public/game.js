@@ -39,6 +39,12 @@ const FLY_SECONDS = 0.4; // how long a soldier takes to fly from its gear to the
 const MAX_FLYERS = 30;
 const MAX_PARTICLES = 200;
 const MAX_HIT_NUMBERS = 12;
+const MAX_FALLERS = 8;
+const FALLER_GAP_MS = 150; // fighters fall at most this often, so big armies don't flood the lane
+const STRIKE_COOLDOWN_SECONDS = 2;
+const STRIKE_OUTPUT_SECONDS = 0.5; // a strike is worth this much of the machine's output
+const VICTORY_MS = 900; // the armies react to a win before the reward choice appears
+const HIT_STOP_SECONDS = 0.07; // a tiny freeze that gives big hits weight
 const HIT_NUMBER_SECONDS = 0.7;
 const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
@@ -186,6 +192,7 @@ const TIPS = [
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Tap the battle area 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. After 5 seconds, tap again to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
+  { id: "strike", text: "Tap the battle to strike the enemy with lightning! The ring around the yellow marker shows when it is ready again.", target: "#battle-lane", when: () => waveTime > 8 },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -252,9 +259,17 @@ let overdriveCooldown = 0; // seconds until overdrive can be used again
 let fxCanvas, fxCtx;
 let fxCssW = 0, fxCssH = 0;
 let boardOrigin = { x: 0, y: 0 }; // where the board canvas sits on the effects canvas
-let flyTarget = { x: 0, y: 0 }; // where flying soldiers land in the battle lane
 let flyers = []; // { fromX, fromY, side, t }
 let particles = []; // { x, y, vx, vy, gravity, age, life, size, color, angle, spin }
+let strikeCooldown = 0;
+let bolts = []; // { x, age } lightning strikes
+let fallers = []; // { x, y, vx, vy, spin, angle, age, look, facing } defeated fighters tumbling away
+let lastFallerAt = 0;
+let shove = { player: 0, enemy: 0 }; // how hard each front line was just hit, fading to 0
+let hitStop = 0;
+let winAt = 0; // when the current win happened, for the armies' reactions
+let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
+let rewardTimer = 0;
 let hitNumbers = []; // { x, y, text, color, age } floating up from the front line
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
@@ -761,6 +776,41 @@ function bossAttack() {
   else rustAttack();
 }
 
+// Taps on the battle go to a raised shield first, otherwise they call a strike.
+function tapBattle(e) {
+  if (boss?.shield > 0) tapShield();
+  else strikeEnemy(e);
+}
+
+function strikeEnemy() {
+  if (gameState !== "playing" || strikeCooldown > 0) return;
+  strikeCooldown = STRIKE_COOLDOWN_SECONDS;
+  const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS);
+  enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
+  damageBoss(amount);
+  const front = frontLineFx();
+  const x = front.x + 22;
+  bolts.push({ x, age: 0 });
+  shove.enemy = 1;
+  hitStop = HIT_STOP_SECONDS;
+  screenShake = Math.max(screenShake, 3);
+  spawnFaller("enemy");
+  spawnHitNumber(x, front.y - 16, `-${Math.round(amount)}`, "#ffe14d", amount);
+  for (let i = 0; i < 10; i++) {
+    spawnParticle({
+      x,
+      y: front.y + 8,
+      vx: randomBetween(-110, 110),
+      vy: randomBetween(-140, 0),
+      gravity: 300,
+      life: randomBetween(0.2, 0.45),
+      size: randomBetween(2, 3.5),
+      color: i % 2 ? "#ffe14d" : "#ffffff",
+    });
+  }
+  playStrikeSound();
+}
+
 function tapShield() {
   if (gameState !== "playing" || !(boss?.shield > 0)) return;
   boss.shield -= 1;
@@ -947,7 +997,7 @@ function onPointerUp(e) {
 
 function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
-  battleCanvas.addEventListener("pointerdown", tapShield);
+  battleCanvas.addEventListener("pointerdown", tapBattle);
   boardCanvas.addEventListener("pointermove", onPointerMove);
   boardCanvas.addEventListener("pointerup", onPointerUp);
   boardCanvas.addEventListener("pointercancel", () => { drag = null; });
@@ -1031,6 +1081,16 @@ function waveStartEnemy(forWave) {
 
 function winWave() {
   const bossBeaten = Boolean(boss);
+  if (boss) {
+    const total = playerPower + enemyPower;
+    const markerX = 16 + (battleCssW - 32) * (total > 0 ? playerPower / total : 0.5);
+    fallenBoss = { boss, x: Math.min(battleCssW - 38, markerX + 32), t: 0 };
+    hitStop = HIT_STOP_SECONDS * 2;
+    screenShake = Math.max(screenShake, BOMB_SHAKE * 1.5);
+    playBoomSound();
+  }
+  winAt = performance.now();
+  showWaveBanner(bossBeaten ? "Boss down!" : "Victory!");
   boss = null;
   for (const cell of grid.flat()) {
     if (cell) cell.rusted = false;
@@ -1104,7 +1164,7 @@ function pickRewards() {
 function offerRewards(title) {
   gameState = "choosing";
   drag = null;
-  rewardOpenedAt = performance.now();
+  rewardOpenedAt = performance.now() + VICTORY_MS;
   document.getElementById("reward-title").textContent = title;
   const list = document.getElementById("reward-options");
   list.replaceChildren();
@@ -1121,10 +1181,14 @@ function offerRewards(title) {
     });
     list.append(button);
   }
-  document.getElementById("reward-screen").classList.remove("hidden");
+  clearTimeout(rewardTimer);
+  rewardTimer = setTimeout(() => {
+    if (gameState === "choosing") document.getElementById("reward-screen").classList.remove("hidden");
+  }, VICTORY_MS);
 }
 
 function chooseReward(reward) {
+  clearTimeout(rewardTimer);
   if (reward.gear) {
     placeGear(reward.gear);
     playClankSound();
@@ -1228,6 +1292,7 @@ function update(dt) {
   runTime += dt;
   updateCombos();
   updateOverdrive(dt);
+  strikeCooldown = Math.max(0, strikeCooldown - dt);
   if (rallying) rallyHeld += dt;
   updateBoss(dt);
   updateWaveEvent(dt);
@@ -1250,7 +1315,6 @@ function update(dt) {
   else if (ratio <= LOSE_RATIO) gameOver();
 
   document.getElementById("wave-num").textContent = wave;
-  document.getElementById("army-score").textContent = Math.round(totalArmyScore);
   updateBuyButton();
   updateOverdriveButton();
   updateRallyButton();
@@ -1642,17 +1706,28 @@ function inkedCircle(ctx, x, y, r, fill, width) {
 }
 
 // Big round eyes looking the way the character faces.
-function drawCartoonEyes(ctx, x, y, size, angry) {
+function drawCartoonEyes(ctx, x, y, size, angry, mood = "neutral") {
   for (const offset of [-size * 1.05, size * 1.05]) {
+    if (mood === "wince") {
+      // Eyes squeezed shut.
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = size * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x + offset - size * 0.7, y - size * 0.5);
+      ctx.lineTo(x + offset + size * 0.7, y);
+      ctx.lineTo(x + offset - size * 0.7, y + size * 0.5);
+      ctx.stroke();
+      continue;
+    }
     ctx.beginPath();
     ctx.ellipse(x + offset, y, size * 0.85, size, 0, 0, Math.PI * 2);
     inked(ctx, "#ffffff", 0.8);
     ctx.beginPath();
     ctx.fillStyle = OUTLINE;
-    ctx.arc(x + offset + size * 0.3, y + size * 0.1, size * 0.45, 0, Math.PI * 2);
+    ctx.arc(x + offset + size * 0.3, y + size * 0.1, size * (mood === "scared" ? 0.25 : 0.45), 0, Math.PI * 2);
     ctx.fill();
   }
-  if (angry) {
+  if (angry && mood !== "scared" && mood !== "wince") {
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = size * 0.55;
     for (const side of [-1, 1]) {
@@ -1664,17 +1739,42 @@ function drawCartoonEyes(ctx, x, y, size, angry) {
   }
 }
 
+function drawCartoonMouth(ctx, x, y, mood) {
+  ctx.beginPath();
+  if (mood === "happy") {
+    ctx.arc(x, y - 1.2, 2.6, 0, Math.PI);
+    ctx.closePath();
+    inked(ctx, "#a8322a", 0.9);
+  } else if (mood === "scared") {
+    ctx.ellipse(x, y, 1.4, 1.9, 0, 0, Math.PI * 2);
+    inked(ctx, "#3a0d06", 0.8);
+  } else if (mood === "wince") {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1;
+    ctx.moveTo(x - 2, y);
+    ctx.lineTo(x - 0.7, y - 1);
+    ctx.lineTo(x + 0.7, y);
+    ctx.lineTo(x + 2, y - 1);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1;
+    ctx.arc(x, y - 1, 2, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+  }
+}
+
 // A chunky cartoon soldier standing on `feetY`, facing +1 (right) or -1 (left).
 // state: "idle" bounces, "walk" moves its legs, "fight" swings its weapon.
 // `seed` keeps a crowd from moving in step.
-function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
+function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral") {
   const colors = SOLDIER_LOOKS[look];
   const time = performance.now() / 1000 + seed * 0.37;
-  const stride = state === "walk" ? Math.sin(time * 14) * 2.6 : 0;
-  const hop = state === "walk" ? Math.abs(Math.sin(time * 14)) * 1.6 : 0;
+  const stride = state === "flee" ? Math.sin(time * 22) * 3 : state === "walk" ? Math.sin(time * 14) * 2.6 : 0;
+  const hop = state === "cheer" ? Math.abs(Math.sin(time * 8)) * 7 : state === "walk" ? Math.abs(Math.sin(time * 14)) * 1.6 : 0;
   // Squash and stretch: a soft bounce that makes them feel alive.
   const squash = state === "idle" ? Math.sin(time * 3) * 0.04 : state === "fight" ? Math.sin(time * 11) * 0.06 : 0;
-  const swing = state === "fight" ? -0.5 + Math.sin(time * 11) * 1.1 : state === "walk" ? -0.3 + Math.sin(time * 14) * 0.3 : -0.5;
+  const swing = state === "cheer" ? -0.3 + Math.sin(time * 16) * 0.5 : state === "flee" ? 1.8 : state === "fight" ? -0.5 + Math.sin(time * 11) * 1.1 : state === "walk" ? -0.3 + Math.sin(time * 14) * 0.3 : -0.5;
   const scale = colors.size * battleArtScale();
   ctx.save();
   ctx.translate(x, feetY - hop);
@@ -1750,7 +1850,15 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
     }
   }
   inkedCircle(ctx, 0, headY, 7.6, colors.skin);
-  drawCartoonEyes(ctx, 1.6, headY - 0.4, 2.2, Boolean(colors.horns));
+  drawCartoonEyes(ctx, 1.6, headY - 0.4, 2.2, Boolean(colors.horns), mood);
+  if (mood === "scared") {
+    // A nervous sweat drop.
+    ctx.beginPath();
+    ctx.moveTo(-5, headY - 6);
+    ctx.quadraticCurveTo(-8, headY - 2, -5, headY - 1.4);
+    ctx.quadraticCurveTo(-2.4, headY - 2.4, -5, headY - 6);
+    inked(ctx, "#a8e6ff", 0.7);
+  }
 
   if (colors.helmet) {
     // Helmet with a little crest.
@@ -1767,22 +1875,21 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed) {
       ctx.closePath();
       inked(ctx, colors.plume, 1.1);
     }
-    // Smile.
-    ctx.beginPath();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1;
-    ctx.arc(2, headY + 2.6, 2, 0.2, Math.PI - 0.2);
-    ctx.stroke();
+    drawCartoonMouth(ctx, 2, headY + 3.6, mood);
     // Round shield.
     inkedCircle(ctx, -4.8, -8, 4.4, colors.helmet, 1.2);
     inkedCircle(ctx, -4.8, -8, 1.8, colors.trim, 0.8);
   } else {
-    // Toothy grin.
-    ctx.beginPath();
-    ctx.moveTo(-1.5, headY + 3);
-    ctx.quadraticCurveTo(2.2, headY + 5.6, 6, headY + 2.6);
-    ctx.closePath();
-    inked(ctx, "#fff7e0", 0.9);
+    if (mood === "scared" || mood === "wince") {
+      drawCartoonMouth(ctx, 2, headY + 3.8, mood);
+    } else {
+      // Toothy grin.
+      ctx.beginPath();
+      ctx.moveTo(-1.5, headY + 3);
+      ctx.quadraticCurveTo(2.2, headY + (mood === "happy" ? 7 : 5.6), 6, headY + 2.6);
+      ctx.closePath();
+      inked(ctx, "#fff7e0", 0.9);
+    }
     // Horns.
     for (const side of [-1, 1]) {
       ctx.beginPath();
@@ -1817,12 +1924,21 @@ function drawBombIcon(ctx, x, y) {
 
 // Each army is shown as one big fighter at the front line, its size growing a
 // little with rank. The number above says how many soldiers it stands for.
-function drawArmyFighter(ctx, x, feetY, look, facing) {
-  const scale = 1.3 * (1 + (SOLDIER_LOOKS[look].size - 1) * 0.4) / SOLDIER_LOOKS[look].size;
+function fighterScale(look) {
+  return 1.2 * (1 + (SOLDIER_LOOKS[look].size - 1) * 0.4) / SOLDIER_LOOKS[look].size;
+}
+
+// Where the top of a fighter's head is, so its number can sit just above it.
+function fighterTop(look, feetY) {
+  return feetY - 31 * fighterScale(look) * SOLDIER_LOOKS[look].size * battleArtScale();
+}
+
+function drawArmyFighter(ctx, x, feetY, look, facing, state, mood) {
+  const scale = fighterScale(look);
   ctx.save();
   ctx.translate(x, feetY);
   ctx.scale(scale, scale);
-  drawSoldier(ctx, 0, 0, facing, look, "fight", facing);
+  drawSoldier(ctx, 0, 0, facing, look, state, facing, mood);
   ctx.restore();
 }
 
@@ -1836,11 +1952,11 @@ function drawArmyCount(ctx, x, y, count) {
 
 // The boss stands just past the front line, glowing before each attack, and
 // flashes when soldiers hit it.
-function drawBoss(ctx, markerX, x1, feetY) {
+function drawBoss(ctx, who, markerX, x1, feetY) {
   const x = Math.min(x1 - 22, markerX + 32);
-  const warning = boss.attackIn < BOSS_WARNING_SECONDS;
+  const warning = who.attackIn < BOSS_WARNING_SECONDS;
   const time = performance.now() / 1000;
-  const body = boss.hitFlash > 0 ? "#ffffff" : boss.kind.color;
+  const body = who.hitFlash > 0 ? "#ffffff" : who.kind.color;
   const armSwing = warning ? -1.7 + Math.sin(time * 18) * 0.15 : -0.5 + Math.sin(time * 4) * 0.4;
   const breathe = Math.sin(time * 3) * 0.03;
   ctx.save();
@@ -1869,7 +1985,7 @@ function drawBoss(ctx, markerX, x1, feetY) {
   inked(ctx, "#7a5430", 1.6);
   ctx.beginPath();
   ctx.ellipse(-8.8, -21, 8, 6, 0, 0, Math.PI * 2);
-  inked(ctx, boss.kind.id === "shield" ? "#c3ccd5" : "#8a5f36", 1.8);
+  inked(ctx, who.kind.id === "shield" ? "#c3ccd5" : "#8a5f36", 1.8);
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(-8.8, 0);
@@ -1910,7 +2026,7 @@ function drawBoss(ctx, markerX, x1, feetY) {
   }
 
   // Each kind of boss has its own headgear.
-  if (boss.kind.id === "rust") {
+  if (who.kind.id === "rust") {
     ctx.beginPath();
     ctx.moveTo(-10, -40);
     ctx.lineTo(-11, -50);
@@ -1921,13 +2037,13 @@ function drawBoss(ctx, markerX, x1, feetY) {
     ctx.lineTo(10, -40);
     ctx.closePath();
     inked(ctx, "#f2c23e", 1.8);
-  } else if (boss.kind.id === "wall") {
+  } else if (who.kind.id === "wall") {
     for (const [bx, by] of [[-11, -46], [-1, -46], [-6, -51]]) {
       ctx.beginPath();
       ctx.rect(bx, by, 11, 6);
       inked(ctx, "#c98560", 1.5);
     }
-  } else if (boss.kind.id === "scramble") {
+  } else if (who.kind.id === "scramble") {
     ctx.save();
     ctx.translate(0, -47);
     ctx.rotate(time * 4);
@@ -1942,7 +2058,7 @@ function drawBoss(ctx, markerX, x1, feetY) {
     inked(ctx, "#c3ccd5", 1.8);
   }
   ctx.restore();
-  if (boss.shield > 0) {
+  if (who.shield > 0) {
     const y = feetY - 25;
     ctx.beginPath();
     ctx.fillStyle = "rgba(10, 40, 60, 0.8)";
@@ -1955,8 +2071,20 @@ function drawBoss(ctx, markerX, x1, feetY) {
     ctx.fillStyle = "#d8f6ff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`TAP ${boss.shield}`, x, y);
+    ctx.fillText(`TAP ${who.shield}`, x, y);
   }
+}
+
+// A beaten boss tips over and fades away during the win.
+function drawFallenBoss(ctx, feetY) {
+  const f = fallenBoss;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - f.t);
+  ctx.translate(f.x, feetY);
+  ctx.rotate(f.t * 1.5);
+  ctx.translate(-f.x, -feetY);
+  drawBoss(ctx, { ...f.boss, attackIn: 99, hitFlash: 0, shield: 0 }, f.x - 32, f.x + 200, feetY);
+  ctx.restore();
 }
 
 function drawBossBar(ctx, x0, x1) {
@@ -2075,15 +2203,40 @@ function drawBattle() {
   ctx.strokeStyle = "#3a2414";
   ctx.stroke();
 
-  const playerX = Math.max(x0 + 12, markerX - 20);
-  const enemyX = Math.min(x1 - 12, markerX + 20);
-  drawArmyFighter(ctx, playerX, groundY, ARMY_RANKS[armyRank].look, 1);
-  if (!boss) drawArmyFighter(ctx, enemyX, groundY, enemyRank().look, -1);
+  // Fills up as the strike recharges, then pulses when it is ready.
+  const strikeCharge = 1 - strikeCooldown / STRIKE_COOLDOWN_SECONDS;
+  ctx.beginPath();
+  ctx.lineWidth = strikeCharge >= 1 ? 3 + Math.sin(performance.now() / 150) : 3;
+  ctx.strokeStyle = strikeCharge >= 1 ? "#ffffff" : "rgba(255, 255, 255, 0.75)";
+  ctx.arc(markerX, barY + barH / 2, 13, -Math.PI / 2, -Math.PI / 2 + strikeCharge * Math.PI * 2);
+  ctx.stroke();
+
+  const won = gameState === "choosing";
+  const fleeing = won ? (performance.now() - winAt) * 0.16 : 0;
+  const playerLook = ARMY_RANKS[armyRank].look;
+  const enemyLook = enemyRank().look;
+  const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
+  const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
+  const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
+  drawArmyFighter(ctx, playerX, groundY, playerLook, 1, won ? "cheer" : "fight", won ? "happy" : moodFor(ratio, shove.player));
+  if (!boss) {
+    drawArmyFighter(ctx, enemyX, groundY, enemyLook, won ? 1 : -1, won ? "flee" : "fight", won ? "scared" : moodFor(1 - ratio, shove.enemy));
+  }
+
+  for (const f of fallers) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, 2 * (1 - f.age));
+    ctx.translate(f.x, f.y);
+    ctx.rotate(f.angle);
+    drawSoldier(ctx, 0, 10, f.facing, f.look, "idle", 0, "wince");
+    ctx.restore();
+  }
 
   // Soldiers on their way, on a row of their own so they stand out from the
   // armies already at the front.
   for (const m of marchers) {
-    if (m.t < 0) continue;
+    // Only charges are shown walking; other soldiers arrive by flying in.
+    if (m.t < 0 || !m.charge) continue;
     const x = m.side === "enemy" ? x1 - (x1 - markerX) * m.t : x0 + (markerX - x0) * m.t;
     const feetY = battleCssH * 0.72;
     if (m.side === "bomb") drawBombIcon(ctx, x, feetY - 8);
@@ -2105,7 +2258,8 @@ function drawBattle() {
       ctx.fillText(headCount, x, feetY - 29);
     }
   }
-  if (boss) drawBoss(ctx, markerX, x1, battleCssH * 0.75);
+  if (boss) drawBoss(ctx, boss, markerX, x1, battleCssH * 0.75);
+  if (fallenBoss) drawFallenBoss(ctx, battleCssH * 0.75);
   for (const c of clashes) {
     ctx.beginPath();
     ctx.lineWidth = 2;
@@ -2120,9 +2274,10 @@ function drawBattle() {
   ctx.textBaseline = "alphabetic";
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
   // During a boss fight the enemy's number sits over the boss, below its health bar.
-  const countY = boss ? 25 : 13;
-  drawArmyCount(ctx, playerX, countY, Math.round(playerPower / armyStrength()));
-  drawArmyCount(ctx, boss ? Math.min(x1 - 22, markerX + 30) : enemyX, countY, Math.round(enemyPower / enemyRank().strength));
+  const minCountY = boss ? 26 : 12;
+  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(playerPower / armyStrength()));
+  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(enemyPower / enemyRank().strength));
+  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(enemyPower / enemyRank().strength));
   ctx.font = "800 12px system-ui, sans-serif";
   ctx.fillStyle = "#ffcc33";
   ctx.textBaseline = "alphabetic";
@@ -2206,12 +2361,53 @@ function spawnRustBurst(row, col, colorA = "#a4552a", colorB = "#6e3a1c") {
 }
 
 // Sparks and a floating number where a soldier or bomb reached the front line.
-function spawnFrontLineHit(marcher) {
+function frontLineFx() {
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
-  const x = laneRect.x + 16 + (laneRect.w - 32) * ratio;
-  const y = laneRect.y + laneRect.h * 0.5;
+  return { x: laneRect.x + 16 + (laneRect.w - 32) * ratio, y: laneRect.y + laneRect.h * 0.5 };
+}
+
+// Bigger hits get bigger numbers.
+function spawnHitNumber(x, y, text, color, amount) {
+  if (hitNumbers.length >= MAX_HIT_NUMBERS) return;
+  const size = Math.round(Math.min(26, 13 + Math.log10(Math.max(1, amount / armyStrength())) * 9));
+  hitNumbers.push({ x, y, text, color, size, age: 0 });
+}
+
+function spawnFaller(side) {
+  const now = performance.now();
+  if (fallers.length >= MAX_FALLERS || now - lastFallerAt < FALLER_GAP_MS) return;
+  lastFallerAt = now;
+  const total = playerPower + enemyPower;
+  const markerX = 16 + (battleCssW - 32) * (total > 0 ? playerPower / total : 0.5);
+  const away = side === "enemy" ? 1 : -1;
+  fallers.push({
+    x: markerX + away * 14,
+    y: battleCssH * 0.5,
+    vx: away * randomBetween(40, 90),
+    vy: randomBetween(-110, -60),
+    spin: away * randomBetween(4, 8),
+    angle: 0,
+    age: 0,
+    look: side === "enemy" ? enemyRank().look : ARMY_RANKS[armyRank].look,
+    facing: -away,
+  });
+}
+
+function spawnFrontLineHit(marcher) {
+  const { x, y } = frontLineFx();
   const isEnemy = marcher.side === "enemy";
+  if (isEnemy) {
+    shove.player = Math.max(shove.player, 0.7);
+    spawnFaller("player");
+  } else {
+    shove.enemy = 1;
+    spawnFaller("enemy");
+    if (marcher.charge || marcher.side === "bomb") {
+      hitStop = HIT_STOP_SECONDS;
+      screenShake = Math.max(screenShake, 3);
+    }
+  }
   for (let i = 0; i < 5; i++) {
     spawnParticle({
       x,
@@ -2224,14 +2420,14 @@ function spawnFrontLineHit(marcher) {
       color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
     });
   }
-  if (isEnemy || hitNumbers.length >= MAX_HIT_NUMBERS) return;
-  hitNumbers.push({
-    x: x + randomBetween(-10, 10),
-    y: y - 10,
-    text: `${marcher.side === "bomb" ? "-" : "+"}${Math.round(marcher.value)}`,
-    color: marcher.side === "bomb" ? "#ff8a3d" : marcher.charge ? "#ffcc33" : "#bcd9ff",
-    age: 0,
-  });
+  if (isEnemy) return;
+  spawnHitNumber(
+    x + randomBetween(-10, 10),
+    y - 10,
+    `${marcher.side === "bomb" ? "-" : "+"}${Math.round(marcher.value)}`,
+    marcher.side === "bomb" ? "#ff8a3d" : marcher.charge ? "#ffcc33" : "#bcd9ff",
+    marcher.value,
+  );
 }
 
 function spawnConfetti() {
@@ -2254,7 +2450,7 @@ function spawnConfetti() {
 }
 
 function updateFx(dt) {
-  for (const flyer of flyers) flyer.t += dt / FLY_SECONDS;
+  for (const flyer of flyers) flyer.t += dt / (FLY_SECONDS + MARCH_SECONDS);
   flyers = flyers.filter((flyer) => flyer.t < 1);
 
   for (const p of particles) {
@@ -2270,6 +2466,22 @@ function updateFx(dt) {
     number.y -= 34 * dt;
   }
   hitNumbers = hitNumbers.filter((number) => number.age < HIT_NUMBER_SECONDS);
+  for (const f of fallers) {
+    f.age += dt;
+    f.vy += 340 * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.angle += f.spin * dt;
+  }
+  fallers = fallers.filter((f) => f.age < 1);
+  for (const bolt of bolts) bolt.age += dt;
+  bolts = bolts.filter((bolt) => bolt.age < 0.25);
+  shove.player = Math.max(0, shove.player - dt * 5);
+  shove.enemy = Math.max(0, shove.enemy - dt * 5);
+  if (fallenBoss) {
+    fallenBoss.t += dt / (VICTORY_MS / 1000);
+    if (fallenBoss.t >= 1) fallenBoss = null;
+  }
 
   screenShake = Math.max(0, screenShake - SHAKE_FADE_PER_SEC * dt);
   const shake = REDUCED_MOTION ? 0 : screenShake;
@@ -2286,8 +2498,9 @@ function drawFx() {
   for (const flyer of flyers) {
     // An arc from the gear up to the lane, speeding up as it goes.
     const t = flyer.t * flyer.t;
-    const x = flyer.fromX + (flyTarget.x - flyer.fromX) * t;
-    const y = flyer.fromY + (flyTarget.y - flyer.fromY) * flyer.t;
+    const front = frontLineFx();
+    const x = flyer.fromX + (front.x - 20 - flyer.fromX) * t;
+    const y = flyer.fromY + (front.y - flyer.fromY) * flyer.t - Math.sin(flyer.t * Math.PI) * 24;
     ctx.save();
     ctx.shadowColor = flyer.side === "bomb" ? "#ff8a3d" : "#8fc0ff";
     ctx.shadowBlur = 16;
@@ -2306,11 +2519,28 @@ function drawFx() {
     ctx.restore();
   }
 
-  ctx.font = "800 13px system-ui, sans-serif";
+  // Lightning strikes, a jagged line from the top of the battle down.
+  for (const bolt of bolts) {
+    const top = laneRect.y;
+    const bottom = laneRect.y + laneRect.h * 0.68;
+    const jag = [[0, 0], [-7, 0.3], [5, 0.45], [-5, 0.7], [0, 1]];
+    ctx.globalAlpha = 1 - bolt.age / 0.25;
+    for (const [color, width] of [[OUTLINE, 7], ["#ffe14d", 4]]) {
+      ctx.beginPath();
+      for (const [dx, t] of jag) ctx.lineTo(bolt.x + dx, top + (bottom - top) * t);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 3;
   for (const number of hitNumbers) {
+    ctx.font = `800 ${number.size}px system-ui, sans-serif`;
     ctx.globalAlpha = 1 - number.age / HIT_NUMBER_SECONDS;
     ctx.strokeStyle = "#1c130a";
     ctx.strokeText(number.text, number.x, number.y);
@@ -2433,6 +2663,11 @@ function playBoomSound() {
   lastBoomSoundAt = now;
   sweep(140, 40, 0.35, "sine", 0.35);
   noiseBurst(0.25, "lowpass", 700, 0.3);
+}
+
+function playStrikeSound() {
+  sweep(1400, 200, 0.18, "sawtooth", 0.12);
+  noiseBurst(0.16, "highpass", 2500, 0.25);
 }
 
 function playBossSound() {
@@ -2584,7 +2819,6 @@ function layoutFxCanvas() {
   fxCssW = frame.width;
   fxCssH = frame.height;
   boardOrigin = { x: board.left - frame.left, y: board.top - frame.top };
-  flyTarget = { x: lane.left - frame.left + 16, y: lane.top - frame.top + lane.height * 0.6 };
   laneRect = { x: lane.left - frame.left, y: lane.top - frame.top, w: lane.width, h: lane.height };
   fxCtx = fitCanvasDPR(fxCanvas, fxCssW, fxCssH);
 }
@@ -2635,6 +2869,12 @@ function startNewRun() {
   flyers = [];
   particles = [];
   hitNumbers = [];
+  fallers = [];
+  bolts = [];
+  shove = { player: 0, enemy: 0 };
+  hitStop = 0;
+  fallenBoss = null;
+  strikeCooldown = 0;
   screenShake = 0;
   wave = 1;
   waveTime = 0;
@@ -2647,6 +2887,7 @@ function startNewRun() {
   document.getElementById("title-screen").classList.add("hidden");
   document.getElementById("gameover-screen").classList.add("hidden");
   document.getElementById("reward-screen").classList.add("hidden");
+  clearTimeout(rewardTimer);
   document.getElementById("game-screen").classList.remove("hidden");
   gameState = "playing";
   handleResize();
@@ -2657,7 +2898,9 @@ let lastTime = 0;
 function loop(now) {
   const dt = lastTime ? Math.min(0.05, (now - lastTime) / 1000) : 0;
   lastTime = now;
-  update(dt);
+  // Big hits freeze the game for a moment; effects keep moving through it.
+  if (hitStop > 0) hitStop -= dt;
+  else update(dt);
   updateScrapZone();
   updateFx(dt);
   drawBoard();
