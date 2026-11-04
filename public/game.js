@@ -11,12 +11,13 @@
 // line and only count once they get there. Winning a wave offers a choice of
 // three rewards, including special gears that make placement matter. Every
 // fifth wave is a boss with a health bar, who rusts gears to break the chain.
+// Runs earn coins, spent in the Workshop on upgrades that last between runs.
 // Two independent systems tied together by one number:
 //   - the board (grid[][]) is the gear machine
 //   - the battle (playerPower/enemyPower) is a simple push-the-line meter
 // Everything here is client-only — no backend, no login. Progress within
 // a run isn't persisted (a run is a few minutes), only the best wave
-// reached, via localStorage.
+// reached, coins, upgrades and the mute setting, via localStorage.
 // =====================================================================
 
 const COLS = 6;
@@ -36,6 +37,15 @@ const MAX_FLYERS = 30;
 const MAX_PARTICLES = 200;
 const SHAKE_FADE_PER_SEC = 24; // pixels of screen shake lost per second
 const BOMB_SHAKE = 5; // pixels
+const SAVE_KEY = "gearfight_save";
+const COINS_PER_WAVE = 2;
+const COINS_PER_BOSS = 10;
+const RECRUITS_FIRST_WAVE_PER_LEVEL = 0.1; // extra share of the army in wave 1; level 5 stays under WIN_RATIO
+const RECRUITS_LEAD_PER_LEVEL = 0.05; // added to the player's lead in later waves
+const BOSS_BREAKER_PER_LEVEL = 0.1; // boss health and reinforcements removed by each level
+const SPEED_PER_LEVEL = 0.05; // main gear speed added by each level
+const OVERDRIVE_SECONDS_PER_LEVEL = 1;
+const DISCOUNT_PER_LEVEL = 0.05; // gear price removed by each level
 const BOSS_EVERY_WAVES = 5;
 const BOSS_HP_SCALE = 1.5; // boss health vs the soldiers a normal wave would take to win
 const BOSS_PRESSURE = 0.12; // enemies the boss brings per second, as a share of the wave's starting army
@@ -45,7 +55,7 @@ const BOSS_WARNING_SECONDS = 1; // the boss glows for this long before it attack
 const BOSS_RUST_SHARE = 0.25; // share of working gears rusted by each attack
 const BOSS_RUST_MAX_PER_ATTACK = 5; // keeps a big machine possible to repair by hand
 const OVERDRIVE_MULTIPLIER = 3; // main gear speed while overdrive is on
-const OVERDRIVE_SECONDS = 5;
+const OVERDRIVE_BASE_SECONDS = 5;
 const OVERDRIVE_COOLDOWN_SECONDS = 30;
 const OVERDRIVE_START_COOLDOWN_SECONDS = 20; // ready from the first second, it wins wave 1 with no gears bought
 const TOOTH_COUNT = 12; // teeth drawn per gear — also one tick's worth of visual spin
@@ -84,6 +94,18 @@ const VETERANS_REWARD = 0.15; // added to the player's lead each wave
 const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave outright
 const DISCOUNT_REWARD = 0.8; // gear price multiplier
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when the choice appears
+
+// Permanent upgrades. `costs` has one price per level, so its length is the
+// highest level.
+const UPGRADES = [
+  { id: "startGears", name: "Spare gears", text: "Start each run with 1 more gear", costs: [20, 60, 120] },
+  { id: "recruits", name: "Recruits", text: "Start every wave with more soldiers", costs: [10, 20, 35, 50, 70] },
+  { id: "bossBreaker", name: "Boss breaker", text: "Bosses have 10% less health and help", costs: [40, 90, 160] },
+  { id: "speed", name: "Oiled main gear", text: "The one-tooth gear turns 5% faster", costs: [30, 60, 100, 150] },
+  { id: "overdrive", name: "Long Overdrive", text: "Overdrive lasts 1 second longer", costs: [25, 60, 110] },
+  { id: "discount", name: "Trade deal", text: "New gears cost 5% less", costs: [20, 45, 80, 120] },
+  { id: "extraChoice", name: "Bigger crate", text: "Choose from 4 rewards after each wave", costs: [200] },
+];
 
 const REWARDS = [
   { name: "Big gear", text: "Fills half as fast, then sends 5 soldiers", gear: "big" },
@@ -130,6 +152,12 @@ let waveLead = WAVE_START_LEAD; // player's army vs the enemy's when a new wave 
 let gearPriceScale = 1;
 let rewardOpenedAt = 0;
 let boss = null; // { hp, maxHp, attackIn, hitFlash, reinforcePerSec } during a boss wave
+let bossesBeaten = 0;
+let enemiesBlasted = 0;
+let runTime = 0; // seconds played this run, not counting reward choices
+let bestWaveBeforeRun = 1; // decides whether this run set a new record
+let runBanked = false; // whether this run's coins have been paid out
+let save = loadSave();
 let overdriveLeft = 0; // seconds of overdrive still running
 let overdriveCooldown = 0; // seconds until overdrive can be used again
 
@@ -149,6 +177,35 @@ let playerPower = BASE_POWER;
 let enemyPower = BASE_POWER;
 let totalArmyScore = 0;
 let bestWave = Number(localStorage.getItem("gearfight_best_wave") || 1);
+
+// Saved data can be missing, damaged or blocked, and none of that should stop
+// the game from starting.
+function loadSave() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAVE_KEY));
+    return {
+      coins: Math.max(0, Math.floor(Number(data?.coins)) || 0),
+      upgrades: data?.upgrades && typeof data.upgrades === "object" ? data.upgrades : {},
+      muted: data?.muted === true,
+    };
+  } catch {
+    return { coins: 0, upgrades: {}, muted: false };
+  }
+}
+
+function writeSave() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+  } catch {
+    // Without storage, progress simply lasts until the page closes.
+  }
+}
+
+function upgradeLevel(id) {
+  const upgrade = UPGRADES.find((u) => u.id === id);
+  const level = Math.floor(Number(save.upgrades[id])) || 0;
+  return Math.max(0, Math.min(upgrade.costs.length, level));
+}
 
 function freshCell(type = "soldier") {
   return { type, ticks: 0, ticksAnim: 0, spinTarget: 0, spinAnim: 0, flash: 0 };
@@ -298,7 +355,7 @@ function canBuyGear() {
 }
 
 function buyButtonLabel() {
-  if (!bestEmptyCell()) return "Board full";
+  if (!bestEmptyCell()) return "Board full: scrap a gear";
   const label = `Buy gear: ${gearCost()} soldiers`;
   const short = soldiersShortForGear();
   return short > 0 ? `${label} (need ${short} more)` : label;
@@ -319,6 +376,35 @@ function buyGear() {
   playClankSound();
 }
 
+// Half the current price, which is always less than a gear just cost, so
+// buying and scrapping can never make soldiers.
+function scrapRefund() {
+  return Math.floor(gearCost() / 2);
+}
+
+function scrapGear(row, col) {
+  const refund = scrapRefund();
+  grid[row][col] = null;
+  playerPower += refund;
+  spawnRustBurst(row, col);
+  showToast(`Scrapped: +${refund}`);
+  playClankSound();
+}
+
+function pointerOverScrapZone(e) {
+  const r = document.getElementById("scrap-zone").getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
+function updateScrapZone() {
+  const zone = document.getElementById("scrap-zone");
+  zone.classList.toggle("hidden", !drag);
+  if (!drag) return;
+  zone.classList.toggle("hover", Boolean(drag.overScrap));
+  const label = `Drop here to scrap: +${scrapRefund()}`;
+  if (zone.textContent !== label) zone.textContent = label;
+}
+
 function sendSoldiers(count, row, col) {
   launchFlyer(row, col, "player");
   sendMarcher("player", count, FLY_SECONDS);
@@ -329,6 +415,7 @@ function sendSoldiers(count, row, col) {
 
 function launchBomb(enemies, row, col) {
   launchFlyer(row, col, "bomb");
+  enemiesBlasted += enemies;
   sendMarcher("bomb", enemies, FLY_SECONDS);
   showToast(`-${enemies}`);
   playFireSound();
@@ -341,9 +428,13 @@ function sendMarcher(side, value, delaySeconds = 0) {
   else marchers.push({ side, value, t: -delaySeconds / MARCH_SECONDS });
 }
 
+function bossWeakening() {
+  return 1 - upgradeLevel("bossBreaker") * BOSS_BREAKER_PER_LEVEL;
+}
+
 function bossMaxHp(forWave) {
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
-  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE;
+  return waveStartEnemy(forWave) * soldiersToWinPerEnemy * BOSS_HP_SCALE * bossWeakening();
 }
 
 function damageBoss(amount) {
@@ -353,7 +444,7 @@ function damageBoss(amount) {
 }
 
 function bossReinforcePerSec(enemyStart) {
-  return enemyStart * BOSS_PRESSURE;
+  return enemyStart * BOSS_PRESSURE * bossWeakening();
 }
 
 function rustPerAttack(workingGears) {
@@ -396,13 +487,17 @@ function updateBoss(dt) {
   }
 }
 
+function overdriveSeconds() {
+  return OVERDRIVE_BASE_SECONDS + upgradeLevel("overdrive") * OVERDRIVE_SECONDS_PER_LEVEL;
+}
+
 function overdriveReady() {
   return overdriveLeft <= 0 && overdriveCooldown <= 0;
 }
 
 function activateOverdrive() {
   if (gameState !== "playing" || !overdriveReady()) return;
-  overdriveLeft = OVERDRIVE_SECONDS;
+  overdriveLeft = overdriveSeconds();
   playOverdriveSound();
 }
 
@@ -426,7 +521,7 @@ function updateOverdriveButton() {
   button.disabled = !overdriveReady() || gameState !== "playing";
   button.classList.toggle("ready", overdriveReady());
   button.classList.toggle("active", overdriveLeft > 0);
-  const charge = overdriveLeft > 0 ? overdriveLeft / OVERDRIVE_SECONDS : 1 - overdriveCooldown / OVERDRIVE_COOLDOWN_SECONDS;
+  const charge = overdriveLeft > 0 ? overdriveLeft / overdriveSeconds() : 1 - overdriveCooldown / OVERDRIVE_COOLDOWN_SECONDS;
   button.style.setProperty("--charge", `${Math.round(charge * 100)}%`);
 }
 
@@ -465,11 +560,16 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
-  if (drag) Object.assign(drag, boardPoint(e));
+  if (drag) Object.assign(drag, boardPoint(e), { overScrap: pointerOverScrapZone(e) });
 }
 
 function onPointerUp(e) {
   if (!drag) return;
+  if (pointerOverScrapZone(e)) {
+    scrapGear(drag.row, drag.col);
+    drag = null;
+    return;
+  }
   // Handling a rusted gear frees it, whether it was tapped or moved.
   if (drag.cell.rusted) {
     drag.cell.rusted = false;
@@ -569,6 +669,7 @@ function winWave() {
     if (cell) cell.rusted = false;
   }
   if (bossBeaten) {
+    bossesBeaten += 1;
     // Beating a boss recharges Overdrive on top of the usual reward.
     overdriveLeft = 0;
     overdriveCooldown = 0;
@@ -602,14 +703,14 @@ function startWave() {
   }
 }
 
-// One special gear (while there's room) plus two other rewards, so a choice
-// always includes something to place.
+// One special gear (while there's room) plus other rewards, so a choice always
+// includes something to place.
 function pickRewards() {
   const open = REWARDS.filter((r) => (r.gear ? bestEmptyCell() : !r.available || r.available()));
   const shuffled = open.map((r) => [Math.random(), r]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
-  return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3);
+  return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
 }
 
 function offerRewards(title) {
@@ -648,16 +749,46 @@ function chooseReward(reward) {
   showWaveBanner(boss ? "Boss wave!" : `Wave ${wave}!`);
 }
 
+function coinsForRun() {
+  return (wave - 1) * COINS_PER_WAVE + bossesBeaten * COINS_PER_BOSS;
+}
+
+// Pays out once per run, whether it ended in defeat or with Restart.
+function bankRun() {
+  if (runBanked) return 0;
+  runBanked = true;
+  const coins = coinsForRun();
+  save.coins += coins;
+  writeSave();
+  return coins;
+}
+
+function formatTime(seconds) {
+  const whole = Math.floor(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+function showRunSummary(coins) {
+  document.getElementById("final-wave").textContent = wave;
+  document.getElementById("new-record").classList.toggle("hidden", wave <= bestWaveBeforeRun);
+  document.getElementById("stat-soldiers").textContent = Math.round(totalArmyScore);
+  document.getElementById("stat-bosses").textContent = bossesBeaten;
+  document.getElementById("stat-blasted").textContent = enemiesBlasted;
+  document.getElementById("stat-time").textContent = formatTime(runTime);
+  document.getElementById("coins-earned").textContent = `+${coins} coins`;
+  document.getElementById("gameover-screen").classList.remove("hidden");
+}
+
 function gameOver() {
   gameState = "gameover";
   drag = null;
-  document.getElementById("final-wave").textContent = wave;
-  document.getElementById("gameover-screen").classList.remove("hidden");
+  showRunSummary(bankRun());
   playLoseSound();
 }
 
 function update(dt) {
   if (gameState !== "playing") return;
+  runTime += dt;
   updateOverdrive(dt);
   updateBoss(dt);
   updateDrivers(dt);
@@ -1218,8 +1349,20 @@ function ensureAudio() {
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
 }
 
+function setMuted(muted) {
+  save.muted = muted;
+  writeSave();
+  updateMuteButton();
+}
+
+function updateMuteButton() {
+  const button = document.getElementById("mute-btn");
+  button.textContent = save.muted ? "\u{1F507}" : "\u{1F50A}";
+  button.setAttribute("aria-label", save.muted ? "Turn sound on" : "Turn sound off");
+}
+
 function beep(freq, duration, type, gainPeak) {
-  if (!audioCtx) return;
+  if (!audioCtx || save.muted) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = type || "sine";
@@ -1235,7 +1378,7 @@ function beep(freq, duration, type, gainPeak) {
 
 // A pitch slide, for launches and explosions.
 function sweep(fromFreq, toFreq, duration, type, gainPeak) {
-  if (!audioCtx) return;
+  if (!audioCtx || save.muted) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   const t0 = audioCtx.currentTime;
@@ -1253,7 +1396,7 @@ function sweep(fromFreq, toFreq, duration, type, gainPeak) {
 // Filtered noise is what makes these sound like metal rather than a beep.
 let noiseBuffer = null;
 function noiseBurst(duration, filterType, filterFreq, gainPeak) {
-  if (!audioCtx) return;
+  if (!audioCtx || save.muted) return;
   if (!noiseBuffer) {
     noiseBuffer = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate / 2), audioCtx.sampleRate);
     const samples = noiseBuffer.getChannelData(0);
@@ -1363,6 +1506,54 @@ function showWaveBanner(text) {
 }
 
 // =====================================================================
+// Workshop — spend coins on permanent upgrades
+// =====================================================================
+
+function buyUpgrade(upgrade) {
+  const level = upgradeLevel(upgrade.id);
+  const cost = upgrade.costs[level];
+  if (cost === undefined || save.coins < cost) return;
+  save.coins -= cost;
+  save.upgrades[upgrade.id] = level + 1;
+  writeSave();
+  ensureAudio();
+  playClankSound();
+  renderWorkshop();
+}
+
+function renderWorkshop() {
+  document.getElementById("workshop-coins").textContent = save.coins;
+  document.getElementById("title-coins").textContent = save.coins;
+  const list = document.getElementById("workshop-list");
+  list.replaceChildren();
+  for (const upgrade of UPGRADES) {
+    const level = upgradeLevel(upgrade.id);
+    const cost = upgrade.costs[level];
+    const button = document.createElement("button");
+    button.className = "upgrade";
+    button.disabled = cost === undefined || save.coins < cost;
+    const name = document.createElement("b");
+    name.textContent = `${upgrade.name} ${level}/${upgrade.costs.length}`;
+    const text = document.createElement("span");
+    text.textContent = upgrade.text;
+    const price = document.createElement("em");
+    price.textContent = cost === undefined ? "Max" : `${cost} coins`;
+    button.append(name, text, price);
+    button.addEventListener("click", () => buyUpgrade(upgrade));
+    list.append(button);
+  }
+}
+
+function openWorkshop() {
+  renderWorkshop();
+  document.getElementById("workshop-screen").classList.remove("hidden");
+}
+
+function closeWorkshop() {
+  document.getElementById("workshop-screen").classList.add("hidden");
+}
+
+// =====================================================================
 // Layout / resize
 // =====================================================================
 
@@ -1424,15 +1615,23 @@ function handleResize() {
 
 function startNewRun() {
   ensureAudio();
+  // Restart ends a run in progress, which still earns its coins.
+  const restarted = gameState === "playing" || gameState === "choosing";
+  const coinsFromRestart = restarted ? bankRun() : 0;
   drag = null;
   gearsBought = 0;
   peakRate = 0;
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
-  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
-  waveLead = WAVE_START_LEAD;
-  gearPriceScale = 1;
+  driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL);
+  waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
+  gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
+  bossesBeaten = 0;
+  enemiesBlasted = 0;
+  runTime = 0;
+  bestWaveBeforeRun = bestWave;
+  runBanked = false;
   boss = null;
   overdriveLeft = 0;
   overdriveCooldown = OVERDRIVE_START_COOLDOWN_SECONDS;
@@ -1441,10 +1640,11 @@ function startNewRun() {
   screenShake = 0;
   wave = 1;
   waveTime = 0;
-  playerPower = BASE_POWER;
+  playerPower = BASE_POWER * (1 + upgradeLevel("recruits") * RECRUITS_FIRST_WAVE_PER_LEVEL);
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
   createBoard();
+  for (let i = 0; i < upgradeLevel("startGears"); i++) placeGear("soldier");
 
   document.getElementById("title-screen").classList.add("hidden");
   document.getElementById("gameover-screen").classList.add("hidden");
@@ -1452,6 +1652,7 @@ function startNewRun() {
   document.getElementById("game-screen").classList.remove("hidden");
   gameState = "playing";
   handleResize();
+  if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
 }
 
 let lastTime = 0;
@@ -1459,6 +1660,7 @@ function loop(now) {
   const dt = lastTime ? Math.min(0.05, (now - lastTime) / 1000) : 0;
   lastTime = now;
   update(dt);
+  updateScrapZone();
   updateFx(dt);
   drawBoard();
   drawBattle();
@@ -1481,6 +1683,12 @@ function init() {
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
   document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
+  document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
+  document.getElementById("title-workshop-btn").addEventListener("click", openWorkshop);
+  document.getElementById("gameover-workshop-btn").addEventListener("click", openWorkshop);
+  document.getElementById("workshop-close-btn").addEventListener("click", closeWorkshop);
+  updateMuteButton();
+  renderWorkshop();
 
   wireBoardInput();
   window.addEventListener("resize", handleResize);

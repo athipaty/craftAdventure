@@ -17,6 +17,7 @@
       <h1>Gear <span class="accent">Fight!</span></h1>
       <p>The one-tooth gear keeps turning. Each hit adds 25% to the gear it touches and every gear connected to it. At 100%, a gear sends one soldier to fight. Spend soldiers on new gears, and win waves to pick rewards and special gears.</p>
       <button id="play-btn">Play game</button>
+      <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
 
@@ -24,6 +25,7 @@
       <div id="hud">
         <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
         <span id="score-indicator">Army <b id="army-score">0</b></span>
+        <button id="mute-btn"></button>
         <button id="restart-btn" title="Restart from wave 1">Restart</button>
       </div>
 
@@ -39,9 +41,10 @@
       <div id="action-row">
         <button id="buy-gear-btn" disabled>Buy gear: 3 soldiers</button>
         <button id="overdrive-btn">Overdrive!</button>
+        <div id="scrap-zone" class="hidden"></div>
       </div>
 
-      <p class="hint">Each hit fills connected gears &nbsp;|&nbsp; Full gears pay out &nbsp;|&nbsp; Drag a gear to move it</p>
+      <p class="hint">Each hit fills connected gears &nbsp;|&nbsp; Full gears pay out &nbsp;|&nbsp; Drag a gear to move or scrap it</p>
     </div>
 
     <canvas id="fx-canvas"></canvas>
@@ -58,8 +61,26 @@
 
     <div id="gameover-screen" class="hidden">
       <h2>Overrun!</h2>
+      <p id="new-record" class="hidden">New record!</p>
       <p>Your army reached wave <b id="final-wave">1</b>.</p>
-      <button id="retry-btn">Try again</button>
+      <dl id="run-stats">
+        <div><dt>Soldiers sent</dt><dd id="stat-soldiers">0</dd></div>
+        <div><dt>Bosses beaten</dt><dd id="stat-bosses">0</dd></div>
+        <div><dt>Enemies blasted</dt><dd id="stat-blasted">0</dd></div>
+        <div><dt>Time</dt><dd id="stat-time">0:00</dd></div>
+      </dl>
+      <p id="coins-earned"></p>
+      <div id="gameover-actions">
+        <button id="retry-btn">Try again</button>
+        <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
+      </div>
+    </div>
+
+    <div id="workshop-screen" class="hidden">
+      <h2>Workshop</h2>
+      <p><b id="workshop-coins">0</b> coins to spend. Upgrades last for every run.</p>
+      <div id="workshop-list"></div>
+      <button id="workshop-close-btn" class="workshop-btn">Back</button>
     </div>
   </div>
 

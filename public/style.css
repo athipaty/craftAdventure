@@ -117,6 +117,15 @@ button {
 
 #score-indicator {
   flex: 1;
+  min-width: 0;
+}
+
+#mute-btn {
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.95rem;
 }
 
 #restart-btn {
@@ -188,6 +197,7 @@ button {
   justify-content: center;
   align-items: stretch;
   gap: 8px;
+  position: relative;
   min-height: 60px; /* room for a two-line label, so the board never has to move */
   margin-top: 4px;
   padding: 0 10px;
@@ -197,6 +207,29 @@ button {
   #action-row {
     min-height: 80px;
   }
+}
+
+/* Sits over the buttons only while a gear is being dragged. */
+#scrap-zone {
+  position: absolute;
+  inset: 0 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #ff9a85;
+  border-radius: 10px;
+  background: #4a1a12;
+  color: #ffd9cf;
+  font-weight: 800;
+  font-size: 0.95rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+#scrap-zone.hover {
+  background: var(--enemy);
+  color: #ffffff;
 }
 
 #overdrive-btn {
@@ -365,6 +398,112 @@ button {
   background: #5a3a20;
 }
 
+/* ---------- Workshop ---------- */
+
+.workshop-btn {
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+#title-workshop-btn {
+  margin-top: 6px;
+}
+
+.workshop-btn b {
+  color: var(--accent);
+}
+
+.workshop-btn:active {
+  background: #5a3a20;
+}
+
+#workshop-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  text-align: center;
+  background: var(--bg-bottom);
+}
+
+#workshop-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#workshop-screen p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e4d3b8;
+}
+
+#workshop-coins {
+  color: var(--accent);
+}
+
+/* The page blocks touch scrolling for the board, so the list turns it back on. */
+#workshop-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.upgrade {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.upgrade b {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.upgrade span {
+  grid-column: 1;
+}
+
+.upgrade em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.upgrade:active:not(:disabled) {
+  background: #5a3a20;
+}
+
+.upgrade:disabled {
+  border-color: rgba(255, 255, 255, 0.15);
+  opacity: 0.6;
+}
+
 /* ---------- Game over screen ---------- */
 
 #gameover-screen {
@@ -392,9 +531,50 @@ button {
   color: #e4d3b8;
 }
 
+#gameover-screen #new-record,
+#gameover-screen #coins-earned {
+  color: var(--accent);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+#run-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  width: 100%;
+  max-width: 320px;
+  margin: 0;
+}
+
+#run-stats div {
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#run-stats dt {
+  font-size: 0.72rem;
+  color: #c9b896;
+}
+
+#run-stats dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+#gameover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
 #retry-btn {
-  margin-top: 10px;
-  padding: 14px 40px;
+  padding: 14px 32px;
   font-size: 1.1rem;
   font-weight: 700;
   color: #4a1a12;
@@ -477,6 +657,23 @@ button {
   #reward-options {
     flex-direction: row;
     max-width: 720px;
+  }
+
+  #gameover-screen {
+    gap: 6px;
+    padding: 10px 24px;
+  }
+
+  #run-stats {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 560px;
+  }
+
+  #workshop-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+    max-width: 760px;
   }
 
   .reward-option {
