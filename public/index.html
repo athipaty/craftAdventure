@@ -15,7 +15,7 @@
   <div id="app-frame">
     <div id="title-screen">
       <h1>Gear <span class="accent">Fight!</span></h1>
-      <p>The one-tooth gear keeps turning. Each hit fills the gear it touches by 25%. At 100%, that gear sends one soldier to fight.</p>
+      <p>The one-tooth gear keeps turning. Each hit adds 25% to the gear it touches and every gear connected to it. At 100%, a gear sends one soldier to fight. Spend soldiers on new gears and drag them into the chain.</p>
       <button id="play-btn">Play game</button>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
@@ -36,7 +36,9 @@
         <div id="combo-toast" class="hidden"></div>
       </div>
 
-      <p class="hint">Each hit adds 25% &nbsp;|&nbsp; 100% sends 1 soldier &nbsp;|&nbsp; Drag a gear onto another to swap them</p>
+      <button id="buy-gear-btn" disabled>Buy gear: <b id="gear-cost">3</b> soldiers</button>
+
+      <p class="hint">Each hit adds 25% to connected gears &nbsp;|&nbsp; 100% sends 1 soldier &nbsp;|&nbsp; Drag a gear to move it</p>
     </div>
 
     <div id="wave-banner" class="hidden">

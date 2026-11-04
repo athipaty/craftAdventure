@@ -182,6 +182,30 @@ button {
   100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(1); }
 }
 
+#buy-gear-btn {
+  flex-shrink: 0;
+  align-self: center;
+  margin-top: 4px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8bd65a, #4f9e2d);
+  color: #14300a;
+  font-weight: 800;
+  font-size: 0.95rem;
+  box-shadow: 0 3px 0 #2f6d18;
+}
+
+#buy-gear-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2f6d18;
+}
+
+#buy-gear-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: #a99a80;
+  box-shadow: none;
+}
+
 .hint {
   text-align: center;
   font-size: 0.72rem;
