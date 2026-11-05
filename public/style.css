@@ -187,7 +187,63 @@ button {
   font-size: 0.72rem;
   color: #c9b896;
   margin: 0;
-  padding: 6px 10px 10px;
+  padding: 2px 10px 8px;
+}
+
+/* ---------- Ability bar ---------- */
+
+#ability-bar {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px 2px;
+}
+
+.ability-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 6px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #6b4a26, #432b16);
+  border: 1px solid rgba(255, 204, 51, 0.35);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4), 0 6px 10px rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.15s ease;
+}
+
+.ability-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ability-btn:disabled {
+  opacity: 0.45;
+  filter: grayscale(0.5);
+}
+
+.ability-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.ability-name {
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.ability-cost {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--accent);
 }
 
 /* ---------- Wave banner ---------- */

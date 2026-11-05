@@ -89,6 +89,8 @@ function singleReward(cell) {
 // =====================================================================
 
 let boardCanvas, boardCtx, battleCanvas, battleCtx;
+let abilityKnightBtn, abilityGearBtn, abilityLightningBtn;
+let abilityKnightCost, abilityGearCost, abilityLightningCost;
 let boardCssW = 0, boardCssH = 0, cellSize = 0;
 let battleCssW = 0, battleCssH = 0;
 
@@ -166,14 +168,11 @@ function tickCluster(row, col) {
   resolveFires(queue);
 }
 
-// Only cells actually ticked this tap could have just reached their
-// threshold, so we only need to check those rather than the whole board.
-function resolveFires(tickedCells) {
-  const firing = [];
-  for (const p of tickedCells) {
-    const cell = grid[p.row][p.col];
-    if (cell.ticks >= ticksRequired(cell)) firing.push({ row: p.row, col: p.col, cell });
-  }
+// Pays out and starts the pop/respawn animation for a list of gears that
+// have already reached their threshold — shared by the normal tap path
+// (resolveFires below) and the ability buttons, which force a gear (or
+// the whole board) to completion directly rather than via ticking.
+function fireCells(firing) {
   if (firing.length === 0) return;
 
   let total = 0;
@@ -191,6 +190,115 @@ function resolveFires(tickedCells) {
   }
   boardBusy = true;
   pendingFireResolve = firing.map((f) => ({ row: f.row, col: f.col }));
+}
+
+// Only cells actually ticked this tap could have just reached their
+// threshold, so we only need to check those rather than the whole board.
+function resolveFires(tickedCells) {
+  const firing = [];
+  for (const p of tickedCells) {
+    const cell = grid[p.row][p.col];
+    if (cell.ticks >= ticksRequired(cell)) firing.push({ row: p.row, col: p.col, cell });
+  }
+  fireCells(firing);
+}
+
+// =====================================================================
+// Abilities — spend banked Army score (totalArmyScore) for an instant
+// effect. Costs scale with wave so they stay a situational boost rather
+// than a way to trivialize later waves. Each pays for itself only
+// partially on average (see singleReward), so there's no infinite loop
+// to be had — spending is a deliberate trade, not free value.
+// =====================================================================
+
+function knightCost() {
+  return Math.round(10 + wave * 4);
+}
+function gearCost() {
+  return Math.round(12 + wave * 4);
+}
+function lightningCost() {
+  return Math.round(22 + wave * 7);
+}
+
+function canAfford(cost) {
+  return !boardBusy && gameState === "playing" && totalArmyScore >= cost;
+}
+
+// Converts banked score directly into battle power — the "cash in points
+// for a push" option, for when the board isn't giving you a good match
+// but the tug-of-war needs it right now.
+function useTrainKnight() {
+  const cost = knightCost();
+  if (!canAfford(cost)) return;
+  totalArmyScore -= cost;
+  const bonus = Math.round(cost * 0.8);
+  playerPower += bonus;
+  showToast(`+${bonus} Knight!`);
+  playMatchSound(2);
+}
+
+// Instantly completes whichever gear on the board is closest to firing —
+// skips the wait on a cluster that's already most of the way there,
+// paying out its normal reward (including any multiplier/jackpot bonus).
+function useBuyGear() {
+  const cost = gearCost();
+  if (!canAfford(cost)) return;
+  let best = null;
+  let bestRatio = -1;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell || cell.popping) continue;
+      const ratio = cell.ticks / ticksRequired(cell);
+      if (ratio > bestRatio) {
+        bestRatio = ratio;
+        best = { row, col, cell };
+      }
+    }
+  }
+  if (!best) return;
+  totalArmyScore -= cost;
+  best.cell.ticks = ticksRequired(best.cell);
+  fireCells([best]);
+}
+
+// Strikes every gear on the board for one tick at once — the "ultimate":
+// expensive, but on a board with several clusters already primed it can
+// set off a huge simultaneous combo.
+function useLightning() {
+  const cost = lightningCost();
+  if (!canAfford(cost)) return;
+  totalArmyScore -= cost;
+  const firing = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = grid[row][col];
+      if (!cell) continue;
+      cell.ticks += 1;
+      cell.spinTarget += 1;
+      cell.flash = 1;
+      if (cell.ticks >= ticksRequired(cell)) firing.push({ row, col, cell });
+    }
+  }
+  playTickSound(ROWS * COLS);
+  fireCells(firing);
+}
+
+// Keeps each ability button's cost label and enabled state current —
+// cheap enough (3 buttons) to just do every frame alongside the HUD text.
+function updateAbilityButtons() {
+  const specs = [
+    [abilityKnightBtn, abilityKnightCost, knightCost],
+    [abilityGearBtn, abilityGearCost, gearCost],
+    [abilityLightningBtn, abilityLightningCost, lightningCost],
+  ];
+  for (const [btn, costEl, costFn] of specs) {
+    if (!btn) continue;
+    const cost = costFn();
+    costEl.textContent = `\u{1FA99} ${cost}`;
+    btn.disabled = !canAfford(cost);
+  }
 }
 
 // =====================================================================
@@ -295,6 +403,7 @@ function update(dt) {
 
   document.getElementById("wave-num").textContent = wave;
   document.getElementById("army-score").textContent = Math.round(totalArmyScore);
+  updateAbilityButtons();
 }
 
 // =====================================================================
@@ -671,6 +780,16 @@ function init() {
   document.getElementById("play-btn").addEventListener("click", startNewRun);
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
+
+  abilityKnightBtn = document.getElementById("ability-knight");
+  abilityGearBtn = document.getElementById("ability-gear");
+  abilityLightningBtn = document.getElementById("ability-lightning");
+  abilityKnightCost = document.getElementById("knight-cost");
+  abilityGearCost = document.getElementById("gear-cost");
+  abilityLightningCost = document.getElementById("lightning-cost");
+  abilityKnightBtn.addEventListener("click", () => { ensureAudio(); useTrainKnight(); });
+  abilityGearBtn.addEventListener("click", () => { ensureAudio(); useBuyGear(); });
+  abilityLightningBtn.addEventListener("click", () => { ensureAudio(); useLightning(); });
 
   wireBoardInput();
   window.addEventListener("resize", handleResize);

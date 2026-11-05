@@ -41,7 +41,25 @@
         <div id="combo-toast" class="hidden"></div>
       </div>
 
-      <p class="hint">Tap a gear to tick it &nbsp;|&nbsp; Same-number gears mesh and tick together &nbsp;|&nbsp; A full ring fires the gear</p>
+      <div id="ability-bar">
+        <button id="ability-knight" class="ability-btn" title="Spend Army for an instant power boost">
+          <span class="ability-icon">⚔️</span>
+          <span class="ability-name">Train Knight</span>
+          <span class="ability-cost" id="knight-cost">🪙 10</span>
+        </button>
+        <button id="ability-gear" class="ability-btn" title="Spend Army to instantly finish your closest gear">
+          <span class="ability-icon">⚙️</span>
+          <span class="ability-name">Buy Gear</span>
+          <span class="ability-cost" id="gear-cost">🪙 12</span>
+        </button>
+        <button id="ability-lightning" class="ability-btn" title="Spend Army to strike every gear on the board at once">
+          <span class="ability-icon">⚡</span>
+          <span class="ability-name">Lightning</span>
+          <span class="ability-cost" id="lightning-cost">🪙 22</span>
+        </button>
+      </div>
+
+      <p class="hint">Tap a gear to tick it &nbsp;|&nbsp; Same-number gears mesh and tick together</p>
     </div>
 
     <div id="wave-banner" class="hidden">
