@@ -819,6 +819,7 @@ function loadSave() {
       coins: Math.max(0, Math.floor(Number(data?.coins)) || 0),
       upgrades: data?.upgrades && typeof data.upgrades === "object" ? data.upgrades : {},
       muted: data?.muted === true,
+      collection: data?.collection && typeof data.collection === "object" && !Array.isArray(data.collection) ? data.collection : {},
       tips: data?.tips && typeof data.tips === "object" ? data.tips : {},
       quests: Array.isArray(data?.quests) ? data.quests.filter(isValidQuest) : [],
       questsDone: Math.max(0, Math.floor(Number(data?.questsDone)) || 0),
@@ -1603,6 +1604,7 @@ function newGearType() {
 }
 
 function placeGear(type) {
+  discover(`gear:${type}`);
   const { row, col } = bestEmptyCell();
   grid[row][col] = freshCell(type);
   grid[row][col].flash = 1;
@@ -2456,6 +2458,7 @@ function dropTrayGear(e) {
 
 function placeTrayGear(index, row, col) {
   const [item] = gearTray.splice(index, 1);
+  discover(`gear:${item.type}`);
   grid[row][col] = freshCell(item.type);
   grid[row][col].level = item.level;
   grid[row][col].flash = 1;
@@ -2666,13 +2669,16 @@ function startWave() {
   enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1) * (activePath?.enemy || 1);
   playerPower = enemyPower * (waveLead + nextWaveBonus - runLevel().lead);
   nextWaveBonus = 0;
+  discover(`enemy:${enemyRank().look}`);
   if (plan.boss) {
     const hp = bossMaxHp(wave);
     const kind = bossKind(plan.boss);
+    discover(`boss:${kind.id}`);
     boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
     playBossSound();
   } else {
     setEnemyType(plan.enemy);
+    if (plan.enemy !== "goblin") discover(`enemy:${plan.enemy}`);
     if (plan.event) startWaveEvent(plan.event);
   }
 }
@@ -3545,6 +3551,7 @@ function chooseReward(reward) {
   } else {
     if (!reward.oneOff) runParts[reward.id] = partCount(reward.id) + 1;
     reward.apply?.();
+    discover(`reward:${reward.id}`);
   }
   offeredRewards = null;
   document.getElementById("reward-screen").classList.add("hidden");
@@ -5667,6 +5674,7 @@ function planTreasureGoblin() {
 
 function spawnTreasureGoblin() {
   treasureAt = NO_GEAR_DROP;
+  discover("enemy:treasure");
   treasureGoblin = { age: 0, seconds: runEasy ? GOBLIN_SECONDS_EASY : GOBLIN_SECONDS, sparkle: 0 };
   const el = document.getElementById("treasure-goblin");
   document.getElementById("treasure-goblin-art").replaceChildren(enemyIcon("runner"));
@@ -6199,6 +6207,7 @@ function renderWorkshop() {
   renderCollection();
   document.getElementById("workshop-coins").textContent = save.coins;
   document.getElementById("title-coins").textContent = save.coins;
+  updateBookButton();
   renderPlayerLevel();
   const list = document.getElementById("workshop-list");
   list.replaceChildren();
@@ -6569,6 +6578,15 @@ function guideRow(name, text, icon, tag) {
   return row;
 }
 
+const ENEMY_NOTES = {
+  runner: "Goblin runners bring extra enemies, so win quickly.",
+  brute: "Soldiers do less, but lightning and bombs hit at full strength.",
+  shaman: "Keep rusting your gears, so tap them to fix them.",
+  frost: "Freeze the main gear to half speed. Lightning thaws it.",
+  imp: "Burn away gear progress, so win fast.",
+};
+const TREASURE_GOBLIN_NOTE = "Sometimes runs past carrying coins or a gear. Tap it before it escapes.";
+
 // The guide is built from the same tables as the game, so it can't fall behind.
 function guideSections() {
   const gearRewards = REWARDS.filter((reward) => reward.gear);
@@ -6579,7 +6597,7 @@ function guideSections() {
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
-      ["Treasure goblin", "Sometimes runs past carrying coins or a gear. Tap it before it escapes.", enemyIcon("runner")],
+      ["Treasure goblin", TREASURE_GOBLIN_NOTE, enemyIcon("runner")],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
@@ -6591,11 +6609,7 @@ function guideSections() {
     ]],
     ["Rewards", REWARDS.filter((reward) => !reward.gear).map((reward) => [reward.name, reward.text, rewardIcon(reward), reward.rarity === "epic" ? "Epic" : reward.rarity === "rare" ? "Rare" : ""])],
     ["Enemies", [
-      [ENEMY_TYPES.runner.name, "Goblin runners bring extra enemies, so win quickly.", enemyIcon(ENEMY_TYPES.runner.look)],
-      [ENEMY_TYPES.brute.name, "Soldiers do less, but lightning and bombs hit at full strength.", enemyIcon(ENEMY_TYPES.brute.look)],
-      [ENEMY_TYPES.shaman.name, "Keep rusting your gears, so tap them to fix them.", enemyIcon(ENEMY_TYPES.shaman.look)],
-      [ENEMY_TYPES.frost.name, "Freeze the main gear to half speed. Lightning thaws it.", enemyIcon(ENEMY_TYPES.frost.look)],
-      [ENEMY_TYPES.imp.name, "Burn away gear progress, so win fast.", enemyIcon(ENEMY_TYPES.imp.look)],
+      ...Object.entries(ENEMY_NOTES).map(([id, note]) => [ENEMY_TYPES[id].name, note, enemyIcon(ENEMY_TYPES[id].look)]),
     ]],
     ["Bosses", [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => [kind.name, NEXT_WAVE_HINTS[kind.id], bossIcon(kind)])],
     ["Words to know", [
@@ -6618,6 +6632,115 @@ function openGuide() {
   }
   list.scrollTop = 0;
   document.getElementById("guide-screen").classList.remove("hidden");
+}
+
+// Built from the same tables as the guide, so nothing new can be left out. Each
+// entry's picture is made only when it's shown. A starter is known from the start,
+// as everyone meets it in the first few seconds.
+function bookPages() {
+  const rankNote = (rank) => (rank.fromWave === 1 ? "The first enemies you'll meet." : `Appear from wave ${rank.fromWave}, ${rank.strength}x as strong.`);
+  const gearRewards = REWARDS.filter((reward) => reward.gear);
+  return [
+    { id: "enemies", name: "Enemies", coins: 50, entries: [
+      ...ENEMY_RANKS.map((rank) => ({ id: `enemy:${rank.look}`, name: rank.plural, text: rankNote(rank), icon: () => enemyIcon(rank.look), starter: rank.fromWave === 1 })),
+      ...Object.entries(ENEMY_NOTES).map(([id, note]) => ({ id: `enemy:${id}`, name: ENEMY_TYPES[id].name, text: note, icon: () => enemyIcon(ENEMY_TYPES[id].look) })),
+      { id: "enemy:treasure", name: "Treasure goblin", text: TREASURE_GOBLIN_NOTE, icon: () => enemyIcon("runner") },
+    ] },
+    { id: "bosses", name: "Bosses", coins: 100, entries: [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, name: kind.name, text: NEXT_WAVE_HINTS[kind.id], icon: () => bossIcon(kind) })) },
+    { id: "gears", name: "Gears", coins: 50, entries: [
+      { id: "gear:soldier", name: "Normal gear", text: "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", icon: () => gearIcon("soldier"), starter: true },
+      ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })),
+    ] },
+    { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
+  ];
+}
+
+function bookKnows(entry) {
+  return Boolean(entry.starter || save.collection[entry.id]);
+}
+
+function bookProgress(page) {
+  return { have: page.entries.filter(bookKnows).length, total: page.entries.length };
+}
+
+function bookTotals() {
+  return bookPages().reduce((sum, page) => {
+    const { have, total } = bookProgress(page);
+    return { have: sum.have + have, total: sum.total + total };
+  }, { have: 0, total: 0 });
+}
+
+// The first time the player meets something. A finished page pays once.
+function discover(id) {
+  if (save.collection[id]) return;
+  const page = bookPages().find((p) => p.entries.some((entry) => entry.id === id));
+  const entry = page?.entries.find((e) => e.id === id);
+  if (!entry || entry.starter) return;
+  save.collection[id] = true;
+  announce(`New in the book: ${entry.name}!`);
+  const { have, total } = bookProgress(page);
+  if (have === total && !save.collection[`page:${page.id}`]) {
+    save.collection[`page:${page.id}`] = true;
+    save.coins += page.coins;
+    announce(`Page complete: ${page.name}! +${page.coins} coins`);
+  }
+  writeSave();
+}
+
+let bookPageIndex = 0;
+function openBook(index = bookPageIndex) {
+  bookPageIndex = index;
+  const pages = bookPages();
+  const page = pages[index];
+  const tabs = document.getElementById("book-tabs");
+  tabs.replaceChildren(...pages.map((p, i) => {
+    const tab = document.createElement("button");
+    tab.className = "book-tab";
+    tab.classList.toggle("active", i === index);
+    tab.textContent = p.name;
+    tab.addEventListener("click", () => openBook(i));
+    return tab;
+  }));
+  const { have, total } = bookProgress(page);
+  document.getElementById("book-progress-fill").style.width = `${(have / total) * 100}%`;
+  document.getElementById("book-progress-text").textContent = `${have} / ${total}`;
+  document.getElementById("book-prize").textContent = save.collection[`page:${page.id}`] ? `Page complete! +${page.coins} coins earned` : `Complete this page: +${page.coins} coins`;
+  const detail = document.getElementById("book-detail");
+  const showDetail = (name, text) => {
+    const title = document.createElement("b");
+    title.textContent = name;
+    const words = document.createElement("span");
+    words.textContent = text;
+    detail.replaceChildren(title, words);
+  };
+  showDetail("Tap an entry", have === total ? "You've found everything on this page." : "Keep playing to find the rest.");
+  const grid = document.getElementById("book-grid");
+  grid.replaceChildren(...page.entries.map((entry) => {
+    const known = bookKnows(entry);
+    const button = document.createElement("button");
+    button.className = "book-entry";
+    button.classList.toggle("unknown", !known);
+    const art = document.createElement("span");
+    art.className = known ? "book-art" : "book-art hidden-art";
+    art.append(entry.icon());
+    const name = document.createElement("small");
+    name.textContent = known ? entry.name : "???";
+    button.append(art, name);
+    button.addEventListener("click", () => {
+      for (const other of grid.children) other.classList.remove("selected");
+      button.classList.add("selected");
+      if (known) showDetail(entry.name, entry.text);
+      else showDetail("???", "Not found yet. Keep playing to discover it.");
+    });
+    return button;
+  }));
+  grid.scrollTop = 0;
+  document.getElementById("book-screen").classList.remove("hidden");
+}
+
+function updateBookButton() {
+  const { have, total } = bookTotals();
+  document.getElementById("title-book-btn").textContent = `Collection: ${have} / ${total}`;
 }
 
 function playedText(seconds) {
@@ -6723,6 +6846,8 @@ function init() {
   document.getElementById("deal-btn").addEventListener("click", toggleDeal);
   const closeScreen = (id) => () => document.getElementById(id).classList.add("hidden");
   document.getElementById("title-more-btn").addEventListener("click", openMore);
+  document.getElementById("title-book-btn").addEventListener("click", () => openBook());
+  document.getElementById("book-close-btn").addEventListener("click", closeScreen("book-screen"));
   document.getElementById("more-close-btn").addEventListener("click", closeScreen("more-screen"));
   document.getElementById("language-btn").addEventListener("click", switchLanguage);
   document.getElementById("big-text-btn").addEventListener("click", () => toggleSetting("bigText"));
