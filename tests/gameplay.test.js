@@ -17,6 +17,8 @@ async function check(name, fn) {
   const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
   const page = await ctx.newPage();
+  // These tests aren't about routes, which would otherwise come up at random after a reward.
+  page.on("domcontentloaded", () => page.evaluate(() => { pathChoiceDue = () => false; }).catch(() => {}));
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("404")) errors.push(m.text()); });

@@ -27,6 +27,7 @@ const TH_WORDS = {
   "Goblins have overrun the trees. But who is leading them?": "ก็อบลินบุกยึดป่า แต่ใครคือผู้นำของพวกมัน?", "Tracks vanish into the dunes. Something huge moves below the sand.": "รอยเท้าหายไปในเนินทราย มีบางอย่างตัวใหญ่เคลื่อนไหวอยู่ใต้ผืนทราย", "The mountains have turned white, and the cold is spreading.": "ภูเขากลายเป็นสีขาว และความหนาวกำลังแผ่ขยาย", "Something burns below the world. This is where it all began.": "มีบางอย่างลุกไหม้อยู่ใต้โลก ที่นี่คือจุดเริ่มต้นของทุกอย่าง", "New!": "ใหม่!",
   "Treasure goblin": "ก็อบลินสมบัติ", "A treasure goblin! Tap it before it escapes to grab what it's carrying.": "ก็อบลินสมบัติ! แตะก่อนที่มันจะหนีเพื่อคว้าสิ่งที่มันถืออยู่", "Sometimes runs past carrying coins or a gear. Tap it before it escapes.": "บางครั้งจะวิ่งผ่านมาพร้อมเหรียญหรือเฟือง แตะก่อนที่มันจะหนีไป", "It got away!": "มันหนีไปแล้ว!", "Treasure! Free gear": "สมบัติ! ได้เฟืองฟรี", "Gotcha!": "จับได้แล้ว!", "Catch 10 treasure goblins": "จับก็อบลินสมบัติ 10 ตัว",
   "Choose your path": "เลือกเส้นทาง", "Safe road": "ทางปลอดภัย", "No extra danger": "ไม่มีอันตรายเพิ่ม", "No bonus": "ไม่มีโบนัส", "Elite ambush": "ซุ่มโจมตีชั้นยอด", "40% more enemies": "ศัตรูเพิ่ม 40%", "Win for better reward choices": "ชนะเพื่อรับตัวเลือกรางวัลที่ดีขึ้น", "Treasure trail": "เส้นทางสมบัติ", "Enemies grow 25% faster": "ศัตรูเพิ่มเร็วขึ้น 25%", "A treasure goblin, and win for +10 coins": "ก็อบลินสมบัติ และชนะรับ +10 เหรียญ", "Supply camp": "ค่ายเสบียง", "20% more enemies": "ศัตรูเพิ่ม 20%", "A level 2 gear right now": "เฟืองเลเวล 2 ทันที", "Elite beaten!": "ชนะชั้นยอดแล้ว!", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.": "ทุกไม่กี่เวฟ เลือกเส้นทางสำหรับเวฟถัดไป อันตรายให้รางวัลที่ดีกว่า หรือจะเลือกทางปลอดภัยก็ได้",
+  "Pick a chest!": "เลือกหีบ!", "Boss treasure!": "สมบัติบอส!", "Boss chests": "หีบบอส", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.": "ชนะบอสแล้วเลือก 1 ใน 3 หีบ เพื่อรับเหรียญหรือเฟืองแกร่ง หีบที่เหลือจะเปิดด้วย ให้เห็นว่าพลาดอะไรไป", "Treasure hunter": "นักล่าสมบัติ", "Open 10 boss chests": "เปิดหีบบอส 10 ใบ", "Continue": "ไปต่อ",
   "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง บางตัวเป็นเฟืองพิเศษ ลากไปวางบนกระดานหรือแตะก็ได้",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
@@ -167,6 +168,7 @@ function thaiList(text) {
 }
 
 const TH_PATTERNS = [
+  [/^Level (\d+) gear$/i, (m) => `เฟืองเลเวล ${m[1]}`],
   [/^(\d+(?:\.\d+)?)s$/, (m) => `${m[1]} วิ`],
   [/^(\d+(?:\.\d+)?)\/s$/, (m) => `${m[1]}/วิ`],
   [/^Combos! With merged/i, () => "คอมโบ! เฟืองที่รวมแล้วหรือเฟืองพิเศษ: 3 ตัวเรียงแถวส่งทหารเพิ่ม 25%, 4 ตัวเป็นสี่เหลี่ยมเติมเร็วขึ้น 25% และบูสเตอร์ที่มีเฟืองครบ 4 ด้านแรงขึ้น 2 เท่า"],
@@ -234,6 +236,8 @@ const TH_PATTERNS = [
   [/^Next star: (.+)$/i, (m) => `ดาวถัดไป: ${T(m[1])}`],
   [/^Treasure! \+(\d+) coins$/i, (m) => `สมบัติ! +${m[1]} เหรียญ`],
   [/^Path won! \+(\d+) coins$/i, (m) => `ผ่านเส้นทางแล้ว! +${m[1]} เหรียญ`],
+  [/^\+(\d+) coins$/i, (m) => `+${m[1]} เหรียญ`],
+  [/^Tray full: \+(\d+) coins$/i, (m) => `ถาดเต็ม: +${m[1]} เหรียญ`],
   [/^World (\d+)$/, (m) => `โลก ${m[1]}`],
   [/^Prize: (\d+) coins$/i, (m) => `รางวัล: ${m[1]} เหรียญ`],
   [/^Worlds cleared: (\d+)\/(\d+), stars: (\d+)\/(\d+)$/i, (m) => `ผ่านแล้ว: ${m[1]}/${m[2]} โลก, ดาว: ${m[3]}/${m[4]}`],

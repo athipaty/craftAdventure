@@ -17,6 +17,8 @@ async function check(name, fn) {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
+  // These tests aren't about routes, which would otherwise come up at random after a reward.
+  page.on("domcontentloaded", () => page.evaluate(() => { pathChoiceDue = () => false; }).catch(() => {}));
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("404")) errors.push(m.text() + " @ " + m.location().url); });
@@ -58,8 +60,7 @@ async function check(name, fn) {
     const away = await cellCentre(0, 0);
     await hold();
     await page.mouse.move(away.x, away.y, { steps: 3 });
-    await page.waitForTimeout(80);
-    assert.equal(await page.locator("#machine-rate").getAttribute("class"), "down");
+    await page.waitForFunction((c) => document.getElementById("machine-rate").className === c, "down", { timeout: 3000 });
     assert.match(await page.locator("#machine-rate").textContent(), /\u2192/);
     assert.equal(await page.evaluate(() => JSON.stringify(grid.map((row) => row.map((c) => c && [c.type, c.level])))), before);
     // Next to the main gear: better.
@@ -67,14 +68,12 @@ async function check(name, fn) {
     const near = await page.evaluate(() => [DRIVER_ROW - 1, DRIVER_COL]);
     const n = await cellCentre(...near);
     await page.mouse.move(n.x, n.y, { steps: 3 });
-    await page.waitForTimeout(80);
-    assert.equal(await page.locator("#machine-rate").getAttribute("class"), "up");
+    await page.waitForFunction((c) => document.getElementById("machine-rate").className === c, "up", { timeout: 3000 });
     await page.screenshot({ path: path.join(scratch, "shot5-preview.png") });
     await hold();
     await page.mouse.up();
-    await page.waitForTimeout(80);
+    await page.waitForFunction((c) => document.getElementById("machine-rate").className === c, "", { timeout: 3000 });
     assert.equal(await page.evaluate(([r, c]) => Boolean(grid[r][c]), near), true);
-    assert.equal(await page.locator("#machine-rate").getAttribute("class"), "");
   });
   await check("the preview matches the real result for moves and merges", async () => {
     const r = await page.evaluate(() => {
