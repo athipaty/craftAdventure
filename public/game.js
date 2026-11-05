@@ -562,7 +562,8 @@ const ENEMY_RANKS = [
 ];
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
-const TIP_GAP_SECONDS = 18; // play time between tips that aren't urgent
+const TIP_GAP_SECONDS = 25; // play time between tips that aren't urgent
+const URGENT_TIP_GAP_SECONDS = 8; // and between urgent ones, or several can land in one boss fight
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
 const REINFORCEMENTS_REWARD = 0.2; // added to the player's lead for one wave
 
@@ -4223,10 +4224,12 @@ function resumeGame() {
 
 function maybeShowTip() {
   if (gameState !== "playing") return;
-  const canWait = runTime - lastTipAt < TIP_GAP_SECONDS;
-  const tip = TIPS.find((tip) => !save.tips[tip.id] && !(canWait && !tip.urgent) && (!TIP_FEATURES[tip.id] || featureOn(TIP_FEATURES[tip.id])) && tip.when());
+  const since = runTime - lastTipAt;
+  const canWait = since < TIP_GAP_SECONDS;
+  const urgentCanWait = since < URGENT_TIP_GAP_SECONDS;
+  const tip = TIPS.find((tip) => !save.tips[tip.id] && !(canWait && !tip.urgent) && !(urgentCanWait && tip.urgent && lastTipAt > 0) && (!TIP_FEATURES[tip.id] || featureOn(TIP_FEATURES[tip.id])) && tip.when());
   if (!tip) return;
-  lastTipAt = runTime;
+  if (!tip.id.startsWith("story:")) lastTipAt = Math.max(runTime, 0.001);
   gameState = "tip";
   drag = null;
   openTip = tip;
