@@ -16,6 +16,7 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
     grid.forEach((row, r) => row.forEach((cell, c) => { if (cell && !cell.driver && cell.level < MAX_GEAR_LEVEL) gears.push({ r, c, cell }); }));
     gears.sort((a, b) => a.cell.level - b.cell.level || steps(b.r, b.c) - steps(a.r, a.c));
     for (const from of gears) for (const to of gears) {
+      if (from !== to && canFuse(from.cell, to.cell) && steps(to.r, to.c) <= steps(from.r, from.c)) { grid[from.r][from.c] = null; fuseOnto(from.cell, to.r, to.c); return true; }
       if (from !== to && canMerge(from.cell, to.cell) && steps(to.r, to.c) < steps(from.r, from.c)) { mergeGears(from.r, from.c, to.r, to.c); return true; }
     }
     return false;

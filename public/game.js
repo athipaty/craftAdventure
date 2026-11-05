@@ -219,6 +219,7 @@ const ACHIEVEMENTS = [
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "fusions5", name: "Mad inventor", text: "Fuse gears 5 times", stat: "fusions", target: 5, coins: 40 },
   { id: "streak5", name: "On fire!", text: "Reach a hot streak of 5", stat: "bestStreak", target: 5, coins: 40 },
   { id: "chests10", name: "Treasure hunter", text: "Open 10 boss chests", stat: "chests", target: 10, coins: 40 },
   { id: "goblins10", name: "Gotcha!", text: "Catch 10 treasure goblins", stat: "goblins", target: 10, coins: 40 },
@@ -459,13 +460,29 @@ const BOMB_PALETTE = { light: "#ffb3a0", mid: "#cf5238", dark: "#6e1f10", recess
 // one extra hit each time they are hit.
 const FAR_PALETTE = { light: "#d8bdf5", mid: "#8a5ad0", dark: "#46257a", recess: "#6f44b0", hub: "#efe2fb" };
 const LONE_PALETTE = { light: "#a8ecd8", mid: "#35a890", dark: "#155e50", recess: "#278a76", hub: "#d8f8ee" };
+const CANNON_PALETTE = { light: "#ffd27a", mid: "#e0701c", dark: "#7a3208", recess: "#b85614", hub: "#ffeccb" };
+const DYNAMO_PALETTE = { light: "#b8f5ea", mid: "#2fa8c0", dark: "#10525e", recess: "#23859a", hub: "#def9f4" };
+const COMET_PALETTE = { light: "#f5b8e8", mid: "#c04aa8", dark: "#5e1650", recess: "#9a3a88", hub: "#fbe0f5" };
+const HERMIT_PALETTE = { light: "#d5e0a0", mid: "#7f9a35", dark: "#3c4d12", recess: "#667d28", hub: "#eef4cf" };
+// Two different gears of the same level make a new one. Listed either way round.
+const FUSIONS = [
+  { parts: ["big", "bomb"], gear: "cannon", name: "Cannon gear", text: "Made from a Big gear and a Bomb gear. Fills half as fast, then sends 6 soldiers and blasts 3 enemies" },
+  { parts: ["big", "booster"], gear: "dynamo", name: "Dynamo gear", text: "Made from a Big gear and a Booster gear. Fills half as fast, sends 5 soldiers, and boosts the gears touching it" },
+  { parts: ["far", "bomb"], gear: "comet", name: "Comet gear", text: "Made from a Far gear and a Bomb gear. Fills half as fast, then blasts 3 enemies, more the farther it is from the main gear" },
+  { parts: ["lone", "big"], gear: "hermit", name: "Hermit gear", text: "Made from a Lone gear and a Big gear. Fills half as fast, then sends 6 soldiers, more for each empty space beside it" },
+];
 const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
-  big: { hits: 8, soldiers: 5, palette: BIG_PALETTE },
-  booster: { hits: 0, palette: BOOSTER_PALETTE },
-  bomb: { hits: 8, enemies: 2, palette: BOMB_PALETTE },
-  far: { hits: 4, soldiers: 1, palette: FAR_PALETTE, mark: "FAR" },
-  lone: { hits: 4, soldiers: 1, palette: LONE_PALETTE, mark: "LONE" },
+  big: { hits: 8, soldiers: 5, heavy: true, palette: BIG_PALETTE },
+  booster: { hits: 0, boosts: true, palette: BOOSTER_PALETTE },
+  bomb: { hits: 8, enemies: 2, blast: true, palette: BOMB_PALETTE },
+  far: { hits: 4, soldiers: 1, far: true, palette: FAR_PALETTE, mark: "FAR" },
+  lone: { hits: 4, soldiers: 1, lone: true, palette: LONE_PALETTE, mark: "LONE" },
+  // Made by fusing two others. Each beats the two it came from, and frees a cell.
+  cannon: { hits: 8, soldiers: 6, enemies: 3, heavy: true, blast: true, palette: CANNON_PALETTE, mark: "CAN" },
+  dynamo: { hits: 8, soldiers: 5, boosts: true, heavy: true, palette: DYNAMO_PALETTE, mark: "DYN" },
+  comet: { hits: 8, enemies: 3, blast: true, far: true, palette: COMET_PALETTE, mark: "COM" },
+  hermit: { hits: 8, soldiers: 6, heavy: true, lone: true, palette: HERMIT_PALETTE, mark: "HER" },
 };
 
 const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
@@ -658,6 +675,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
+  { id: "fusion", text: "These two gears can fuse! Drag one onto the other and look for the purple ring to make a new, stronger gear.", when: () => boardCanFuse() },
   { id: "hotStreak", urgent: true, text: "Hot streak! Win waves quickly and your main gear spins faster. A slow wave ends the streak.", when: () => hotStreak >= 2 },
   { id: "treasureGoblin", urgent: true, text: "A treasure goblin! Tap it before it escapes to grab what it's carrying.", target: "#treasure-goblin", when: () => treasureGoblin?.age > GOBLIN_TIP_AGE },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
@@ -1330,7 +1348,7 @@ function connectedGears(row, col, firstSpin) {
       const next = grid[cur.row + dr]?.[cur.col + dc];
       if (!next || next.driver || next.rusted || seen.has(next)) continue;
       seen.add(next);
-      const power = grid[cur.row][cur.col].type === "booster" ? 1 : Math.max(CHAIN_MIN_POWER, cur.power * falloff);
+      const power = GEAR_TYPES[grid[cur.row][cur.col].type].boosts ? 1 : Math.max(CHAIN_MIN_POWER, cur.power * falloff);
       queue.push({ row: cur.row + dr, col: cur.col + dc, spin: -cur.spin, power });
     }
   }
@@ -1383,7 +1401,7 @@ function markCombos() {
         cell.comboBlock = right.comboBlock = below.comboBlock = corner.comboBlock = true;
         counts.block += 1;
       }
-      if (cell.type === "booster" && !cell.rusted) {
+      if (GEAR_TYPES[cell.type].boosts && !cell.rusted) {
         const sides = TOOTH_DIRS.map(([dr, dc]) => at(r + dr, c + dc));
         if (sides.every((side) => side && !side.driver && !side.rusted)) {
           cell.comboRing = true;
@@ -1410,7 +1428,7 @@ function boostersTouching(row, col) {
   let count = 0;
   for (const [dr, dc] of TOOTH_DIRS) {
     const other = grid[row + dr]?.[col + dc];
-    if (other?.type === "booster" && !other.rusted) count += other.level * (other.comboRing ? COMBO_RING_BOOST : 1);
+    if (other && GEAR_TYPES[other.type].boosts && !other.rusted) count += other.level * (other.comboRing ? COMBO_RING_BOOST : 1);
   }
   return count * (1 + partCount("turbo") * PART_BOOST);
 }
@@ -1432,11 +1450,11 @@ function worldHasEnemy(id) {
 // Far and Lone gears pay for where they are, so placing them is a real choice.
 function gearPlacePayout(row, col) {
   const cell = grid[row][col];
-  if (cell.type === "far") {
+  if (GEAR_TYPES[cell.type].far) {
     const steps = Math.abs(row - DRIVER_ROW) + Math.abs(col - DRIVER_COL);
     return 1 + Math.max(0, steps - 1) * FAR_PAYOUT_PER_STEP;
   }
-  if (cell.type === "lone") {
+  if (GEAR_TYPES[cell.type].lone) {
     const empty = TOOTH_DIRS.filter(([dr, dc]) => {
       const r = row + dr;
       const c = col + dc;
@@ -1457,9 +1475,8 @@ function comboBlockFill() {
 
 // What this run's rewards add to one kind of gear's payout.
 function gearPartPayout(type) {
-  if (type === "big") return 1 + partCount("heavyLoad") * PART_BIG_PAYOUT;
-  if (type === "bomb") return 1 + partCount("demolition") * PART_BOMB_PAYOUT;
-  return 1;
+  const spec = GEAR_TYPES[type];
+  return (spec.heavy ? 1 + partCount("heavyLoad") * PART_BIG_PAYOUT : 1) * (spec.blast ? 1 + partCount("demolition") * PART_BOMB_PAYOUT : 1);
 }
 
 // Each turn the tooth hits all four sides once, so a gear reachable from two
@@ -1495,7 +1512,7 @@ function hitGear(gear, hits) {
     cell.ticksAnim = cell.ticks;
     const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
-    else launchBomb(spec.enemies * level);
+    if (spec.enemies) launchBomb(spec.enemies * level);
   }
 }
 
@@ -1557,6 +1574,35 @@ function canMerge(from, onto) {
 function mergeGears(fromRow, fromCol, toRow, toCol) {
   grid[fromRow][fromCol] = null;
   levelUpGear(toRow, toCol);
+}
+
+function boardCanFuse() {
+  const gears = grid.flat().filter((cell) => cell && !cell.driver);
+  return gears.some((a) => gears.some((b) => canFuse(a, b)));
+}
+
+function fusionOf(from, onto) {
+  if (!from || !onto || onto.driver || from.driver || from === onto || from.level !== onto.level) return null;
+  return FUSIONS.find((fusion) => fusion.parts.includes(from.type) && fusion.parts.includes(onto.type) && from.type !== onto.type) || null;
+}
+
+function canFuse(from, onto) {
+  return Boolean(fusionOf(from, onto));
+}
+
+// The target cell takes the new gear, so the player chooses where it ends up.
+function fuseOnto(from, toRow, toCol) {
+  const onto = grid[toRow][toCol];
+  const fusion = fusionOf(from, onto);
+  grid[toRow][toCol] = freshCell(fusion.gear);
+  grid[toRow][toCol].level = onto.level;
+  grid[toRow][toCol].flash = 1;
+  discover(`gear:${fusion.gear}`);
+  recordStat("fusions");
+  spawnRustBurst(toRow, toCol, "#d08cff", "#f3e0ff");
+  showToast(`Fusion: ${fusion.name}!`);
+  playOverdriveSound();
+  buzz(60);
 }
 
 function levelUpGear(toRow, toCol) {
@@ -2168,6 +2214,7 @@ function formatRate(rate) {
 function previewDropRate(target) {
   if (!target || target.cell === drag.cell) return null;
   const from = drag.cell;
+  if (canFuse(from, target.cell)) return previewFusionRate(target);
   const merging = canMerge(from, target.cell);
   if (!merging && !canDropOn(target)) return null;
   if (drag.tray !== undefined) return previewTrayDropRate(target, merging);
@@ -2193,6 +2240,22 @@ function previewDropRate(target) {
     onto.level -= 1;
     onto.rusted = ontoRusted;
   }
+  markCombos();
+  return rate;
+}
+
+function previewFusionRate(target) {
+  const fusion = fusionOf(drag.cell, target.cell);
+  const onto = target.cell;
+  const fused = freshCell(fusion.gear);
+  fused.level = onto.level;
+  const fromTray = drag.tray !== undefined;
+  grid[target.row][target.col] = fused;
+  if (!fromTray) grid[drag.row][drag.col] = null;
+  markCombos();
+  const rate = machineRate();
+  grid[target.row][target.col] = onto;
+  if (!fromTray) grid[drag.row][drag.col] = drag.cell;
   markCombos();
   return rate;
 }
@@ -2422,7 +2485,10 @@ function onPointerUp(e) {
     playClankSound();
   }
   const target = cellAt(boardPoint(e));
-  if (target && canMerge(drag.cell, target.cell)) {
+  if (target && canFuse(drag.cell, target.cell)) {
+    grid[drag.row][drag.col] = null;
+    fuseOnto(drag.cell, target.row, target.col);
+  } else if (target && canMerge(drag.cell, target.cell)) {
     mergeGears(drag.row, drag.col, target.row, target.col);
   } else if (canDropOn(target)) {
     grid[drag.row][drag.col] = target.cell;
@@ -2452,7 +2518,10 @@ function onTrayPointerDown(e) {
 function dropTrayGear(e) {
   const { tray, cell, pressX, pressY } = drag;
   const target = cellAt(boardPoint(e));
-  if (target && canMerge(cell, target.cell)) {
+  if (target && canFuse(cell, target.cell)) {
+    gearTray.splice(tray, 1);
+    fuseOnto(cell, target.row, target.col);
+  } else if (target && canMerge(cell, target.cell)) {
     gearTray.splice(tray, 1);
     levelUpGear(target.row, target.col);
   } else if (canDropOn(target)) {
@@ -2753,7 +2822,8 @@ function updateEnemyType(dt) {
 }
 
 function boardHasGear(type) {
-  return grid.flat().some((cell) => cell?.type === type);
+  const needs = { big: "heavy", bomb: "blast", booster: "boosts" }[type];
+  return grid.flat().some((cell) => cell && !cell.driver && (cell.type === type || (needs && GEAR_TYPES[cell.type][needs])));
 }
 
 // Special gears are limited so that most of a machine is soldier gears.
@@ -4581,7 +4651,7 @@ function drawBoostLinks(ctx) {
   ctx.fillStyle = `rgba(190, 255, 120, ${pulse})`;
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (grid[row][col]?.type !== "booster" || grid[row][col].rusted) continue;
+      if (!grid[row][col] || !GEAR_TYPES[grid[row][col].type].boosts || grid[row][col].rusted) continue;
       for (const [dr, dc] of TOOTH_DIRS) {
         const other = grid[row + dr]?.[col + dc];
         if (!other || other.driver || other.rusted) continue;
@@ -4612,11 +4682,12 @@ function drawMergeHints(ctx) {
       const cx = col * cellSize + cellSize / 2;
       const cy = row * cellSize + cellSize / 2;
       ctx.beginPath();
-      if (canMerge(drag.cell, cell)) {
+      const fusing = canFuse(drag.cell, cell);
+      if (fusing || canMerge(drag.cell, cell)) {
         ctx.arc(cx, cy, cellSize * (0.47 + pulse * 0.04), 0, Math.PI * 2);
         ctx.lineWidth = Math.max(3, cellSize * 0.07);
-        ctx.strokeStyle = "#7dff5a";
-        ctx.shadowColor = "#7dff5a";
+        ctx.strokeStyle = fusing ? "#d08cff" : "#7dff5a";
+        ctx.shadowColor = fusing ? "#d08cff" : "#7dff5a";
         ctx.shadowBlur = glowBlur(cellSize * 0.25);
         ctx.stroke();
         ctx.shadowBlur = 0;
@@ -4702,9 +4773,9 @@ function drawBoard() {
   if (drag) {
     drawMergeHints(ctx);
     const target = cellAt(drag);
-    if (canDropOn(target) || (target && canMerge(drag.cell, target.cell))) {
+    if (canDropOn(target) || (target && (canMerge(drag.cell, target.cell) || canFuse(drag.cell, target.cell)))) {
       ctx.lineWidth = 3;
-      ctx.strokeStyle = canMerge(drag.cell, target.cell) ? "#8bd65a" : "#ffcc33";
+      ctx.strokeStyle = target && canFuse(drag.cell, target.cell) ? "#d08cff" : canMerge(drag.cell, target.cell) ? "#8bd65a" : "#ffcc33";
       ctx.strokeRect(target.col * cellSize + 3, target.row * cellSize + 3, cellSize - 6, cellSize - 6);
     }
     if (drag.tray === undefined) drawGearCell(ctx, drag.x, drag.y, cellSize * 1.12, drag.cell);
@@ -6638,6 +6709,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Gear fusion", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.", gearIcon("cannon")],
       ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
@@ -6694,6 +6766,7 @@ function bookPages() {
     { id: "gears", name: "Gears", coins: 50, entries: [
       { id: "gear:soldier", name: "Normal gear", text: "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", icon: () => gearIcon("soldier"), starter: true },
       ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })),
+      ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear) })),
     ] },
     { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
   ];
