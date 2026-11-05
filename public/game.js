@@ -133,6 +133,16 @@ const GEAR_DROP_LATEST = 8;
 const AURA_SIZE = 1.42; // of a cell, so it shows around the gear
 const AURA_BASE_ALPHA = 0.55;
 const AURA_ALPHA_PER_BOOST = 0.3;
+// A route to choose for the next wave: the risk is paid during it, the reward
+// when it's won, unless it says otherwise.
+const PATH_FIRST_WAVE = 3;
+const PATH_GAP_WAVES = 3; // waves between choices at the least
+const PATHS = {
+  safe: { id: "safe", icon: "\u{1F6E1}\uFE0F", name: "Safe road", risk: "No extra danger", reward: "No bonus" },
+  elite: { id: "elite", icon: "\u2694\uFE0F", name: "Elite ambush", risk: "40% more enemies", reward: "Win for better reward choices", enemy: 1.4, lucky: true },
+  treasure: { id: "treasure", icon: "\u{1F4B0}", name: "Treasure trail", risk: "Enemies grow 25% faster", reward: "A treasure goblin, and win for +10 coins", growth: 1.25, goblin: true, coins: 10 },
+  supply: { id: "supply", icon: "\u{1F4E6}", name: "Supply camp", risk: "20% more enemies", reward: "A level 2 gear right now", enemy: 1.2, gearLevel: 2, available: () => gearTray.length < TRAY_SLOTS },
+};
 const GOBLIN_TIP_AGE = 1.2; // seconds in, so it's on screen when the tip points to it
 const GOBLIN_FIRST_WAVE = 2;
 const GOBLIN_WAVE_CHANCE = 0.2; // odds a normal wave has a treasure goblin, about three a run
@@ -157,7 +167,7 @@ const CROWD_SCALE = 0.62;
 const CROWD_SPRITE_SIZE = 64;
 const RUN_SAVE_VERSION = 1; // saves from another version are ignored
 const RUN_SAVE_SECONDS = 5; // how often a run is saved while playing
-const RUN_SAVE_STATES = ["playing", "building", "choosing", "tip", "paused", "worldclear"];
+const RUN_SAVE_STATES = ["playing", "building", "choosing", "path", "tip", "paused", "worldclear"];
 const COINS_PER_WAVE = 2;
 const COINS_PER_BOSS = 10;
 const COIN_PURSE_PER_LEVEL = 0.1; // extra run coins per level
@@ -767,6 +777,10 @@ let hitNumbers = []; // { side, amount, color, age } at most one per side, besid
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 let gearTray = []; // { type, level, arriving }: dropped gears below the board, waiting to be placed
+let lastPathWave = 0; // the wave the last route was chosen for
+let offeredPaths = null; // ids from PATHS while a choice is open
+let nextPath = null; // the route chosen for the next wave
+let activePath = null; // this wave's route
 let treasureAt = NO_GEAR_DROP; // waveTime this wave's treasure goblin appears, spent once it has
 let treasureGoblin = null; // { age, seconds, sparkle } while one is running past
 let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
@@ -2196,6 +2210,7 @@ function statusChips() {
   const add = (kind, icon, name, text) => chips.push({ kind, icon, count: null, name, text });
   if (frozenFor > 0) add("bad", STATUS_ICONS.frozen, "Frozen", "The main gear is frozen. Use Lightning to thaw it.");
   if (activeDeal) add("bad", STATUS_ICONS.deal, "Risky deal", capitalized(activeDeal.text));
+  if (activePath && activePath.id !== "safe") add("bad", activePath.icon, activePath.name, activePath.risk);
   if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
   if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
@@ -2593,6 +2608,12 @@ function winWave() {
   }
   activeDeal = null;
   dealPayout = 0;
+  const eliteWon = Boolean(activePath?.lucky);
+  if (activePath?.coins) {
+    runBonusCoins += activePath.coins;
+    announce(`Path won! +${activePath.coins} coins`);
+  }
+  activePath = null;
   spawnConfetti();
   if (wave > bestWave) {
     bestWave = wave;
@@ -2605,7 +2626,7 @@ function winWave() {
   if (!currentEvent) save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
   checkDailyGoal();
   if (clearedWorld) clearWorld();
-  else offerRewards(bossBeaten ? "Boss defeated!" : `Wave ${wave - 1} won!`, bossBeaten);
+  else offerRewards(bossBeaten ? "Boss defeated!" : eliteWon ? "Elite beaten!" : `Wave ${wave - 1} won!`, bossBeaten || eliteWon);
 }
 
 // Reset the balance of power so the new wave starts contested. Carrying the
@@ -2617,11 +2638,13 @@ function startWave() {
   const plan = nextWavePlan || planWave(wave);
   nextWavePlan = null;
   wavePace = WAVE_PACES[plan.pace] || null;
+  activePath = nextPath;
+  nextPath = null;
   activeDeal = dealAccepted ? WAVE_DEALS[plan.deal] || null : null;
   dealPayout = activeDeal ? dealCoins() : 0;
   dealAccepted = false;
   rustBlocked = false;
-  enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1);
+  enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1) * (activePath?.enemy || 1);
   playerPower = enemyPower * (waveLead + nextWaveBonus - runLevel().lead);
   nextWaveBonus = 0;
   if (plan.boss) {
@@ -3353,8 +3376,82 @@ function chooseReward(reward) {
   }
   offeredRewards = null;
   document.getElementById("reward-screen").classList.add("hidden");
+  if (pathChoiceDue()) showPaths(pickPaths());
+  else carryOnToWave();
+}
+
+function carryOnToWave() {
   if (grid.flat().filter((cell) => cell && !cell.driver).length >= BUILD_MIN_GEARS) startBuildBreak(BUILD_SECONDS);
   else beginWave();
+}
+
+function pathChoiceDue() {
+  if (wave < PATH_FIRST_WAVE || wave - lastPathWave < PATH_GAP_WAVES) return false;
+  const plan = nextWavePlan;
+  return Boolean(plan) && !plan.boss && !plan.event && !plan.pace && !plan.deal;
+}
+
+// Always the safe road, and two others. The same for everyone in a daily challenge.
+function pickPaths() {
+  const random = runRandom(`path${wave}`);
+  const risky = Object.values(PATHS).filter((path) => path.id !== "safe" && (!path.available || path.available()));
+  const shuffled = risky.map((path) => [random(), path.id]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
+  return ["safe", ...shuffled.slice(0, 2)];
+}
+
+function showPaths(ids) {
+  gameState = "path";
+  drag = null;
+  offeredPaths = ids;
+  rewardOpenedAt = performance.now();
+  document.getElementById("path-next").textContent = nextWaveText(nextWavePlan);
+  const list = document.getElementById("path-options");
+  list.replaceChildren();
+  for (const id of ids) {
+    const path = PATHS[id];
+    const button = document.createElement("button");
+    button.className = `path-card ${id}`;
+    const name = document.createElement("b");
+    name.textContent = path.name;
+    const risk = document.createElement("span");
+    risk.className = "path-risk";
+    risk.textContent = path.risk;
+    const reward = document.createElement("span");
+    reward.className = "path-reward";
+    reward.textContent = path.reward;
+    const words = document.createElement("div");
+    words.className = "reward-words";
+    words.append(name, risk, reward);
+    button.append(emojiIcon(path.icon), words);
+    button.addEventListener("click", () => {
+      if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) choosePath(id);
+    });
+    list.append(button);
+  }
+  document.getElementById("path-screen").classList.remove("hidden");
+  saveRun();
+}
+
+function choosePath(id) {
+  const path = PATHS[id];
+  offeredPaths = null;
+  lastPathWave = wave;
+  nextPath = path;
+  document.getElementById("path-screen").classList.add("hidden");
+  if (path.gearLevel) {
+    const frame = document.getElementById("app-frame").getBoundingClientRect();
+    sendGearToTray(newGearType(), path.gearLevel, { x: frame.width / 2, y: frame.height / 2 });
+  }
+  playClankSound();
+  carryOnToWave();
+}
+
+function clearPaths() {
+  offeredPaths = null;
+  nextPath = null;
+  activePath = null;
+  lastPathWave = 0;
+  document.getElementById("path-screen")?.classList.add("hidden");
 }
 
 // A calm moment to rearrange the machine. The wave is sized when it starts, for
@@ -3388,10 +3485,10 @@ function beginWave() {
   startWave();
   gameState = "playing";
   gearDropAt = planGearDrop();
-  treasureAt = planTreasureGoblin();
+  treasureAt = activePath?.goblin ? GOBLIN_EARLIEST : planTreasureGoblin();
   if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
   updateFeatureButtons();
-  showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
+  showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : activePath && activePath.id !== "safe" ? `${activePath.name}!` : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
   saveRun();
 }
 
@@ -3460,6 +3557,7 @@ function runSnapshot() {
     marchers,
     parts: runParts,
     offered: offeredRewards,
+    paths: { offered: offeredPaths, next: nextPath?.id ?? null, active: activePath?.id ?? null },
     nextPlan: nextWavePlan,
     daily: currentDaily,
     rules: runRules,
@@ -3473,7 +3571,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt, treasureAt,
+      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt, treasureAt, lastPathWave,
     },
     flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
@@ -3516,6 +3614,7 @@ function isValidRunSave(data) {
   if (data.boss && !bossKind(data.boss.kind)) return false;
   if (data.enemyType !== null && !ENEMY_TYPES[data.enemyType]) return false;
   if (data.waveEvent !== null && !WAVE_EVENTS.some((e) => e.id === data.waveEvent)) return false;
+  if (data.state === "path" && !(Array.isArray(data.paths?.offered) && data.paths.offered.length && data.paths.offered.every((id) => PATHS[id]))) return false;
   if (data.state === "choosing" && !data.offered?.ids?.every((id) => REWARDS.some((r) => r.id === id))) return false;
   if (data.state === "worldclear" && !data.lastClear) return false;
   return true;
@@ -3562,6 +3661,11 @@ function restoreRun(data) {
   strikeCount = n.strikeCount ?? 0;
   gearDropAt = n.gearDropAt ?? NO_GEAR_DROP;
   treasureAt = n.treasureAt ?? NO_GEAR_DROP;
+  // Saves from before routes don't have these.
+  clearPaths();
+  lastPathWave = n.lastPathWave ?? 0;
+  nextPath = PATHS[data.paths?.next] || null;
+  activePath = PATHS[data.paths?.active] || null;
   clearTreasureGoblin();
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
@@ -3604,7 +3708,8 @@ function continueRun() {
   updateTrainButton();
   updateStrikeButton();
   updateFeatureButtons();
-  if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
+  if (data.state === "path") showPaths(data.paths.offered);
+  else if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
     showWorldClear();
@@ -3916,7 +4021,7 @@ function update(dt) {
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  const growthScale = (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1);
+  const growthScale = (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
   enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
@@ -5711,7 +5816,7 @@ function playMusicStep(song, step, at, stepSeconds) {
 }
 
 function updateMusic() {
-  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing";
+  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing" || gameState === "path";
   if (!audioCtx || audioCtx.state !== "running" || !playing || save.muted || !save.music || document.hidden) {
     musicTime = 0;
     return;
@@ -6057,6 +6162,7 @@ function startNewRun() {
   runParts = {};
   offeredRewards = null;
   nextWavePlan = null;
+  clearPaths();
   rerollsLeft = REROLLS_PER_RUN;
   // A daily run tried again after midnight becomes the new day's challenge.
   if (currentDaily && currentDaily.day !== todayKey()) {
@@ -6295,6 +6401,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
       ["Treasure goblin", "Sometimes runs past carrying coins or a gear. Tap it before it escapes.", enemyIcon("runner")],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],

@@ -364,6 +364,110 @@ button {
   pointer-events: none;
 }
 
+#path-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.88);
+  animation: reward-in 0.25s ease;
+}
+
+#path-screen h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 1.7rem;
+}
+
+#path-screen p {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+#path-options {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Each route has its own colours, so the danger reads before the words do. */
+.path-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 3px solid var(--path-edge);
+  background: linear-gradient(135deg, var(--path-top), var(--path-bottom));
+  box-shadow: 0 4px 0 #120a04;
+  color: #fff;
+  text-align: left;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.path-card:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #120a04;
+}
+
+.path-card.safe {
+  --path-top: #3a5f7a;
+  --path-bottom: #223a4d;
+  --path-edge: #6fa3c7;
+}
+
+.path-card.elite {
+  --path-top: #8c2a1c;
+  --path-bottom: #4a120c;
+  --path-edge: #ff8a6b;
+}
+
+.path-card.treasure {
+  --path-top: #8a6414;
+  --path-bottom: #4d360a;
+  --path-edge: #ffcc33;
+}
+
+.path-card.supply {
+  --path-top: #3f6f2c;
+  --path-bottom: #213d17;
+  --path-edge: #8bd65a;
+}
+
+.path-card .emoji-icon {
+  flex-shrink: 0;
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.path-card b {
+  font-size: 1.1rem;
+}
+
+.path-card span:not(.emoji-icon) {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.path-card .path-risk {
+  color: #ffc4b5;
+}
+
+.path-card .path-reward {
+  color: #c8f5a4;
+  font-weight: 700;
+}
+
 /* Dropped gears wait here to be dragged onto the board. */
 #gear-tray {
   flex-shrink: 0;
