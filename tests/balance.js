@@ -29,7 +29,7 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
       if (gameState === "building") { beginWave(); continue; }
       if (gameState !== "playing") break;
       if (canTrain() && Math.random() < 0.02) trainArmy();
-      if (lootDrop) { Object.assign(lootDrop, bestEmptyCell()); collectLootDrop(); }
+      while (gearTray.length && bestEmptyCell()) { const spot = bestEmptyCell(); placeTrayGear(0, spot.row, spot.col); }
       if (overdriveReady()) activateOverdrive();
       if (smart) {
         if (ticks % 10 === 0) merge();

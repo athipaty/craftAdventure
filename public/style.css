@@ -332,48 +332,63 @@ button {
   pointer-events: none;
 }
 
-/* A gear fallen onto a board cell. It sits in the same coordinate space as
-   fx-canvas (both directly in #app-frame), but unlike that canvas it takes taps. */
-#loot-drop {
+/* Dropped gears wait here to be dragged onto the board. */
+#gear-tray {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 10px 4px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tray-slot {
+  width: 46px;
+  height: 46px;
+  box-sizing: border-box;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.tray-slot.full {
+  border: 2px solid var(--accent);
+  cursor: grab;
+}
+
+.tray-slot .art-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tray-slot.held .art-icon {
+  opacity: 0.25;
+}
+
+.tray-slot.arriving .art-icon {
+  opacity: 0;
+}
+
+.gear-flyer {
   position: absolute;
   z-index: 28;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  padding: 0;
-  background: none;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
   transform: translate(-50%, -50%);
-  animation: loot-fall 0.35s ease-in, loot-bob 0.8s ease-in-out 0.35s infinite;
-  filter: drop-shadow(0 0 7px var(--accent)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 0 7px var(--accent));
 }
 
-#loot-drop .art-icon {
-  display: block;
-  width: 44px;
-  height: 44px;
-}
-
-#loot-drop b {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: var(--accent);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-}
-
-#loot-drop:active {
-  animation: none;
-  transform: translate(-50%, -50%) scale(0.85);
-}
-
-@keyframes loot-fall {
-  from { transform: translate(-50%, -50%) translateY(-70px); opacity: 0; }
-  to { transform: translate(-50%, -50%); opacity: 1; }
-}
-
-@keyframes loot-bob {
-  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
-  50% { transform: translate(-50%, -50%) translateY(-5px); }
+/* Short phones need the room for the board. */
+@media (max-height: 620px) {
+  .tray-slot {
+    width: 38px;
+    height: 38px;
+  }
 }
 
 #main-actions {
@@ -391,6 +406,12 @@ button {
   color: #c9b896;
   margin: 0;
   padding: 2px 10px 8px;
+}
+
+@media (max-height: 620px) {
+  .hint {
+    display: none;
+  }
 }
 
 /* ---------- Announcements ---------- */

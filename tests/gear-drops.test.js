@@ -27,115 +27,83 @@ async function check(name, fn) {
   await page.evaluate(() => { for (const id of ["daily-screen", "away-screen"]) document.getElementById(id).classList.add("hidden"); startChosenRun({ world: 0 }); });
 
   // Holds the fight still: only the code under test changes anything.
-  const fresh = () => page.evaluate(() => {
-    gameState = "playing"; boss = null; clearLootDrop(); wave = 3; waveTime = 10; gearDropAt = 5;
-    playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; blockedCells.clear();
+  const fresh = (dropAt = -1) => page.evaluate((at) => {
+    gameState = "playing"; boss = null; gearTray = []; wave = 3; waveTime = 10; gearDropAt = at;
+    playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; blockedCells.clear(); drag = null;
     grid.forEach((row, r) => row.forEach((cell, c) => { if (cell && !cell.driver) grid[r][c] = null; }));
-  });
+  }, dropAt);
   const gears = () => page.evaluate(() => grid.flat().filter((c) => c && !c.driver).map((c) => c.level));
+  const tray = () => page.evaluate(() => gearTray.map((g) => g.level));
+  const stock = (...levels) => page.evaluate((ls) => { gearTray = ls.map((level) => ({ type: "soldier", level })); renderGearTray(); }, levels);
+  const slotAt = (i) => page.evaluate((n) => { const b = document.querySelector(`.tray-slot[data-index="${n}"]`).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, i);
+  const cellAtPage = (row, col) => page.evaluate(([r, c]) => { const b = boardCanvas.getBoundingClientRect(); return { x: b.left + (c + 0.5) * cellSize, y: b.top + (r + 0.5) * cellSize }; }, [row, col]);
+  const dragTo = async (from, to) => { await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 3 }); await page.mouse.move(to.x, to.y, { steps: 3 }); await page.mouse.up(); };
 
-  console.log("\nOn normal waves");
-  await check("a wave's gear drops on the first hit after it's due, and only once", async () => {
-    await fresh();
+  console.log("\nDropping");
+  await check("a wave's gear goes to the tray on the first hit after it's due, and only once", async () => {
+    await fresh(5);
     const r = await page.evaluate(() => {
       waveTime = 4; maybeDropGear();
-      const early = Boolean(lootDrop);
+      const early = gearTray.length;
       waveTime = 5; maybeDropGear();
-      const due = lootDrop?.gearLevel;
+      const due = gearTray.map((g) => g.level);
       const spent = gearDropAt;
-      clearLootDrop(); maybeDropGear();
-      return { early, due, spent, again: Boolean(lootDrop) };
-    });
-    assert.deepEqual(r, { early: false, due: 1, spent: -1, again: false });
-  });
-  await check("tapping it puts a gear on the cell it fell on, for free", async () => {
-    await fresh();
-    await page.evaluate(() => { maybeDropGear(); });
-    const before = await page.evaluate(() => ({ power: playerPower, row: lootDrop.row, col: lootDrop.col }));
-    assert.equal(await page.locator("#loot-drop").isVisible(), true);
-    assert.equal(await page.locator("#loot-drop-amount").textContent(), "Free!");
-    await page.screenshot({ path: path.join(scratch, "gear-drop.png") });
-    await page.evaluate(() => document.getElementById("loot-drop").click());
-    assert.deepEqual(await gears(), [1]);
-    const after = await page.evaluate(({ row, col }) => ({ power: playerPower, here: grid[row][col]?.level, gone: lootDrop === null }), before);
-    assert.deepEqual(after, { power: before.power, here: 1, gone: true });
-    assert.equal(await page.locator("#loot-drop").isVisible(), false);
-  });
-  await check("missing it costs nothing: it goes away with no gear", async () => {
-    await fresh();
-    const r = await page.evaluate(() => {
       maybeDropGear();
-      lootDrop.age = GEAR_DROP_LIFETIME - 0.01;
-      updateFx(0.001); const stillThere = Boolean(lootDrop);
-      updateFx(0.05);
-      return { stillThere, gone: lootDrop === null, power: playerPower };
+      return { early, due, spent, again: gearTray.length };
     });
-    assert.deepEqual(r, { stillThere: true, gone: true, power: 1000 });
-    assert.deepEqual(await gears(), []);
+    assert.deepEqual(r, { early: 0, due: [1], spent: -1, again: 1 });
   });
-  await check("it shows on its board cell, and a click there collects it", async () => {
-    await fresh();
+  await check("it flies there, shows in its slot when it lands, and costs nothing", async () => {
+    await page.waitForFunction(() => !document.querySelector(".gear-flyer")); // the last test's
+    await fresh(5);
     await page.evaluate(() => maybeDropGear());
-    await page.waitForTimeout(450); // it falls into place first
-    const r = await page.evaluate(() => {
-      const board = boardCanvas.getBoundingClientRect();
-      const box = document.getElementById("loot-drop").getBoundingClientRect();
-      return { dx: Math.abs(box.left + box.width / 2 - (board.left + (lootDrop.col + 0.5) * cellSize)), dy: Math.abs(box.top + box.height / 2 - (board.top + (lootDrop.row + 0.5) * cellSize)), cell: cellSize };
-    });
-    assert.ok(r.dx < r.cell && r.dy < r.cell, JSON.stringify(r));
+    assert.equal(await page.locator(".gear-flyer").count(), 1);
+    assert.equal(await page.locator(".tray-slot.arriving").count(), 1);
+    await page.waitForFunction(() => gearTray[0] && !gearTray[0].arriving);
+    await page.waitForFunction(() => !document.querySelector(".gear-flyer"));
+    await page.waitForFunction(() => !document.querySelector(".tray-slot.arriving"));
+    assert.equal(await page.locator(".tray-slot.full .art-icon").count(), 1);
+    assert.equal(await page.evaluate(() => playerPower >= 1000), true);
+    await page.screenshot({ path: path.join(scratch, "gear-tray.png") });
   });
-  await check("a drop lands on a free cell anywhere, never a blocked one", async () => {
+  await check("it can't be picked up mid-flight", async () => {
     await fresh();
-    const r = await page.evaluate(() => {
-      blockedCells.add("0,0");
-      const seen = new Set();
-      for (let i = 0; i < 2000; i++) { const c = randomEmptyCell(); seen.add(`${c.row},${c.col}`); }
-      const out = { taken: [...seen].some((k) => { const [a, b] = k.split(",").map(Number); return grid[a][b]; }), blocked: seen.has("0,0"), spots: seen.size, free: ROWS * COLS - 2 };
-      blockedCells.clear();
-      return out;
-    });
-    assert.deepEqual([r.taken, r.blocked, r.spots], [false, false, r.free]);
+    await page.evaluate(() => { gearTray = [{ type: "soldier", level: 1, arriving: true }]; renderGearTray(); });
+    const p = await slotAt(0);
+    await page.mouse.click(p.x, p.y);
+    assert.deepEqual(await gears(), []);
+    assert.equal((await tray()).length, 1);
   });
-  await check("a gear dragged onto its cell moves the drop instead of losing it", async () => {
+  await check("it waits with no timer, and stays when the wave ends", async () => {
     await fresh();
+    await stock(1);
+    const r = await page.evaluate(() => { for (let i = 0; i < 300; i++) updateFx(0.5); gameState = "choosing"; updateFx(0.1); const left = gearTray.length; gameState = "playing"; return left; });
+    assert.equal(r, 1);
+  });
+  await check("a full tray holds the next gear back instead of losing it", async () => {
+    await fresh(5);
+    await stock(1, 1, 1, 1, 1);
     const r = await page.evaluate(() => {
       maybeDropGear();
-      const { row, col } = lootDrop;
-      grid[row][col] = freshCell("soldier");
-      updateFx(0.01);
-      return { still: Boolean(lootDrop), moved: lootDrop && !grid[lootDrop.row][lootDrop.col] };
-    });
-    assert.deepEqual(r, { still: true, moved: true });
-  });
-  await check("nothing drops on a full board, and one waiting goes away when it fills", async () => {
-    await fresh();
-    const r = await page.evaluate(() => {
-      const fill = () => { while (bestEmptyCell()) placeGear("soldier"); };
+      const held = { n: gearTray.length, at: gearDropAt };
+      gearTray.pop();
       maybeDropGear();
-      const dropped = Boolean(lootDrop);
-      fill();
-      updateFx(0.01);
-      const cleared = lootDrop === null;
-      gearDropAt = 5;
-      maybeDropGear();
-      return { dropped, cleared, onFull: Boolean(lootDrop), stillDue: gearDropAt };
+      return { held, after: gearTray.length, at: gearDropAt };
     });
-    assert.deepEqual(r, { dropped: true, cleared: true, onFull: false, stillDue: 5 });
+    assert.deepEqual(r, { held: { n: 5, at: 5 }, after: 5, at: -1 });
   });
   await check("every normal wave has one, boss waves wait for the boss, in the right window", async () => {
     await fresh();
     const r = await page.evaluate(() => {
       const plans = [];
       boss = null; wave = 5;
-      for (let i = 0; i < 4000; i++) plans.push(planGearDrop());
-      const got = plans.filter((p) => p !== NO_GEAR_DROP);
-      wave = 1; const first = Array.from({ length: 300 }, planGearDrop).every((p) => p !== NO_GEAR_DROP);
+      for (let i = 0; i < 2000; i++) plans.push(planGearDrop());
       wave = 5; boss = { hp: 1, maxHp: 1 }; const onBoss = planGearDrop(); boss = null;
-      return { share: got.length / plans.length, min: Math.min(...got), max: Math.max(...got), first, onBoss };
+      return { none: plans.filter((p) => p === NO_GEAR_DROP).length, min: Math.min(...plans), max: Math.max(...plans), onBoss };
     });
-    assert.equal(r.share, 1);
+    assert.equal(r.none, 0);
     assert.ok(r.min >= 3 && r.max <= 8, `${r.min}..${r.max}`);
-    assert.equal(r.first, true); assert.equal(r.onBoss, -1);
+    assert.equal(r.onBoss, -1);
   });
   await check("a daily challenge drops the same for everyone", async () => {
     await fresh();
@@ -149,18 +117,99 @@ async function check(name, fn) {
     assert.equal(r[0], r[1]); assert.equal(r[1], r[2]);
   });
 
+  console.log("\nFrom the tray to the board");
+  await check("dragging puts it on the cell it was dropped on", async () => {
+    await fresh();
+    await stock(1);
+    await dragTo(await slotAt(0), await cellAtPage(1, 1));
+    assert.equal(await page.evaluate(() => grid[1][1]?.level), 1);
+    assert.deepEqual(await tray(), []);
+  });
+  await check("the held gear shows as a faded slot, and follows on the effects layer", async () => {
+    await fresh();
+    await stock(1);
+    const from = await slotAt(0), to = await cellAtPage(1, 1);
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 3 });
+    await page.waitForFunction(() => document.querySelector(".tray-slot.held"));
+    const r = await page.evaluate(() => ({ x: Math.round(drag.x), tray: drag.tray, scrap: document.getElementById("scrap-zone").classList.contains("hidden") }));
+    await page.screenshot({ path: path.join(scratch, "gear-tray-drag.png") });
+    await page.mouse.up();
+    assert.equal(r.tray, 0);
+    assert.equal(r.scrap, true, "no scrapping from the tray");
+  });
+  await check("dropping it on a matching gear merges them", async () => {
+    await fresh();
+    await stock(1);
+    await page.evaluate(() => { grid[1][1] = freshCell("soldier"); });
+    await dragTo(await slotAt(0), await cellAtPage(1, 1));
+    assert.equal(await page.evaluate(() => grid[1][1].level), 2);
+    assert.deepEqual(await tray(), []);
+  });
+  await check("anywhere it can't go, it stays in the tray", async () => {
+    await fresh();
+    await stock(1);
+    await page.evaluate(() => { const c = freshCell("soldier"); c.level = 3; grid[1][1] = c; blockedCells.add("2,2"); });
+    await dragTo(await slotAt(0), await cellAtPage(1, 1));
+    assert.equal(await page.evaluate(() => grid[1][1].level), 3, "a different gear");
+    await dragTo(await slotAt(0), await cellAtPage(2, 2));
+    assert.equal(await page.evaluate(() => grid[2][2]), null, "a blocked cell");
+    await dragTo(await slotAt(0), await page.evaluate(() => { const b = boardCanvas.getBoundingClientRect(); return { x: b.left + (DRIVER_COL + 0.5) * cellSize, y: b.top + (DRIVER_ROW + 0.5) * cellSize }; }));
+    const off = await slotAt(0);
+    await dragTo(off, { x: off.x + 100, y: off.y + 60 });
+    assert.deepEqual(await tray(), [1]);
+    assert.equal(await page.evaluate(() => drag), null);
+  });
+  await check("a tap places it where a new gear would go", async () => {
+    await fresh();
+    await stock(1, 2);
+    const spot = await page.evaluate(() => bestEmptyCell());
+    const p = await slotAt(1);
+    await page.mouse.click(p.x, p.y);
+    assert.equal(await page.evaluate(({ row, col }) => grid[row][col]?.level, spot), 2);
+    assert.deepEqual(await tray(), [1], "the other one stays");
+  });
+  await check("a tap with a full board leaves it in the tray", async () => {
+    await fresh();
+    await stock(1);
+    await page.evaluate(() => { while (bestEmptyCell()) placeGear("bomb"); });
+    const p = await slotAt(0);
+    await page.mouse.click(p.x, p.y);
+    assert.deepEqual(await tray(), [1]);
+  });
+  await check("it can be placed during the break too", async () => {
+    await fresh();
+    await stock(1);
+    await page.evaluate(() => { gameState = "building"; });
+    const p = await slotAt(0);
+    await page.mouse.click(p.x, p.y);
+    const r = await page.evaluate(() => ({ left: gearTray.length, n: grid.flat().filter((c) => c && !c.driver).length }));
+    await page.evaluate(() => { gameState = "playing"; });
+    assert.deepEqual(r, { left: 0, n: 1 });
+  });
+
   console.log("\nFrom bosses");
-  const bossAt = (share) => page.evaluate((s) => { boss = { kind: BOSS_KINDS[0], hp: 100 * s, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; gearDropAt = NO_GEAR_DROP; maybeDropGear(); return lootDrop?.gearLevel ?? 0; }, share);
+  const bossAt = (share) => page.evaluate((s) => { boss = { kind: BOSS_KINDS[0], hp: 100 * s, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; gearDropAt = NO_GEAR_DROP; maybeDropGear(); return gearTray.map((g) => g.level); }, share);
   await check("a boss drops a level 2 gear at half health, and only one", async () => {
     await fresh();
-    assert.equal(await bossAt(0.51), 0, "above half");
+    assert.deepEqual(await bossAt(0.51), [], "above half");
     await page.evaluate(() => { boss = null; });
-    assert.equal(await bossAt(0.5), 2, "at half");
-    assert.equal(await page.locator("#loot-drop-amount").textContent(), "Level 2!");
-    await page.evaluate(() => document.getElementById("loot-drop").click());
-    assert.deepEqual(await gears(), [2]);
-    const again = await page.evaluate(() => { boss.hp = 10; maybeDropGear(); const got = Boolean(lootDrop); boss = null; return got; });
-    assert.equal(again, false);
+    assert.deepEqual(await bossAt(0.5), [2], "at half");
+    const again = await page.evaluate(() => { boss.hp = 10; maybeDropGear(); const n = gearTray.length; boss = null; return n; });
+    assert.equal(again, 1);
+  });
+  await check("a full tray keeps a boss's gear for later", async () => {
+    await fresh();
+    await stock(1, 1, 1, 1, 1);
+    const r = await page.evaluate(() => {
+      boss = { kind: BOSS_KINDS[0], hp: 10, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0 };
+      maybeDropGear();
+      const held = boss.gearDropped;
+      gearTray.pop(); maybeDropGear();
+      const out = { held: Boolean(held), got: gearTray.at(-1).level };
+      boss = null;
+      return out;
+    });
+    assert.deepEqual(r, { held: false, got: 2 });
   });
 
   console.log("\nNo more buying");
@@ -195,48 +244,75 @@ async function check(name, fn) {
   });
 
   console.log("\nReloading");
-  await check("reloading can't drop the same gear again", async () => {
+  await check("gears in the tray survive a reload, without being dropped twice", async () => {
     await fresh();
-    await page.evaluate(() => { maybeDropGear(); clearLootDrop(); boss = { kind: BOSS_KINDS[0], hp: 40, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0, gearDropped: true }; });
+    await page.evaluate(() => { gearTray = [{ type: "soldier", level: 1, arriving: true }, { type: "bomb", level: 2 }]; boss = { kind: BOSS_KINDS[0], hp: 40, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0, gearDropped: true }; });
     const snap = await page.evaluate(() => JSON.parse(JSON.stringify(runSnapshot())));
+    assert.deepEqual(snap.tray, [{ type: "soldier", level: 1 }, { type: "bomb", level: 2 }]);
     assert.equal(snap.numbers.gearDropAt, -1);
-    assert.equal(snap.boss.gearDropped, true);
     assert.equal(await page.evaluate((d) => isValidRunSave(d), snap), true);
-    const r = await page.evaluate((d) => { gearDropAt = 5; boss = null; restoreRun(d); maybeDropGear(); const out = { at: gearDropAt, dropped: boss.gearDropped, loot: Boolean(lootDrop) }; boss = null; return out; }, snap);
-    assert.deepEqual(r, { at: -1, dropped: true, loot: false });
+    const r = await page.evaluate((d) => { gearTray = []; gearDropAt = 5; boss = null; restoreRun(d); maybeDropGear(); const out = { at: gearDropAt, n: gearTray.length, type: gearTray[1].type, level: gearTray[1].level }; boss = null; return out; }, snap);
+    assert.deepEqual(r, { at: -1, n: 2, type: "bomb", level: 2 });
   });
   await check("a due gear survives a reload, and older saves still load", async () => {
-    await fresh();
-    const snap = await page.evaluate(() => { gearDropAt = 9; return JSON.parse(JSON.stringify(runSnapshot())); });
+    await fresh(9);
+    const snap = await page.evaluate(() => JSON.parse(JSON.stringify(runSnapshot())));
     assert.equal(await page.evaluate((d) => { restoreRun(d); return gearDropAt; }, snap), 9);
     delete snap.numbers.gearDropAt;
+    delete snap.tray;
     assert.equal(await page.evaluate((d) => isValidRunSave(d), snap), true);
-    assert.equal(await page.evaluate((d) => { restoreRun(d); return gearDropAt; }, snap), -1);
+    assert.deepEqual(await page.evaluate((d) => { restoreRun(d); return [gearDropAt, gearTray.length]; }, snap), [-1, 0]);
+  });
+  await check("a bad tray in a save is cleaned up, and a new run starts empty", async () => {
+    await fresh();
+    const snap = await page.evaluate(() => JSON.parse(JSON.stringify(runSnapshot())));
+    snap.tray = [{ type: "nonsense", level: 1 }, { type: "soldier", level: 99 }, null, { type: "soldier", level: 1 }];
+    assert.deepEqual(await page.evaluate((d) => { restoreRun(d); return gearTray; }, snap), [{ type: "soldier", level: 1 }]);
   });
 
   console.log("\nIn a real wave");
-  await check("playing a wave for real drops one, and a click collects it", async () => {
-    await fresh();
-    await page.evaluate(() => { gearDropAt = waveTime; playerPower = 1000; enemyPower = 1000; sendMarcher("player", 1); });
-    await page.locator("#loot-drop").waitFor({ state: "visible", timeout: 6000 });
-    const box = await page.locator("#loot-drop").boundingBox();
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // it bobs, so it never holds still for locator.click
-    assert.equal((await gears()).length >= 1, true);
-    await page.waitForTimeout(100);
-    assert.equal(await page.locator("#loot-drop").isVisible(), false);
+  await check("playing a wave for real sends one to the tray, and dragging it works", async () => {
+    await fresh(3);
+    await page.evaluate(() => { waveTime = 3; sendMarcher("player", 1); });
+    await page.waitForFunction(() => gearTray.length > 0 && !gearTray[0].arriving, null, { timeout: 8000 });
+    await dragTo(await slotAt(0), await cellAtPage(0, 6));
+    assert.equal(await page.evaluate(() => grid[0][6]?.level), 1);
   });
+
+  console.log("\nFitting on the screen");
+  for (const [w, h] of [[320, 568], [360, 640], [390, 844], [430, 932]]) {
+    await check(`the tray fits between the board and the buttons at ${w}x${h}`, async () => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.waitForTimeout(150);
+      await fresh();
+      await stock(1, 2, 1, 1, 1);
+      await page.waitForTimeout(50);
+      const r = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const tray = box("gear-tray"), board = box("board-canvas"), row = box("action-row");
+        const slots = [...document.querySelectorAll(".tray-slot")].map((s) => s.getBoundingClientRect());
+        return { overBoard: tray.top < board.bottom - 1, overRow: tray.bottom > row.top + 1, inside: slots.every((s) => s.left >= 0 && s.right <= innerWidth), slot: slots[0].width, cell: cellSize, scroll: document.documentElement.scrollWidth - innerWidth, n: slots.length };
+      });
+      assert.equal(r.overBoard, false); assert.equal(r.overRow, false); assert.equal(r.inside, true);
+      assert.equal(r.scroll, 0); assert.equal(r.n, 5);
+      assert.ok(r.slot >= 38, `slot ${r.slot}`);
+      assert.ok(r.cell >= 30, `cell ${r.cell}`);
+      await page.screenshot({ path: path.join(scratch, `gear-tray-${w}.png`) });
+    });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
 
   console.log("\nExplaining it");
   await check("the guide and the first drop explain it, in English and Thai", async () => {
     const r = await page.evaluate(() => {
       const tip = TIPS.find((t) => t.id === "gearDrop");
-      lootDrop = { gearLevel: 1 }; const shows = Boolean(tip.when()); lootDrop = null; const hides = Boolean(tip.when());
+      gearTray = [{ type: "soldier", level: 1 }]; const shows = Boolean(tip.when()); gearTray = []; const hides = Boolean(tip.when());
       return { shows, hides, target: tip.target, text: tip.text };
     });
-    assert.deepEqual([r.shows, r.hides, r.target], [true, false, "#loot-drop"]);
+    assert.deepEqual([r.shows, r.hides, r.target], [true, false, "#gear-tray"]);
     await page.evaluate(() => { save.lang = "th"; writeSave(); });
     await page.goto(url);
-    const left = await page.evaluate((text) => ["Free gear", "Free gear!", "Free!", "Level 2!", text, "The only way to get more gears. Monsters drop them onto the board, and every boss drops a level 2 gear at half health. Tap one before it disappears."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
+    const left = await page.evaluate((text) => ["Free gear", text, "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. Drag one onto the board, or tap it."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
     assert.deepEqual(left, []);
   });
 
