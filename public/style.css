@@ -332,13 +332,11 @@ button {
   pointer-events: none;
 }
 
-/* A coin drop at the front line when a soldier's hit lands — positioned in
-   the same coordinate space as fx-canvas (both sit directly in #app-frame),
-   so it can reuse frontLineFx()'s x/y as-is. Unlike fx-canvas this one does
-   take taps: it's the thing being collected. */
+/* A gear fallen onto a board cell. It sits in the same coordinate space as
+   fx-canvas (both directly in #app-frame), but unlike that canvas it takes taps. */
 #loot-drop {
   position: absolute;
-  z-index: 27;
+  z-index: 28;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -346,17 +344,18 @@ button {
   padding: 0;
   background: none;
   transform: translate(-50%, -50%);
-  animation: loot-bob 0.8s ease-in-out infinite;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  animation: loot-fall 0.35s ease-in, loot-bob 0.8s ease-in-out 0.35s infinite;
+  filter: drop-shadow(0 0 7px var(--accent)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 
-#loot-drop-icon {
-  font-size: 1.5rem;
-  line-height: 1;
+#loot-drop .art-icon {
+  display: block;
+  width: 44px;
+  height: 44px;
 }
 
 #loot-drop b {
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: var(--accent);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
@@ -367,20 +366,9 @@ button {
   transform: translate(-50%, -50%) scale(0.85);
 }
 
-/* A free gear stands out from coins, and is easier to hit in a busy battle. */
-#loot-drop.gear {
-  z-index: 28;
-  filter: drop-shadow(0 0 7px var(--accent)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-}
-
-#loot-drop.gear .art-icon {
-  display: block;
-  width: 44px;
-  height: 44px;
-}
-
-#loot-drop.gear b {
-  font-size: 0.72rem;
+@keyframes loot-fall {
+  from { transform: translate(-50%, -50%) translateY(-70px); opacity: 0; }
+  to { transform: translate(-50%, -50%); opacity: 1; }
 }
 
 @keyframes loot-bob {
@@ -1767,19 +1755,6 @@ button {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.22), 0 0 0 var(--edge);
 }
 
-#buy-gear-btn {
-  --top: #8fe05a;
-  --bottom: #3f9a22;
-  --edge: #1f5a0e;
-  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9.5' fill='none' stroke='%232a1405' stroke-width='5' stroke-dasharray='3.8 3.66'/%3E%3Ccircle cx='12' cy='12' r='6.5' fill='none' stroke='%23fff' stroke-width='4' /%3E%3C/svg%3E");
-}
-
-#buy-gear-btn.risky {
-  --top: #ffd24d;
-  --bottom: #e0801c;
-  --edge: #8a4b0a;
-}
-
 #train-btn {
   --top: #c39bff;
   --bottom: #6f3fc0;
@@ -1848,7 +1823,6 @@ button {
   cursor: default;
 }
 
-#buy-gear-btn:disabled,
 #train-btn:disabled {
   --top: #5a4b3a;
   --bottom: #33281d;
@@ -1857,7 +1831,6 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 3px 0 var(--edge), 0 5px 6px rgba(0, 0, 0, 0.4);
 }
 
-#buy-gear-btn:disabled::before,
 #train-btn:disabled::before,
 #strike-btn:not(.ready):not(.shield)::before,
 #overdrive-btn:not(.ready):not(.active)::before {

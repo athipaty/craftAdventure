@@ -120,11 +120,11 @@ async function check(name, fn) {
   });
 
   // Long labels at every size.
-  await page.evaluate(() => { armyRank = 2; gearsBought = 30; wave = 40; });
+  await page.evaluate(() => { armyRank = 2; wave = 40; });
   for (const [name, w, h] of [["phone", 390, 844], ["small", 320, 568], ["narrow", 360, 640], ["landscape", 844, 390]]) {
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(200);
-    await page.evaluate(() => { hitStop = 0; playerPower = 90; enemyPower = 1e6; playerPower = 1e6 * 0.45; strikeCooldown = 1.8; overdriveCooldown = 25; rallying = false; updateBuyButton(); updateTrainButton(); updateStrikeButton(); updateOverdriveButton(); updateRallyButton(); });
+    await page.evaluate(() => { hitStop = 0; playerPower = 90; enemyPower = 1e6; playerPower = 1e6 * 0.45; strikeCooldown = 1.8; overdriveCooldown = 25; rallying = false; updateTrainButton(); updateStrikeButton(); updateOverdriveButton(); updateRallyButton(); });
     await page.waitForTimeout(60);
     await page.screenshot({ path: path.join(scratch, `shot6-${name}.png`) });
     await check(`all five buttons fit and are big enough to press: ${name}`, async () => {
@@ -132,13 +132,13 @@ async function check(name, fn) {
         const frame = document.getElementById("app-frame").getBoundingClientRect();
         const board = document.getElementById("board-canvas").getBoundingClientRect();
         const bad = [];
-        for (const id of ["buy-gear-btn", "train-btn", "strike-btn", "overdrive-btn", "rally-btn"]) {
+        for (const id of ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"]) {
           const el = document.getElementById(id), q = el.getBoundingClientRect();
           if (q.left < frame.left - 1 || q.right > frame.right + 1 || q.bottom > frame.bottom + 1) bad.push(`${id} off screen`);
           if (q.height < 36 || q.width < 72) bad.push(`${id} too small ${q.width}x${q.height}`);
           if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) bad.push(`${id} text overflows`);
         }
-        return { bad, cell: Math.round(cellSize), labels: ["buy-gear-btn", "train-btn", "strike-btn", "overdrive-btn", "rally-btn"].map((id) => document.getElementById(id).textContent) };
+        return { bad, cell: Math.round(cellSize), labels: ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"].map((id) => document.getElementById(id).textContent) };
       });
       console.log("       ", name, "cell", r.cell, JSON.stringify(r.labels));
       assert.deepEqual(r.bad, []);

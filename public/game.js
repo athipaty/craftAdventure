@@ -33,8 +33,8 @@ const ROWS = 7;
 const BASE_POWER = 3;
 const WIN_RATIO = 0.7; // playerPower share of the total needed to take the wave
 const LOSE_RATIO = 0.3; // playerPower share at/below which the enemy overruns you
-const GEAR_BASE_COST = 3; // soldiers for the first extra gear
-const GEAR_COST_GROWTH = 1.15; // price multiplier per gear bought this run
+const GEAR_BASE_COST = 3; // soldiers a gear is worth with an empty board
+const GEAR_COST_GROWTH = 1.15; // what a gear is worth when scrapped grows with each one on the board
 const DRIVER_ROW = Math.floor(ROWS / 2);
 const DRIVER_COL = Math.floor(COLS / 2);
 const MARCH_SECONDS = 0.9; // how long a soldier takes to reach the front line
@@ -69,7 +69,7 @@ const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
 // and bosses use their real art instead.
 const REWARD_ICONS = {
-  fasterGear: "\u23E9", veterans: "\u{1F396}\uFE0F", cheaperGears: "\u{1F3F7}\uFE0F", reinforcements: "\u{1F6A9}",
+  fasterGear: "\u23E9", veterans: "\u{1F396}\uFE0F", reinforcements: "\u{1F6A9}",
   cooling: "\u{1F9CA}", staticCharge: "\u26A1", scrapDealer: "\u267B\uFE0F", thickOil: "\u{1F6E2}\uFE0F", warChest: "\u{1F4B0}",
   drillManual: "\u{1F4D8}", piercing: "\u{1F531}", antifreeze: "\u2744\uFE0F", fireproof: "\u{1F9EF}", longChain: "\u{1F517}",
   bossHunter: "\u{1F3AF}", demolition: "\u{1F4A3}", heavyLoad: "\u{1F3CB}\uFE0F", turbo: "\u{1F680}", blastCleaner: "\u{1F9F9}",
@@ -111,7 +111,6 @@ const BERSERKER_OVERDRIVE_SOLDIERS = 2;
 const FAR_PAYOUT_PER_STEP = 0.25;
 const LONE_PAYOUT_PER_SIDE = 0.5;
 const RULE_RUST_SECONDS = 12;
-const RULE_PRICY = 1.25;
 const RULE_SLOW_OVERDRIVE = 1.5;
 const RULE_SWARM = 1.25;
 const RULE_BOSS_EVERY = 4;
@@ -127,16 +126,11 @@ const SKIP_COINS = 3; // paid for passing on a reward choice
 const HEAD_START_WAVE = 6; // cleared worlds can start here
 const HEAD_START_GEARS = 6; // free gears that make up for the waves skipped
 const BUZZ_GAP_MS = 150; // vibration at most this often
-const LOOT_DROP_CHANCE = 0.12; // odds a landed hit on the enemy also drops a coin
-const LOOT_DROP_COOLDOWN = 4; // seconds between drops, so they stay a treat, not a stream
-const LOOT_DROP_LIFETIME = 3.5; // seconds before an uncollected drop disappears
-const LOOT_DROP_COINS_MIN = 1;
-const LOOT_DROP_COINS_MAX = 3;
-const GEAR_DROP_FIRST_WAVE = 2;
-const GEAR_DROP_WAVE_CHANCE = 0.35; // odds a normal wave has a free gear to drop
-const GEAR_DROP_EARLIEST = 4; // seconds into the wave
-const GEAR_DROP_LATEST = 14;
-const GEAR_DROP_LIFETIME = 5; // longer than coins: it's worth more, and the battle is busy
+// Drops are the only way to grow the machine, so every normal wave has one, early
+// enough that a quick wave doesn't end first.
+const GEAR_DROP_EARLIEST = 3; // seconds into the wave
+const GEAR_DROP_LATEST = 8;
+const GEAR_DROP_LIFETIME = 5; // seconds to tap it before it's gone
 const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
 const BOSS_DROP_LEVEL = 2;
 const NO_GEAR_DROP = -1;
@@ -287,7 +281,6 @@ const START_GEARS = [
 ];
 // Rules that change a run, for a world's harder levels and the daily challenge.
 const RULES = {
-  pricy: "gears cost 25% more",
   rusty: "rust attacks on every wave",
   bossy: "a boss every 4 waves",
   slowOverdrive: "Overdrive recharges slower",
@@ -323,13 +316,13 @@ const BOSS_TAUNTS = {
   magma: "I will melt your machine to slag!",
 };
 const WORLD_LEVEL_RULES = {
-  forest: [[], ["pricy"], ["pricy", "rusty"]],
+  forest: [[], ["swarm"], ["swarm", "rusty"]],
   desert: [[], ["bossy"], ["bossy", "swarm"]],
   ice: [[], ["slowOverdrive"], ["slowOverdrive", "rusty"]],
-  lava: [[], ["swarm"], ["swarm", "pricy"]],
+  lava: [[], ["swarm"], ["swarm", "bossy"]],
 };
 // Mixed day by day for the daily challenge, so that everyone gets the same one.
-const DAILY_RULE_SETS = [["pricy"], ["rusty"], ["swarm"], ["bossy"], ["slowOverdrive"], ["pricy", "swarm"], ["rusty", "slowOverdrive"], ["bossy", "pricy"]];
+const DAILY_RULE_SETS = [["rusty"], ["swarm"], ["bossy"], ["slowOverdrive"], ["rusty", "swarm"], ["rusty", "slowOverdrive"], ["bossy", "swarm"]];
 const EVENT_CLEAR_COINS = 150;
 const EVENT_FINAL_WAVE = 15;
 const EVENT_BASE_SCALE = 1.55;
@@ -367,16 +360,15 @@ const GEAR_SKINS = [
 
 // A new challenge each week, chosen by the week number.
 const WEEKLY_EVENTS = [
-  { id: "bombs", name: "Bomb Week", text: "Every gear you buy is a bomb gear" },
+  { id: "bombs", name: "Bomb Week", text: "Every gear that drops is a bomb gear" },
   { id: "bossRush", name: "Boss Rush", text: "A boss every 3 waves" },
   { id: "rust", name: "Rust Season", text: "Rust attacks on every wave" },
-  { id: "bargain", name: "Bargain Week", text: "Gears cost half, but enemies are stronger", scaleBonus: 0.05 },
   { id: "overdrive", name: "Overdrive Week", text: "Overdrive recharges 3x faster, but enemies are stronger", scaleBonus: 0.05 },
 ];
 
 const ACTIVE_QUESTS = 3;
 const DAILY_REWARDS = [10, 15, 20, 25, 30, 40, 75]; // coins for each day of the weekly cycle
-const DAILY_QUEST_KINDS = ["waves", "bosses", "merges", "strikes", "buys", "blasted"];
+const DAILY_QUEST_KINDS = ["waves", "bosses", "merges", "strikes", "blasted"];
 const DAILY_QUESTS = 3;
 const DAILY_QUEST_SIZE = 0.5; // daily quests are this much of a normal first-tier quest
 const QUESTS_PER_TIER = 5; // quests get harder and pay more after this many
@@ -385,7 +377,6 @@ const RECRUITS_LEAD_PER_LEVEL = 0.05; // added to the player's lead in later wav
 const BOSS_BREAKER_PER_LEVEL = 0.1; // boss health and reinforcements removed by each level
 const SPEED_PER_LEVEL = 0.05; // main gear speed added by each level
 const OVERDRIVE_SECONDS_PER_LEVEL = 1;
-const DISCOUNT_PER_LEVEL = 0.05; // gear price removed by each level
 const BOSS_EVERY_WAVES = 5;
 const BOSS_HP_SCALE = 1.5; // boss health vs the soldiers a normal wave would take to win
 const BOSS_PRESSURE = 0.1; // enemies the boss brings per second, as a share of the wave's starting army
@@ -397,7 +388,7 @@ const BOSS_RUST_MAX_PER_ATTACK = 5; // keeps a big machine possible to repair by
 const OVERDRIVE_MULTIPLIER = 3; // main gear speed while overdrive is on
 const OVERDRIVE_BASE_SECONDS = 5;
 const OVERDRIVE_COOLDOWN_SECONDS = 30;
-const OVERDRIVE_START_COOLDOWN_SECONDS = 20; // ready from the first second, it wins wave 1 with no gears bought
+const OVERDRIVE_START_COOLDOWN_SECONDS = 20; // ready from the first second, it wins wave 1 with no gears yet
 const TOOTH_COUNT = 12; // teeth drawn per gear — also one tick's worth of visual spin
 const TICK_ANGLE = (Math.PI * 2) / TOOTH_COUNT;
 const DRIVER_BASE_TURNS_PER_SEC = 1; // how fast the one-tooth gear turns at the start of a run
@@ -435,7 +426,6 @@ const GEAR_TYPES = {
 const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
 const VETERANS_REWARD = 0.15; // added to the player's lead each wave
 const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave outright
-const DISCOUNT_REWARD = 0.8; // gear price multiplier
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
 const CHAIN_FALLOFF = 0.85; // strength kept by a hit at each gear it passes through
 const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
@@ -510,7 +500,6 @@ const ENEMY_RANKS = [
 const MAX_GEAR_LEVEL = 5;
 const LEVEL_PAYOUT_GROWTH = 2.5; // payout multiplier per level, so merging beats keeping two gears
 const TIP_GAP_SECONDS = 18; // play time between tips that aren't urgent
-const BUY_WARN_RATIO = 0.4; // warn when a purchase would leave the army's share below this
 const MAX_SPECIAL_GEARS = 6; // rewards stop offering special gears at this many on the board
 const REINFORCEMENTS_REWARD = 0.2; // added to the player's lead for one wave
 
@@ -522,7 +511,6 @@ const UPGRADES = [
   { id: "bossBreaker", name: "Boss breaker", text: "Bosses have 10% less health and help", costs: [40, 90, 160] },
   { id: "speed", name: "Oiled main gear", text: "The one-tooth gear turns 5% faster", costs: [30, 60, 100, 150] },
   { id: "overdrive", name: "Long Overdrive", text: "Overdrive lasts 1 second longer", costs: [25, 60, 110] },
-  { id: "discount", name: "Trade deal", text: "New gears cost 5% less", costs: [20, 45, 80, 120] },
   { id: "extraChoice", name: "Bigger crate", text: "Choose from 4 rewards after each wave", costs: [200] },
   { id: "coinPurse", name: "Coin purse", text: "Earn 10% more coins from each run", costs: [30, 70, 130, 220, 350] },
   { id: "strikePower", name: "Thunder", text: "Lightning strikes hit 25% harder", costs: [25, 60, 110, 180] },
@@ -541,7 +529,6 @@ const QUEST_KINDS = [
   { kind: "merges", base: 8, coins: 15, text: (n) => `Merge gears ${n} times` },
   { kind: "strikes", base: 15, coins: 10, text: (n) => `Use ${n} lightning strikes` },
   { kind: "blasted", base: 20, coins: 15, text: (n) => `Blast ${n} enemies with bombs` },
-  { kind: "buys", base: 15, coins: 10, text: (n) => `Buy ${n} gears` },
   { kind: "combos", base: 3, coins: 20, text: (n) => `Make ${n} combos` },
   { kind: "topLevel", base: 3, coins: 15, best: true, step: 1, max: 5, text: (n) => `Make a level ${n} gear` },
   { kind: "rank", base: 1, coins: 15, best: true, step: 1, max: 3, text: (n) => `Train your army to ${ARMY_RANKS[n].plural}` },
@@ -556,7 +543,7 @@ const PART_RUST_SHARE = 0.05;
 const MIN_RUST_SHARE = 0.05; // rust attacks always hit at least one gear
 const PART_COINS = 0.25;
 const PART_TRAIN_COST = 0.75; // training price multiplier
-const PART_SCRAP_REFUND = 0.65; // share of a gear's price; low enough that buying and scrapping can't make soldiers
+const PART_SCRAP_REFUND = 0.65; // share of a gear's worth paid when it's scrapped
 const PART_CHAIN_FALLOFF = 0.05;
 const PART_BOSS_DAMAGE = 0.25;
 const PART_BOMB_PAYOUT = 0.5;
@@ -582,7 +569,6 @@ const REWARDS = [
   { id: "bombGear", name: "Bomb gear", text: "Fills half as fast, then blasts 2 enemies", gear: "bomb" },
   { id: "fasterGear", name: "Faster main gear", text: "The one-tooth gear turns 10% faster", apply: () => { driverTurnsPerSec += DRIVER_SPEED_REWARD; } },
   { id: "veterans", name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
-  { id: "cheaperGears", name: "Cheaper gears", text: "New gears cost 20% less", apply: () => { gearPriceScale *= DISCOUNT_REWARD; } },
   { id: "reinforcements", oneOff: true, name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
   { id: "farGear", name: "Far gear", text: "Pays 25% more for each step away from the main gear", gear: "far" },
   { id: "loneGear", name: "Lone gear", text: "Pays 50% more for each empty space beside it", gear: "lone" },
@@ -605,7 +591,7 @@ const REWARDS = [
   { id: "warDrums", rarity: "rare", name: "War drums", text: "A full Rally charges with 100% more, not 50%", max: 1 },
   { id: "patterns", rarity: "rare", name: "Pattern master", text: "Line and square combos are twice as strong", max: 1, available: () => grid.flat().some((cell) => cell && !cell.driver && (cell.type !== "soldier" || cell.level > 1)) },
   { id: "forgeBonus", rarity: "rare", name: "Forge bonus", text: "Every merge also sends soldiers to the battle", max: 1 },
-  { id: "forgedGear", rarity: "rare", oneOff: true, name: "Forged gear", text: "A free level 3 gear", available: () => Boolean(bestEmptyCell()), apply: () => { placeGear(boughtGearType()).level = FORGED_GEAR_LEVEL; } },
+  { id: "forgedGear", rarity: "rare", oneOff: true, name: "Forged gear", text: "A free level 3 gear", available: () => Boolean(bestEmptyCell()), apply: () => { placeGear(newGearType()).level = FORGED_GEAR_LEVEL; } },
   { id: "chargedStrike", rarity: "epic", name: "Charged strike", text: "Lightning also fills every connected gear", max: 1 },
   { id: "secondWind", rarity: "epic", name: "Second wind", text: "The next time you are overrun, the line resets instead", max: 1 },
   { id: "promotion", rarity: "epic", oneOff: true, name: "Field promotion", text: "Your army moves up a rank for free", available: () => Boolean(nextRank()), apply: () => { armyRank += 1; questEvent("rank", armyRank); } },
@@ -626,10 +612,9 @@ const TIPS = [
   { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
-  { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
-  { id: "gearDrop", urgent: true, text: "A monster dropped a free gear! Tap it before it disappears.", target: "#loot-drop", when: () => lootDrop?.gearLevel },
+  { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Tap it before it disappears. A gear only works when it's connected to the chain, so drag it there if it lands far away.", target: "#loot-drop", when: () => lootDrop?.gearLevel },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
-  { id: "short", text: "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.", when: () => soldiersShortForGear() > 0 && runTime > 20 },
+  { id: "short", text: "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
@@ -637,7 +622,7 @@ const TIPS = [
   { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
-  { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.", target: "#train-btn", when: () => canTrain() },
+  { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank.", target: "#train-btn", when: () => canTrain() },
   { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => waveTime > 8 },
   { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute" },
   { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost" },
@@ -672,14 +657,12 @@ let battleCssW = 0, battleCssH = 0;
 //                  one-tooth gear, or null for an empty cell
 let grid = [];
 let drag = null; // { cell, row, col, x, y } while a gear is being dragged
-let gearsBought = 0;
 let peakRate = 0; // the most soldiers per second the machine has produced this run
 let marchers = []; // { side: "player" | "enemy", value, t } on their way to the front
 let clashes = []; // { t } sparks where soldiers reached the front
 let enemyBacklog = 0; // enemy growth not yet worth a whole soldier
 let driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC;
 let waveLead = WAVE_START_LEAD; // player's army vs the enemy's when a new wave begins
-let gearPriceScale = 1;
 let rewardOpenedAt = 0;
 let nextWaveBonus = 0; // extra lead for the next wave only
 let tipOpenedAt = 0;
@@ -766,9 +749,8 @@ let rewardTimer = 0;
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
-let lootDrop = null; // { x, y, age, life, coins } or { x, y, age, life, gearLevel }: a drop at the front line, waiting to be tapped
+let lootDrop = null; // { row, col, age, gearLevel }: a gear fallen onto the board, waiting to be tapped
 let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
-let lastLootDropAt = -Infinity; // runTime of the last drop, so they don't come constantly
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
 let wave = 1;
@@ -1528,11 +1510,6 @@ function mergeGears(fromRow, fromCol, toRow, toCol) {
   if (partCount("forgeBonus")) sendSoldiers(Math.max(PART_FORGE_MIN_SOLDIERS * armyStrength(), soldiersPerSecond() * PART_FORGE_SECONDS));
 }
 
-function gearCost() {
-  const eventScale = (currentEvent?.id === "bargain" ? 0.5 : 1) * (ruleOn("pricy") ? RULE_PRICY : 1);
-  return Math.max(1, Math.round(GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gearsBought) * gearPriceScale * eventScale));
-}
-
 // Where a new gear goes: the free cell closest to the one-tooth gear along the
 // chain, so it starts working at once. Any free cell will do if the chain is
 // walled in, and null means the board is full.
@@ -1567,18 +1544,34 @@ function isBlocked(row, col) {
   return blockedCells.has(`${row},${col}`);
 }
 
-function boughtGearType() {
+// Anywhere free. Unlike bestEmptyCell() it doesn't favour the chain, so a drop
+// can land far away and be worth dragging into place.
+function randomEmptyCell() {
+  const cells = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (!grid[row][col] && !isBlocked(row, col)) cells.push({ row, col });
+    }
+  }
+  return cells.length ? cells[Math.floor(Math.random() * cells.length)] : null;
+}
+
+function newGearType() {
   return currentEvent?.id === "bombs" ? "bomb" : "soldier";
 }
 
 function placeGear(type) {
   const { row, col } = bestEmptyCell();
+  return placeGearAt(row, col, type);
+}
+
+function placeGearAt(row, col, type) {
   grid[row][col] = freshCell(type);
   grid[row][col].flash = 1;
   return grid[row][col];
 }
 
-// Soldiers are the price, so buying weakens the army. A purchase that would
+// Soldiers are the price, so training weakens the army. A purchase that would
 // lose the game on the spot is refused rather than ending the run. Returns how
 // many more soldiers the player needs for this one, or 0 when they can afford it.
 function soldiersShortFor(soldiers) {
@@ -1587,48 +1580,11 @@ function soldiersShortFor(soldiers) {
   return short < 0 ? 0 : Math.floor(short / armyStrength()) + 1;
 }
 
-function soldiersShortForGear() {
-  return soldiersShortFor(gearCost());
-}
-
-function canBuyGear() {
-  return gameState === "playing" && Boolean(bestEmptyCell()) && soldiersShortForGear() === 0;
-}
-
-function buyIsRisky() {
-  const left = playerPower - gearCost() * armyStrength();
-  return canBuyGear() && left / (left + enemyPower) < BUY_WARN_RATIO;
-}
-
-function buyButtonLabel() {
-  if (!bestEmptyCell()) return "Board full: scrap a gear";
-  const label = `Buy gear: ${gearCost()} soldiers`;
-  const short = soldiersShortForGear();
-  if (short > 0) return `Buy gear: need ${short} more`;
-  return buyIsRisky() ? `Buy gear: ${gearCost()} (risky!)` : label;
-}
-
-function updateBuyButton() {
-  const button = document.getElementById("buy-gear-btn");
-  const label = buyButtonLabel();
-  setLabel(button, label);
-  button.disabled = !canBuyGear();
-  button.classList.toggle("risky", buyIsRisky());
-}
-
-function buyGear() {
-  if (!canBuyGear()) return;
-  playerPower -= gearCost() * armyStrength();
-  gearsBought += 1;
-  questEvent("buys");
-  placeGear(boughtGearType());
-  playClankSound();
-}
-
-// Part of the current price, which is always less than a gear just cost, so
-// buying and scrapping can never make soldiers.
+// Worth more with a bigger machine, so scrapping stays useful later in a run.
 function scrapRefund() {
-  return Math.floor(gearCost() * (partCount("scrapDealer") ? PART_SCRAP_REFUND : 0.5));
+  const gears = grid.flat().filter((cell) => cell && !cell.driver).length;
+  const worth = GEAR_BASE_COST * Math.pow(GEAR_COST_GROWTH, gears);
+  return Math.floor(worth * (partCount("scrapDealer") ? PART_SCRAP_REFUND : 0.5));
 }
 
 function scrapGear(row, col) {
@@ -2627,7 +2583,7 @@ function boardHasGear(type) {
   return grid.flat().some((cell) => cell?.type === type);
 }
 
-// Free gears are limited so that most of a machine has to be bought.
+// Special gears are limited so that most of a machine is soldier gears.
 function specialGearCap() {
   return MAX_SPECIAL_GEARS + upgradeLevel("specials");
 }
@@ -3201,7 +3157,7 @@ function runSnapshot() {
     comboCounts,
     numbers: {
       wave, waveTime, playerPower, enemyPower, totalArmyScore, enemyBacklog,
-      gearsBought, peakRate, driverTurnsPerSec, waveLead, gearPriceScale, nextWaveBonus,
+      peakRate, driverTurnsPerSec, waveLead, nextWaveBonus,
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
@@ -3274,7 +3230,7 @@ function restoreRun(data) {
   }));
   const n = data.numbers;
   ({ wave, waveTime, playerPower, enemyPower, totalArmyScore, enemyBacklog } = n);
-  ({ gearsBought, peakRate, driverTurnsPerSec, waveLead, gearPriceScale, nextWaveBonus } = n);
+  ({ peakRate, driverTurnsPerSec, waveLead, nextWaveBonus } = n);
   ({ lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun } = n);
   ({ eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld } = n);
   ({ eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown } = n);
@@ -3285,7 +3241,7 @@ function restoreRun(data) {
   ({ endless, usedOverdrive, rallying } = data.flags);
   // Saves from before harder levels and the daily challenge don't have these.
   currentDaily = data.daily ?? null;
-  runRules = data.rules ?? [];
+  runRules = (data.rules ?? []).filter((rule) => RULES[rule]);
   worldLevel = n.worldLevel ?? 0;
   runCoinScale = n.runCoinScale ?? 1;
   runBonusCoins = n.runBonusCoins ?? 0;
@@ -3327,7 +3283,6 @@ function continueRun() {
   gameState = "playing";
   handleResize();
   document.getElementById("wave-num").textContent = wave;
-  updateBuyButton();
   updateOverdriveButton();
   updateRallyButton();
   updateTrainButton();
@@ -3662,7 +3617,6 @@ function update(dt) {
   }
 
   document.getElementById("wave-num").textContent = wave;
-  updateBuyButton();
   updateOverdriveButton();
   updateRallyButton();
   updateTrainButton();
@@ -4882,9 +4836,13 @@ function spawnToothSparks(row, col) {
   }
 }
 
+// A cell's centre on the effects canvas, which #loot-drop shares.
+function cellCenter(row, col) {
+  return { x: boardOrigin.x + (col + 0.5) * cellSize, y: boardOrigin.y + (row + 0.5) * cellSize };
+}
+
 function spawnRustBurst(row, col, colorA = "#a4552a", colorB = "#6e3a1c") {
-  const x = boardOrigin.x + (col + 0.5) * cellSize;
-  const y = boardOrigin.y + (row + 0.5) * cellSize;
+  const { x, y } = cellCenter(row, col);
   for (let i = 0; i < 18; i++) {
     const angle = randomBetween(0, Math.PI * 2);
     const speed = randomBetween(30, 130);
@@ -4970,79 +4928,60 @@ function spawnFrontLineHit(marcher) {
   }
   if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value / enemyRank().strength, "#ff8a3d");
   else if (marcher.charge) spawnHitNumber("player", marcher.value / armyStrength(), "#ffcc33");
-  if (!isEnemy) maybeDropLoot(x, y);
-}
-
-// A coin drop at the front line when a hit on the enemy lands — a chance per
-// hit, cooldown-gated so it stays an occasional treat rather than a stream.
-// Positioned once in fx-canvas's coordinate space (both it and #loot-drop
-// sit directly in #app-frame, so the same x/y works for both) and left
-// there rather than tracking the front line, which keeps it simple and is
-// barely noticeable over its few-second life. Tap it before it fades to
-// collect; miss it and it's gone.
-function maybeDropLoot(x, y) {
-  if (gameState !== "playing" || maybeDropGear(x, y)) return;
-  if (lootDrop) return;
-  if (runTime - lastLootDropAt < LOOT_DROP_COOLDOWN) return;
-  if (Math.random() >= LOOT_DROP_CHANCE) return;
-  lastLootDropAt = runTime;
-  const coins = LOOT_DROP_COINS_MIN + Math.floor(Math.random() * (LOOT_DROP_COINS_MAX - LOOT_DROP_COINS_MIN + 1));
-  showLootDrop({ x, y: y - 20, age: 0, life: LOOT_DROP_LIFETIME, coins });
+  if (!isEnemy) maybeDropGear();
 }
 
 // The same in a daily challenge for everyone, like the rest of its waves.
 function planGearDrop() {
-  if (wave < GEAR_DROP_FIRST_WAVE || boss) return NO_GEAR_DROP;
-  const random = runRandom(`gearDrop${wave}`);
-  if (random() >= GEAR_DROP_WAVE_CHANCE) return NO_GEAR_DROP;
-  return GEAR_DROP_EARLIEST + random() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
+  if (boss) return NO_GEAR_DROP;
+  return GEAR_DROP_EARLIEST + runRandom(`gearDrop${wave}`)() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
 }
 
-// A free gear on top of what can be bought: it doesn't raise the price, and a
-// full board just waits for the next hit. Worth more than coins, so it takes over.
-function maybeDropGear(x, y) {
-  if (!bestEmptyCell()) return false;
+// Falls onto a free cell when a hit lands on the enemy. A full board just waits
+// for the next hit, and so does a drop while one is still waiting to be tapped.
+function maybeDropGear() {
+  if (gameState !== "playing" || lootDrop) return;
+  const cell = randomEmptyCell();
+  if (!cell) return;
   let gearLevel = 0;
   if (boss) {
-    if (boss.gearDropped || boss.hp > boss.maxHp * BOSS_DROP_HEALTH) return false;
+    if (boss.gearDropped || boss.hp > boss.maxHp * BOSS_DROP_HEALTH) return;
     boss.gearDropped = true;
     gearLevel = BOSS_DROP_LEVEL;
   } else {
-    if (gearDropAt === NO_GEAR_DROP || waveTime < gearDropAt) return false;
+    if (gearDropAt === NO_GEAR_DROP || waveTime < gearDropAt) return;
     gearDropAt = NO_GEAR_DROP;
     gearLevel = 1;
   }
-  showLootDrop({ x, y: y - 20, age: 0, life: GEAR_DROP_LIFETIME, gearLevel });
-  return true;
+  showLootDrop({ ...cell, age: 0, gearLevel });
 }
 
 function showLootDrop(drop) {
   lootDrop = drop;
+  positionLootDrop();
+  document.getElementById("loot-drop-icon").replaceChildren(gearIcon(newGearType()));
+  document.getElementById("loot-drop-amount").textContent = drop.gearLevel > 1 ? `Level ${drop.gearLevel}!` : "Free!";
+  document.getElementById("loot-drop").classList.remove("hidden");
+}
+
+function positionLootDrop() {
+  if (!lootDrop) return;
+  const { x, y } = cellCenter(lootDrop.row, lootDrop.col);
   const el = document.getElementById("loot-drop");
-  el.style.left = `${drop.x}px`;
-  el.style.top = `${drop.y}px`;
-  el.classList.toggle("gear", Boolean(drop.gearLevel));
-  el.setAttribute("aria-label", drop.gearLevel ? "Collect free gear" : "Collect coins");
-  const icon = document.getElementById("loot-drop-icon");
-  if (drop.gearLevel) icon.replaceChildren(gearIcon(boughtGearType()));
-  else icon.textContent = "\u{1F4B0}";
-  const amount = document.getElementById("loot-drop-amount");
-  amount.textContent = !drop.gearLevel ? `+${drop.coins}` : drop.gearLevel > 1 ? `Level ${drop.gearLevel}!` : "Free!";
-  el.classList.remove("hidden");
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
 }
 
 function collectLootDrop() {
   if (!lootDrop) return;
-  if (lootDrop.gearLevel) {
-    if (bestEmptyCell()) placeGear(boughtGearType()).level = lootDrop.gearLevel;
-    showWaveBanner("Free gear!");
-  } else {
-    runBonusCoins += lootDrop.coins;
-  }
+  const { row, col, gearLevel } = lootDrop;
+  placeGearAt(row, col, newGearType()).level = gearLevel;
+  showWaveBanner("Free gear!");
+  const { x, y } = cellCenter(row, col);
   for (let i = 0; i < 6; i++) {
     spawnParticle({
-      x: lootDrop.x,
-      y: lootDrop.y,
+      x,
+      y,
       vx: randomBetween(-70, 70),
       vy: randomBetween(-150, -50),
       gravity: 220,
@@ -5109,7 +5048,12 @@ function updateFx(dt) {
     // Also cleared the moment play isn't active (a wave ending, a pause,
     // game over) — simpler and safer than chasing every place gameState
     // changes, and it would otherwise outlive the screen it was shown over.
-    if (lootDrop.age >= lootDrop.life || gameState !== "playing" || (lootDrop.gearLevel && !bestEmptyCell())) clearLootDrop();
+    if (lootDrop.age >= GEAR_DROP_LIFETIME || gameState !== "playing") clearLootDrop();
+    else if (grid[lootDrop.row][lootDrop.col] || isBlocked(lootDrop.row, lootDrop.col)) {
+      // Something took its cell, like a gear dragged there: it moves rather than being lost.
+      const cell = randomEmptyCell();
+      if (cell) { Object.assign(lootDrop, cell); positionLootDrop(); } else clearLootDrop();
+    }
   }
   shove.player = Math.max(0, shove.player - dt * 5);
   shove.enemy = Math.max(0, shove.enemy - dt * 5);
@@ -5608,6 +5552,7 @@ function layoutFxCanvas() {
   boardOrigin = { x: board.left - frame.left, y: board.top - frame.top };
   laneRect = { x: lane.left - frame.left, y: lane.top - frame.top, w: lane.width, h: lane.height };
   fxCtx = fitCanvasDPR(fxCanvas, fxCssW, fxCssH);
+  positionLootDrop();
 }
 
 function handleResize() {
@@ -5636,14 +5581,12 @@ function startNewRun() {
   }
   const coinsFromRestart = restarted || savedRun ? bankRun() : 0;
   drag = null;
-  gearsBought = 0;
   peakRate = 0;
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
   driverTurnsPerSec = DRIVER_BASE_TURNS_PER_SEC * (1 + upgradeLevel("speed") * SPEED_PER_LEVEL) * (heroIs("engineer") ? ENGINEER_SPEED : 1) * (1 + (heroLevel(save.hero) - 1) * HERO_LEVEL_SPEED);
   waveLead = WAVE_START_LEAD + upgradeLevel("recruits") * RECRUITS_LEAD_PER_LEVEL;
-  gearPriceScale = 1 - upgradeLevel("discount") * DISCOUNT_PER_LEVEL;
   nextWaveBonus = 0;
   lastTipAt = 0;
   hideTip();
@@ -5708,7 +5651,6 @@ function startNewRun() {
   strikeCooldown = 0;
   screenShake = 0;
   clearLootDrop();
-  lastLootDropAt = -Infinity;
   gearDropAt = NO_GEAR_DROP;
   wave = 1;
   waveTime = 0;
@@ -5716,7 +5658,7 @@ function startNewRun() {
   enemyPower = BASE_POWER;
   totalArmyScore = 0;
   createBoard();
-  for (let i = 0; i < upgradeLevel("startGears"); i++) placeGear(boughtGearType());
+  for (let i = 0; i < upgradeLevel("startGears"); i++) placeGear(newGearType());
   if (heroIs("engineer")) placeGear("booster");
   const startGear = START_GEARS.find((item) => item.id === save.startGear)?.gear;
   if (startGear && bestEmptyCell()) placeGear(startGear);
@@ -5725,7 +5667,7 @@ function startNewRun() {
   if (nextRunHeadStart) {
     nextRunHeadStart = false;
     wave = HEAD_START_WAVE;
-    for (let i = 0; i < HEAD_START_GEARS; i++) placeGear(boughtGearType());
+    for (let i = 0; i < HEAD_START_GEARS; i++) placeGear(newGearType());
     startWave();
   }
 
@@ -5894,7 +5836,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
-      ["Free gear", "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears.", gearIcon("soldier")],
+      ["Free gear", "The only way to get more gears. Monsters drop them onto the board, and every boss drops a level 2 gear at half health. Tap one before it disappears.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [
@@ -6024,7 +5966,6 @@ function init() {
   });
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
-  document.getElementById("buy-gear-btn").addEventListener("click", buyGear);
   document.getElementById("strike-btn").addEventListener("click", pressLightning);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
