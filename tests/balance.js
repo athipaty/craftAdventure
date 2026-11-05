@@ -26,6 +26,7 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
     let ticks = 0, last = wave, lastT = 0; const dt = 0.05, limit = 25 * 60 / dt;
     while (ticks++ < limit) {
       if (gameState === "choosing") { const o = offeredRewards.ids.map((id) => REWARDS.find((r) => r.id === id)); clearTimeout(rewardTimer); document.getElementById("reward-screen").classList.add("hidden"); chooseReward(o[Math.floor(Math.random() * o.length)]); continue; }
+      if (gameState === "path") { choosePath(smart ? offeredPaths[Math.floor(Math.random() * offeredPaths.length)] : "safe"); continue; }
       if (gameState === "building") { beginWave(); continue; }
       if (gameState !== "playing") break;
       if (canTrain() && Math.random() < 0.02) trainArmy();
