@@ -23,6 +23,7 @@ const TH_WORDS = {
   "soldiers do less": "ทหารทำดาเมจน้อยลง", "freezes the main gear": "แช่แข็งเฟืองหลัก", "burns gear progress": "เผาความคืบหน้าเฟือง", "rust attacks": "สนิมโจมตี",
   "your soldiers count double": "ทหารนับเป็นสองเท่า", "a row is blocked": "แถวหนึ่งถูกปิด", "calls reinforcements": "เรียกกำลังเสริม", "drains gear progress": "ดูดความคืบหน้าเฟือง",
   "melts your gears": "หลอมเฟือง", "short and fierce": "สั้นแต่ดุเดือด", "long, pays 5 coins": "ยาวนาน ได้ 5 เหรียญ",
+  "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
 
   // Bosses
@@ -202,7 +203,7 @@ const TH_PATTERNS = [
   [/^Overdrive (\d+)s$/i, (m) => `โอเวอร์ไดรฟ์ ${m[1]} วิ`],
   [/^Frozen (\d+)s$/i, (m) => `แข็ง ${m[1]} วิ`],
   [/^Charge! (\d+)$/i, (m) => `พุ่งชน! ${m[1]}`],
-  [/^Charge (\d+)$/i, (m) => `พุ่งชน ${m[1]}`],
+  [/^Charge (\d+)%$/i, (m) => `พุ่งชน ${m[1]}%`],
   [/^RALLY (\d+)$/i, (m) => `รวมพล ${m[1]}`],
   [/^SHIELD (\d+)$/i, (m) => `โล่ ${m[1]}`],
   [/^(.+) → (.+) soldiers\/s$/i, (m) => `${m[1]} → ${m[2]} ทหาร/วิ`],

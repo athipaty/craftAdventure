@@ -2060,8 +2060,11 @@ function resetRally() {
 function updateRallyButton() {
   const button = document.getElementById("rally-btn");
   const full = rallying && rallyHeld >= rallyFullSeconds();
-  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.round(rallyReserve)}`;
+  const share = rallying ? Math.min(1, rallyHeld / rallyFullSeconds()) : 0;
+  // Rounded down, so it only says 100% when it's really full and the label is Charge!
+  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.floor(share * 100)}%`;
   setLabel(button, label);
+  button.style.setProperty("--charge", `${Math.round(share * 100)}%`);
   button.disabled = gameState !== "playing";
   button.classList.toggle("holding", rallying);
   button.classList.toggle("full", full);
@@ -2184,56 +2187,161 @@ function updateDragPreview(e) {
   drag.previewRate = previewDropRate(target);
 }
 
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function rewardChip(id, kind) {
+  const reward = REWARDS.find((r) => r.id === id);
+  const count = partCount(id);
+  return { kind, icon: REWARD_ICONS[id] || "✨", count: count > 1 ? count : null, name: reward?.name || id, text: reward?.text || "" };
+}
+
 // Most important first: what's hurting now, what's helping now, then rewards with
-// the newest first. Whatever doesn't fit is counted at the end. Icon-only — each
-// entry is [kind, icon, count], count shown as a small ×N badge when > 1.
+// the newest first. Each chip shows an icon, plus a small ×N badge when count > 1,
+// and carries the name and text its tooltip explains it with.
 function statusChips() {
   const chips = [];
-  if (frozenFor > 0) chips.push(["bad", STATUS_ICONS.frozen, null]);
-  if (activeDeal) chips.push(["bad", STATUS_ICONS.deal, null]);
-  if (wavePace) chips.push(["bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, null]);
-  if (overdriveLeft > 0) chips.push(["good", STATUS_ICONS.overdrive, null]);
-  if (rallying) chips.push(["good", STATUS_ICONS.rally, null]);
-  if (waveEvent?.id === "double") chips.push(["good", STATUS_ICONS.doubleEvent, null]);
-  if (heroIs("guardian") && !rustBlocked) chips.push(["good", STATUS_ICONS.guardian, null]);
-  if (partCount("secondWind") > 0) chips.push(["good", REWARD_ICONS.secondWind, null]);
-  const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
-  for (const id of parts) {
-    const count = partCount(id);
-    chips.push(["part", REWARD_ICONS[id] || "✨", count > 1 ? count : null]);
+  const add = (kind, icon, name, text) => chips.push({ kind, icon, count: null, name, text });
+  if (frozenFor > 0) add("bad", STATUS_ICONS.frozen, "Frozen", "The main gear is frozen. Use Lightning to thaw it.");
+  if (activeDeal) add("bad", STATUS_ICONS.deal, "Risky deal", capitalized(activeDeal.text));
+  if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
+  if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
+  if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
+  if (waveEvent?.id === "double") add("good", STATUS_ICONS.doubleEvent, waveEvent.name, capitalized(NEXT_WAVE_HINTS.double));
+  if (heroIs("guardian") && !rustBlocked) {
+    const hero = HEROES.find((h) => h.id === "guardian");
+    add("good", STATUS_ICONS.guardian, hero.name, hero.text);
   }
+  if (partCount("secondWind") > 0) chips.push(rewardChip("secondWind", "good"));
+  const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
+  for (const id of parts) chips.push(rewardChip(id, "part"));
   return chips;
 }
 
+const STATUS_CHIP_SIZES = [22, 18, 15]; // every chip stays on show: they shrink to fit, biggest first
 let lastStatusKey = "";
+let statusRoom = ""; // the row's room for chips, kept up to date by wireStatusTips()
 function updateStatusRow() {
   const chips = statusChips();
-  const key = JSON.stringify(chips);
+  const box = document.getElementById("status-row");
+  // Also rebuilt when the room for them changes, like turning the phone.
+  const key = JSON.stringify([chips, statusRoom]);
   if (key === lastStatusKey) return;
   lastStatusKey = key;
   const row = document.getElementById("status-chips");
-  const makeChip = (kind, icon, count) => {
+  row.replaceChildren(...chips.map(({ kind, icon, count, name, text }) => {
     const chip = document.createElement("span");
     chip.className = `status-chip ${kind}`;
     chip.textContent = icon;
+    chip.dataset.name = name;
+    chip.dataset.text = text;
     if (count) {
+      chip.dataset.count = count;
       const badge = document.createElement("b");
       badge.className = "status-chip-count";
       badge.textContent = `×${count}`;
       chip.append(badge);
     }
     return chip;
-  };
-  row.replaceChildren(...chips.map(([kind, icon, count]) => makeChip(kind, icon, count)));
-  // Takes chips off the end until the rest and the count fit in the row.
-  const box = document.getElementById("status-row");
-  let hidden = 0;
-  while (box.scrollHeight > box.clientHeight && row.childElementCount > 0) {
-    if (hidden > 0) row.lastElementChild.remove();
-    row.lastElementChild?.remove();
-    hidden += 1;
-    row.append(makeChip("part", `+${hidden}`, null));
+  }));
+  for (const size of STATUS_CHIP_SIZES) {
+    box.style.setProperty("--chip-size", `${size}px`);
+    if (box.scrollHeight <= box.clientHeight) break;
   }
+  refreshStatusTip();
+}
+
+// The row ignores the pointer so gears under it can still be dragged, so this
+// looks for a chip under the pointer instead of waiting for the chip to be hit.
+const STATUS_TIP_TOUCH_REACH = 6; // chips are small for a finger
+const STATUS_TIP_TOUCH_SECONDS = 3;
+const STATUS_TIP_TAP_MOVE = 10;
+let statusTipName = null;
+let statusTipTimer = null;
+let statusTipPress = null;
+
+function chipAtPoint(e) {
+  const reach = e.pointerType === "mouse" ? 0 : STATUS_TIP_TOUCH_REACH;
+  let best = null;
+  let bestDistance = Infinity;
+  for (const chip of document.querySelectorAll(".status-chip")) {
+    const r = chip.getBoundingClientRect();
+    const dx = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+    const dy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+    if (dx > reach || dy > reach) continue;
+    const distance = Math.hypot(e.clientX - (r.left + r.right) / 2, e.clientY - (r.top + r.bottom) / 2);
+    if (distance < bestDistance) {
+      best = chip;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function showStatusTip(chip) {
+  const tip = document.getElementById("status-tip");
+  const { name, text, count } = chip.dataset;
+  statusTipName = name;
+  setLabel(document.getElementById("status-tip-name"), count ? `${name} x${count}` : name);
+  setLabel(document.getElementById("status-tip-text"), text);
+  tip.classList.remove("hidden");
+  const wrap = tip.parentElement.getBoundingClientRect();
+  const r = chip.getBoundingClientRect();
+  const center = (r.left + r.right) / 2 - wrap.left;
+  const left = Math.max(6, Math.min(center - tip.offsetWidth / 2, wrap.width - tip.offsetWidth - 6));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${r.bottom - wrap.top + 7}px`;
+  tip.style.setProperty("--arrow-x", `${center - left}px`);
+}
+
+function hideStatusTip() {
+  statusTipName = null;
+  clearTimeout(statusTipTimer);
+  document.getElementById("status-tip").classList.add("hidden");
+}
+
+// The chips were just rebuilt: follow the same chip, or close if it has gone.
+function refreshStatusTip() {
+  if (statusTipName === null) return;
+  const chip = [...document.querySelectorAll(".status-chip")].find((c) => c.dataset.name === statusTipName);
+  if (chip) showStatusTip(chip);
+  else hideStatusTip();
+}
+
+function wireStatusTips() {
+  const wrap = document.getElementById("board-wrap");
+  const box = document.getElementById("status-row");
+  const rate = document.getElementById("machine-rate");
+  // Watched rather than measured every frame, which would make the browser redo its layout.
+  const watcher = new ResizeObserver(() => { statusRoom = `${box.clientWidth}|${rate.offsetWidth}`; });
+  watcher.observe(box);
+  watcher.observe(rate);
+  wrap.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    const chip = drag ? null : chipAtPoint(e);
+    wrap.style.cursor = chip ? "help" : "";
+    if (!chip) hideStatusTip();
+    else if (chip.dataset.name !== statusTipName) showStatusTip(chip);
+  });
+  wrap.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") hideStatusTip(); });
+  // There's no hover on a phone, so a tap opens it for a moment. The tap still
+  // reaches a gear underneath.
+  wrap.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    hideStatusTip();
+    statusTipPress = { x: e.clientX, y: e.clientY };
+  });
+  wrap.addEventListener("pointerup", (e) => {
+    if (e.pointerType === "mouse" || !statusTipPress) return;
+    const moved = Math.hypot(e.clientX - statusTipPress.x, e.clientY - statusTipPress.y);
+    statusTipPress = null;
+    const chip = moved <= STATUS_TIP_TAP_MOVE ? chipAtPoint(e) : null;
+    if (!chip) return;
+    showStatusTip(chip);
+    clearTimeout(statusTipTimer);
+    statusTipTimer = setTimeout(hideStatusTip, STATUS_TIP_TOUCH_SECONDS * 1000);
+  });
 }
 
 function updateRateReadout() {
@@ -2293,6 +2401,7 @@ function wireBoardInput() {
   boardCanvas.addEventListener("pointerup", onPointerUp);
   boardCanvas.addEventListener("pointercancel", () => { drag = null; });
   boardCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  wireStatusTips();
 }
 
 // =====================================================================
