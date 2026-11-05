@@ -130,7 +130,10 @@ const BUZZ_GAP_MS = 150; // vibration at most this often
 // enough that a quick wave doesn't end first.
 const GEAR_DROP_EARLIEST = 3; // seconds into the wave
 const GEAR_DROP_LATEST = 8;
-const SPECIAL_DROP_CHANCE = 0.05; // about one a run; the rest are soldier gears
+const AURA_SIZE = 1.42; // of a cell, so it shows around the gear
+const AURA_BASE_ALPHA = 0.55;
+const AURA_ALPHA_PER_BOOST = 0.3;
+const SPECIAL_DROP_CHANCE = 0.15; // about three a run; the rest are soldier gears
 const TRAY_SLOTS = 5; // gears waiting below the board; a drop waits its turn when it's full
 const TAP_SLOP = 10; // pixels a press can move and still count as a tap
 const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
@@ -302,10 +305,10 @@ const WORLD_LEVELS = [
 // only the first star.
 const EASY_LEVEL = { name: "Easy", scale: -0.08, waveSeconds: 0.8, growth: 0.75, lead: -0.1, bossHp: 0.8, coins: 0.75 };
 const WORLD_STORIES = {
-  forest: { intro: "Goblins have overrun the Green Forest! Build a machine, send your soldiers, and drive them out.", outro: "The forest is safe. But the goblins left tracks heading for the desert..." },
-  desert: { intro: "The goblins fled to the Sun Desert, and armoured brutes have joined them. Your machine must grow.", outro: "The Sand Wyrm sinks beneath the dunes. Far away, the mountains have turned white." },
-  ice: { intro: "High in the Frozen Peaks, frost trolls freeze everything they touch. Keep your gears turning.", outro: "The Frost Queen falls and the ice begins to crack. Something burns below the world." },
-  lava: { intro: "All of this began at the Lava Core. Fire imps guard it, and the Magma King waits below. End it here.", outro: "The Magma King is beaten, and the machines fall silent. Peace, at last... for now." },
+  forest: { teaser: "Goblins have overrun the trees. But who is leading them?", intro: "Goblins have overrun the Green Forest! Build a machine, send your soldiers, and drive them out.", outro: "The forest is safe. But the goblins left tracks heading for the desert..." },
+  desert: { teaser: "Tracks vanish into the dunes. Something huge moves below the sand.", intro: "The goblins fled to the Sun Desert, and armoured brutes have joined them. Your machine must grow.", outro: "The Sand Wyrm sinks beneath the dunes. Far away, the mountains have turned white." },
+  ice: { teaser: "The mountains have turned white, and the cold is spreading.", intro: "High in the Frozen Peaks, frost trolls freeze everything they touch. Keep your gears turning.", outro: "The Frost Queen falls and the ice begins to crack. Something burns below the world." },
+  lava: { teaser: "Something burns below the world. This is where it all began.", intro: "All of this began at the Lava Core. Fire imps guard it, and the Magma King waits below. End it here.", outro: "The Magma King is beaten, and the machines fall silent. Peace, at last... for now." },
 };
 const BOSS_TAUNTS = {
   rust: "Your gears will crumble to dust!",
@@ -567,7 +570,7 @@ const LUCKY_RARITY_WEIGHTS = { common: 30, rare: 45, epic: 25 };
 // effect once, so it isn't listed among the parts the run has collected.
 const REWARDS = [
   { id: "bigGear", name: "Big gear", text: "Fills half as fast, then sends 5 soldiers", gear: "big" },
-  { id: "boosterGear", name: "Booster gear", text: "Gears touching it get an extra 25% per hit", gear: "booster" },
+  { id: "boosterGear", name: "Booster gear", text: "Gears touching it get an extra 25% per hit, and glow green", gear: "booster" },
   { id: "bombGear", name: "Bomb gear", text: "Fills half as fast, then blasts 2 enemies", gear: "bomb" },
   { id: "fasterGear", name: "Faster main gear", text: "The one-tooth gear turns 10% faster", apply: () => { driverTurnsPerSec += DRIVER_SPEED_REWARD; } },
   { id: "veterans", name: "Veterans", text: "Start every wave with more soldiers", apply: () => { waveLead += VETERANS_REWARD; }, available: () => waveLead + VETERANS_REWARD <= VETERANS_MAX_LEAD },
@@ -3151,9 +3154,135 @@ function weeklyCard() {
   return button;
 }
 
+// A world's picture, drawn once when the list opens rather than every frame.
+function worldScene(world) {
+  const canvas = document.createElement("canvas");
+  canvas.className = "world-scene";
+  const w = 420;
+  const h = 150;
+  const scale = canvasScale();
+  canvas.width = w * scale;
+  canvas.height = h * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  drawWorldScenery(ctx, world.theme, w, h, h - 26, world.finalWave);
+  return canvas;
+}
+
+function mysteryIcon(icon, known) {
+  const wrap = document.createElement("span");
+  wrap.className = known ? "world-art" : "world-art unknown";
+  wrap.append(icon);
+  return wrap;
+}
+
+function enemyLook(id) {
+  return ENEMY_TYPES[id].look || ENEMY_RANKS[0].look;
+}
+
+// Enemies stay a mystery until the player has got far enough to meet them.
+function enemySeen(world, joinsAt) {
+  return Boolean(save.worldsCleared[world.id]) || (Number(save.worldBest[world.id]) || 0) >= joinsAt;
+}
+
+function worldCard(world, i, isNext) {
+  const unlocked = worldUnlocked(i);
+  const cleared = Boolean(save.worldsCleared[world.id]);
+  const best = Number(save.worldBest[world.id]) || 0;
+  const button = document.createElement("button");
+  button.className = "world-card";
+  button.classList.toggle("locked", !unlocked);
+  button.classList.toggle("next", isNext);
+  button.disabled = !unlocked;
+
+  const top = document.createElement("small");
+  top.className = "world-number";
+  top.textContent = `World ${i + 1}`;
+  const name = document.createElement("b");
+  name.textContent = unlocked ? world.name : "???";
+  const teaser = document.createElement("span");
+  teaser.className = "world-teaser";
+  teaser.textContent = WORLD_STORIES[world.id].teaser;
+  const words = document.createElement("div");
+  words.className = "world-words";
+  words.append(top, name, teaser);
+
+  const foes = document.createElement("div");
+  foes.className = "world-foes";
+  for (const [id, joinsAt] of world.enemies) foes.append(mysteryIcon(enemyIcon(enemyLook(id)), unlocked && enemySeen(world, joinsAt)));
+  words.append(foes);
+
+  const detail = document.createElement("span");
+  detail.className = "world-detail";
+  // A world that's still hidden isn't named here either.
+  if (!unlocked) detail.textContent = `Locked: clear ${worldUnlocked(i - 1) ? WORLDS[i - 1].name : `World ${i}`}`;
+  else detail.textContent = `Final boss on wave ${world.finalWave}${best ? `, best wave ${best}` : ""}`;
+  words.append(detail);
+
+  const kind = FINAL_BOSSES[world.id];
+  const bossBox = document.createElement("div");
+  bossBox.className = "world-boss";
+  const bossName = document.createElement("small");
+  bossName.textContent = cleared ? kind.name : "???";
+  bossBox.append(mysteryIcon(bossIcon(kind), cleared), bossName);
+
+  const prize = document.createElement("div");
+  prize.className = "world-prize";
+  const stars = document.createElement("span");
+  stars.className = "world-stars";
+  for (const star of worldStars(world)) {
+    const mark = document.createElement("i");
+    mark.className = star ? "" : "empty";
+    mark.textContent = star ? "\u2605" : "\u2606";
+    stars.append(mark);
+  }
+  prize.append(stars);
+  if (!cleared) {
+    const coins = document.createElement("span");
+    coins.textContent = `Prize: ${world.clearCoins} coins`;
+    prize.append(coins);
+  }
+  words.append(prize);
+  const nextGoal = STAR_GOAL_TEXT.find((_, g) => !worldStars(world)[g]);
+  if (unlocked && nextGoal) {
+    const goal = document.createElement("span");
+    goal.className = "world-goal";
+    goal.textContent = `Next star: ${nextGoal}`;
+    words.append(goal);
+  }
+
+  const mark = document.createElement("em");
+  mark.textContent = !unlocked ? "\u{1F512}" : cleared ? "\u2713" : best === 0 ? "New!" : "";
+  button.append(worldScene(world), words, bossBox, mark);
+  button.addEventListener("click", () => startChosenRun({ world: i }));
+  return button;
+}
+
+function worldExtras(world, i) {
+  const extras = document.createElement("div");
+  extras.className = "world-extras";
+  const later = document.createElement("button");
+  later.className = "world-head-start";
+  later.textContent = `Start ${world.name} at wave ${HEAD_START_WAVE}`;
+  later.addEventListener("click", () => startChosenRun({ world: i, headStart: true }));
+  extras.append(later);
+  for (let level = 1; level < WORLD_LEVELS.length && clearedTier(world) >= level; level++) {
+    const harder = document.createElement("button");
+    harder.className = "world-level-btn";
+    const done = clearedTier(world) > level ? " \u2713" : "";
+    harder.textContent = `${WORLD_LEVELS[level].name}: ${rulesText(levelRules(i, level))}${done}`;
+    harder.addEventListener("click", () => startChosenRun({ world: i, level }));
+    extras.append(harder);
+  }
+  return extras;
+}
+
 function openWorlds() {
   const list = document.getElementById("worlds-list");
   list.replaceChildren();
+  const cleared = WORLDS.filter((world) => save.worldsCleared[world.id]).length;
+  const stars = WORLDS.reduce((sum, world) => sum + worldStars(world).filter(Boolean).length, 0);
+  document.getElementById("worlds-progress").textContent = `Worlds cleared: ${cleared}/${WORLDS.length}, stars: ${stars}/${WORLDS.length * STAR_GOAL_TEXT.length}`;
   const easy = document.createElement("button");
   easy.className = "world-easy-btn";
   easy.textContent = `Easy mode: ${save.easy ? "on" : "off"}`;
@@ -3162,41 +3291,14 @@ function openWorlds() {
     writeSave();
     openWorlds();
   });
-  list.append(easy, dailyCard(), weeklyCard());
+  const events = document.createElement("div");
+  events.className = "world-events";
+  events.append(dailyCard(), weeklyCard());
+  list.append(easy, events);
+  const next = WORLDS.findIndex((world, i) => worldUnlocked(i) && !save.worldsCleared[world.id]);
   WORLDS.forEach((world, i) => {
-    const unlocked = worldUnlocked(i);
-    const button = document.createElement("button");
-    button.className = "world-card";
-    button.disabled = !unlocked;
-    button.style.setProperty("--world-sky", world.theme.skyTop);
-    button.style.setProperty("--world-ground", world.theme.ground);
-    const name = document.createElement("b");
-    name.textContent = world.name;
-    const detail = document.createElement("span");
-    const best = Number(save.worldBest[world.id]) || 0;
-    detail.textContent = !unlocked
-      ? `Locked: clear ${WORLDS[i - 1].name}`
-      : `Final boss on wave ${world.finalWave}${best ? `, best wave ${best}` : ""}. ${starsText(worldStars(world))}${missingStars(world)}`;
-    const mark = document.createElement("em");
-    mark.textContent = save.worldsCleared[world.id] ? "\u2713" : "";
-    button.append(name, detail, mark);
-    button.addEventListener("click", () => startChosenRun({ world: i }));
-    list.append(button);
-    if (save.worldsCleared[world.id]) {
-      const later = document.createElement("button");
-      later.className = "world-head-start";
-      later.textContent = `Start ${world.name} at wave ${HEAD_START_WAVE}`;
-      later.addEventListener("click", () => startChosenRun({ world: i, headStart: true }));
-      list.append(later);
-      for (let level = 1; level < WORLD_LEVELS.length && clearedTier(world) >= level; level++) {
-        const harder = document.createElement("button");
-        harder.className = "world-level-btn";
-        const done = clearedTier(world) > level ? " \u2713" : "";
-        harder.textContent = `${WORLD_LEVELS[level].name}: ${rulesText(levelRules(i, level))}${done}`;
-        harder.addEventListener("click", () => startChosenRun({ world: i, level }));
-        list.append(harder);
-      }
-    }
+    list.append(worldCard(world, i, i === next));
+    if (save.worldsCleared[world.id]) list.append(worldExtras(world, i));
   });
   document.getElementById("worlds-screen").classList.remove("hidden");
 }
@@ -4070,6 +4172,61 @@ function drawBolt(ctx, cx, cy, size, color) {
 }
 
 // Sparks where a booster touches another gear, so its reach is easy to see.
+// The gears really getting a booster's extra: joined to the main gear, and able
+// to fill. A gear touching a booster but cut off from the chain gets nothing.
+function boostedGears() {
+  const seen = new Set();
+  const out = [];
+  for (const [dr, dc] of TOOTH_DIRS) {
+    for (const { row, col } of connectedGears(DRIVER_ROW + dr, DRIVER_COL + dc, 1)) {
+      const key = `${row},${col}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const cell = grid[row][col];
+      if (!GEAR_TYPES[cell.type].hits) continue;
+      const boost = boostersTouching(row, col);
+      if (boost > 0) out.push({ row, col, boost });
+    }
+  }
+  return out;
+}
+
+// Drawn once and reused: a blur for every gear on every frame would slow the game.
+let auraSprite = null;
+let auraSpriteSize = 0;
+function boostAuraSprite() {
+  const size = Math.round(cellSize * AURA_SIZE * canvasScale());
+  if (size === auraSpriteSize) return auraSprite;
+  auraSpriteSize = size;
+  auraSprite = document.createElement("canvas");
+  auraSprite.width = auraSprite.height = Math.max(1, size);
+  const ctx = auraSprite.getContext("2d");
+  const r = size / 2;
+  const glow = ctx.createRadialGradient(r, r, 0, r, r, r);
+  glow.addColorStop(0, "rgba(190, 255, 120, 0.95)");
+  glow.addColorStop(0.72, "rgba(190, 255, 120, 0.95)");
+  glow.addColorStop(0.85, "rgba(150, 245, 80, 0.65)");
+  glow.addColorStop(1, "rgba(150, 245, 80, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+  return auraSprite;
+}
+
+// Behind the gears, stronger with more boost.
+function drawBoostAuras(ctx) {
+  const gears = boostedGears();
+  if (!gears.length) return;
+  const sprite = boostAuraSprite();
+  const pulse = REDUCED_MOTION || save.lessMotion ? 0.85 : 0.75 + Math.sin(performance.now() / 260) * 0.25;
+  const size = cellSize * AURA_SIZE;
+  for (const { row, col, boost } of gears) {
+    if (drag?.cell === grid[row][col]) continue;
+    ctx.globalAlpha = Math.min(1, (AURA_BASE_ALPHA + boost * AURA_ALPHA_PER_BOOST) * pulse);
+    ctx.drawImage(sprite, (col + 0.5) * cellSize - size / 2, (row + 0.5) * cellSize - size / 2, size, size);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawBoostLinks(ctx) {
   const pulse = 0.65 + Math.sin(performance.now() / 180) * 0.35;
   ctx.fillStyle = `rgba(190, 255, 120, ${pulse})`;
@@ -4164,6 +4321,7 @@ function drawBoard() {
   const ctx = boardCtx;
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   drawWoodBoard(ctx);
+  drawBoostAuras(ctx);
 
   // The one-tooth gear goes on top so its tooth overlaps the gears it touches.
   for (const drawDrivers of [false, true]) {
@@ -4798,10 +4956,12 @@ function drawWorldDeco(ctx, deco, w, groundY, time) {
 
 // The world's cartoon battlefield, with a banner at each army's camp.
 function drawBattlefield(ctx, x0, x1, groundY) {
-  const w = battleCssW;
-  const h = battleCssH;
   const time = performance.now() / 1000;
-  const theme = WORLDS[currentWorld].theme;
+  drawWorldScenery(ctx, WORLDS[currentWorld].theme, battleCssW, battleCssH, groundY, time);
+  drawCampBanners(ctx, x0, x1, groundY, time);
+}
+
+function drawWorldScenery(ctx, theme, w, h, groundY, time) {
   const sky = ctx.createLinearGradient(0, 0, 0, groundY);
   sky.addColorStop(0, theme.skyTop);
   sky.addColorStop(1, theme.skyBottom);
@@ -4845,7 +5005,9 @@ function drawBattlefield(ctx, x0, x1, groundY) {
   ctx.moveTo(0, groundY);
   ctx.lineTo(w, groundY);
   ctx.stroke();
+}
 
+function drawCampBanners(ctx, x0, x1, groundY, time) {
   const flap = Math.sin(time * 4) * 2.5;
   for (const [x, color, dir] of [[x0 - 8, "#3a7ddb", 1], [x1 + 8, "#d8432f", -1]]) {
     ctx.beginPath();
