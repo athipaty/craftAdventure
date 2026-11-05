@@ -49,7 +49,7 @@ async function check(name, fn) {
         blank: entries.filter((e) => !e.name || !e.text).map((e) => e.id),
         noArt: entries.filter((e) => !e.icon()).map((e) => e.id),
         ranks: ENEMY_RANKS.length, types: Object.keys(ENEMY_NOTES).length, bosses: BOSS_KINDS.length + Object.keys(FINAL_BOSSES).length,
-        rewards: REWARDS.filter((x) => !x.gear).length, gears: REWARDS.filter((x) => x.gear).length,
+        rewards: REWARDS.filter((x) => !x.gear).length, gears: REWARDS.filter((x) => x.gear).length + FUSIONS.length,
         typesCovered: Object.values(ENEMY_TYPES).filter((x) => x.look).every((x) => ids.includes(`enemy:${x.id}`)),
       };
     });
