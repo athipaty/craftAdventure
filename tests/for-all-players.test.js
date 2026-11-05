@@ -43,7 +43,9 @@ async function check(name, fn) {
     await page.waitForTimeout(120);
     const chips = await page.locator(".status-chip").allTextContents();
     console.log("       ", JSON.stringify(chips));
-    for (const want of [/^Overdrive \ds$/, /^Frozen \ds$/, /^Rally ready$/, /^Deal: 50% more enemies$/, /^Rush wave$/, /^Second wind$/, /^\+\d+ more$/]) assert.ok(chips.some((c) => want.test(c)), String(want));
+    const wanted = await page.evaluate(() => [STATUS_ICONS.overdrive, STATUS_ICONS.frozen, STATUS_ICONS.rally, STATUS_ICONS.deal, STATUS_ICONS.pace.rush, REWARD_ICONS.secondWind]);
+    for (const icon of wanted) assert.ok(chips.includes(icon), `missing icon ${icon}`);
+    assert.ok(chips.some((c) => /^\+\d+$/.test(c)), "shows a count");
     await page.screenshot({ path: path.join(scratch, "shot7-status.png") });
     const overlaps = await page.evaluate(() => { const lane = document.getElementById("battle-lane").getBoundingClientRect(), row = document.getElementById("status-row").getBoundingClientRect(); return row.top < lane.bottom - 1; });
     assert.equal(overlaps, false, "status covers the battle");

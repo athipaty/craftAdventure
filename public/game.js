@@ -76,6 +76,17 @@ const REWARD_ICONS = {
   stormEngine: "\u{1F329}\uFE0F", warDrums: "\u{1F941}", patterns: "\u{1F9E9}", forgeBonus: "\u{1F528}", forgedGear: "\u2692\uFE0F",
   chargedStrike: "\u{1F31F}", secondWind: "\u{1F4A8}", promotion: "\u2B50", clockwork: "\u23F0",
 };
+// Icons for the non-reward status chips (statusChips() below) \u2014 rewards
+// already have an icon via REWARD_ICONS, these cover the rest.
+const STATUS_ICONS = {
+  frozen: "\u2744\uFE0F",
+  deal: "\u{1F91D}",
+  overdrive: "\u{1F680}",
+  rally: "\u{1F6A9}",
+  doubleEvent: "2\uFE0F\u20E3",
+  guardian: "\u{1F6E1}\uFE0F",
+  pace: { rush: "\u{1F3C3}", siege: "\u{1F3F0}" },
+};
 const GUIDE_ICON_SIZE = 48;
 const COUNTER_HOLD_SECONDS = 0.5; // lightning must have been ready this long, so tapping nonstop can't counter
 const BUILD_SECONDS = 5; // the break between waves
@@ -116,6 +127,11 @@ const SKIP_COINS = 3; // paid for passing on a reward choice
 const HEAD_START_WAVE = 6; // cleared worlds can start here
 const HEAD_START_GEARS = 6; // free gears that make up for the waves skipped
 const BUZZ_GAP_MS = 150; // vibration at most this often
+const LOOT_DROP_CHANCE = 0.12; // odds a landed hit on the enemy also drops a coin
+const LOOT_DROP_COOLDOWN = 4; // seconds between drops, so they stay a treat, not a stream
+const LOOT_DROP_LIFETIME = 3.5; // seconds before an uncollected drop disappears
+const LOOT_DROP_COINS_MIN = 1;
+const LOOT_DROP_COINS_MAX = 3;
 const CROWD_MAX = 10; // soldiers drawn behind each fighter
 const CROWD_FIRST_GAP = 30; // pixels behind the fighter, so it stays in plain view
 const CROWD_BOSS_GAP = 42;
@@ -741,6 +757,8 @@ let rewardTimer = 0;
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
+let lootDrop = null; // { x, y, age, coins } a coin drop at the front line, waiting to be tapped
+let lastLootDropAt = -Infinity; // runTime of the last drop, so they don't come constantly
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
 let wave = 1;
@@ -2167,21 +2185,22 @@ function updateDragPreview(e) {
 }
 
 // Most important first: what's hurting now, what's helping now, then rewards with
-// the newest first. Whatever doesn't fit is counted at the end.
+// the newest first. Whatever doesn't fit is counted at the end. Icon-only — each
+// entry is [kind, icon, count], count shown as a small ×N badge when > 1.
 function statusChips() {
   const chips = [];
-  if (frozenFor > 0) chips.push(["bad", `Frozen ${Math.ceil(frozenFor)}s`]);
-  if (activeDeal) chips.push(["bad", `Deal: ${activeDeal.text}`]);
-  if (wavePace) chips.push(["bad", wavePace.name]);
-  if (overdriveLeft > 0) chips.push(["good", `Overdrive ${Math.ceil(overdriveLeft)}s`]);
-  if (rallying) chips.push(["good", "Rally ready"]);
-  if (waveEvent?.id === "double") chips.push(["good", waveEvent.name]);
-  if (heroIs("guardian") && !rustBlocked) chips.push(["good", "Blocking rust"]);
-  if (partCount("secondWind") > 0) chips.push(["good", "Second wind"]);
+  if (frozenFor > 0) chips.push(["bad", STATUS_ICONS.frozen, null]);
+  if (activeDeal) chips.push(["bad", STATUS_ICONS.deal, null]);
+  if (wavePace) chips.push(["bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, null]);
+  if (overdriveLeft > 0) chips.push(["good", STATUS_ICONS.overdrive, null]);
+  if (rallying) chips.push(["good", STATUS_ICONS.rally, null]);
+  if (waveEvent?.id === "double") chips.push(["good", STATUS_ICONS.doubleEvent, null]);
+  if (heroIs("guardian") && !rustBlocked) chips.push(["good", STATUS_ICONS.guardian, null]);
+  if (partCount("secondWind") > 0) chips.push(["good", REWARD_ICONS.secondWind, null]);
   const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
   for (const id of parts) {
-    const name = REWARDS.find((reward) => reward.id === id).name;
-    chips.push(["part", partCount(id) > 1 ? `${name} x${partCount(id)}` : name]);
+    const count = partCount(id);
+    chips.push(["part", REWARD_ICONS[id] || "✨", count > 1 ? count : null]);
   }
   return chips;
 }
@@ -2193,21 +2212,27 @@ function updateStatusRow() {
   if (key === lastStatusKey) return;
   lastStatusKey = key;
   const row = document.getElementById("status-chips");
-  const makeChip = (kind, text) => {
+  const makeChip = (kind, icon, count) => {
     const chip = document.createElement("span");
     chip.className = `status-chip ${kind}`;
-    chip.textContent = text;
+    chip.textContent = icon;
+    if (count) {
+      const badge = document.createElement("b");
+      badge.className = "status-chip-count";
+      badge.textContent = `×${count}`;
+      chip.append(badge);
+    }
     return chip;
   };
-  row.replaceChildren(...chips.map(([kind, text]) => makeChip(kind, text)));
-  // Takes labels off the end until the rest and the count fit in the row.
+  row.replaceChildren(...chips.map(([kind, icon, count]) => makeChip(kind, icon, count)));
+  // Takes chips off the end until the rest and the count fit in the row.
   const box = document.getElementById("status-row");
   let hidden = 0;
   while (box.scrollHeight > box.clientHeight && row.childElementCount > 0) {
     if (hidden > 0) row.lastElementChild.remove();
     row.lastElementChild?.remove();
     hidden += 1;
-    row.append(makeChip("part", `+${hidden} more`));
+    row.append(makeChip("part", `+${hidden}`, null));
   }
 }
 
@@ -4824,6 +4849,52 @@ function spawnFrontLineHit(marcher) {
   }
   if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value / enemyRank().strength, "#ff8a3d");
   else if (marcher.charge) spawnHitNumber("player", marcher.value / armyStrength(), "#ffcc33");
+  if (!isEnemy) maybeDropLoot(x, y);
+}
+
+// A coin drop at the front line when a hit on the enemy lands — a chance per
+// hit, cooldown-gated so it stays an occasional treat rather than a stream.
+// Positioned once in fx-canvas's coordinate space (both it and #loot-drop
+// sit directly in #app-frame, so the same x/y works for both) and left
+// there rather than tracking the front line, which keeps it simple and is
+// barely noticeable over its few-second life. Tap it before it fades to
+// collect; miss it and it's gone.
+function maybeDropLoot(x, y) {
+  if (lootDrop || gameState !== "playing") return;
+  if (runTime - lastLootDropAt < LOOT_DROP_COOLDOWN) return;
+  if (Math.random() >= LOOT_DROP_CHANCE) return;
+  lastLootDropAt = runTime;
+  const coins = LOOT_DROP_COINS_MIN + Math.floor(Math.random() * (LOOT_DROP_COINS_MAX - LOOT_DROP_COINS_MIN + 1));
+  lootDrop = { x, y: y - 20, age: 0, coins };
+  const el = document.getElementById("loot-drop");
+  el.style.left = `${lootDrop.x}px`;
+  el.style.top = `${lootDrop.y}px`;
+  document.getElementById("loot-drop-amount").textContent = `+${coins}`;
+  el.classList.remove("hidden");
+}
+
+function collectLootDrop() {
+  if (!lootDrop) return;
+  runBonusCoins += lootDrop.coins;
+  for (let i = 0; i < 6; i++) {
+    spawnParticle({
+      x: lootDrop.x,
+      y: lootDrop.y,
+      vx: randomBetween(-70, 70),
+      vy: randomBetween(-150, -50),
+      gravity: 220,
+      life: randomBetween(0.25, 0.45),
+      size: randomBetween(1.5, 3),
+      color: "#ffcc33",
+    });
+  }
+  playLootSound();
+  clearLootDrop();
+}
+
+function clearLootDrop() {
+  lootDrop = null;
+  document.getElementById("loot-drop")?.classList.add("hidden");
 }
 
 function spawnConfetti() {
@@ -4870,6 +4941,13 @@ function updateFx(dt) {
   fallers = fallers.filter((f) => f.age < 1);
   for (const bolt of bolts) bolt.age += dt;
   bolts = bolts.filter((bolt) => bolt.age < 0.25);
+  if (lootDrop) {
+    lootDrop.age += dt;
+    // Also cleared the moment play isn't active (a wave ending, a pause,
+    // game over) — simpler and safer than chasing every place gameState
+    // changes, and it would otherwise outlive the screen it was shown over.
+    if (lootDrop.age >= LOOT_DROP_LIFETIME || gameState !== "playing") clearLootDrop();
+  }
   shove.player = Math.max(0, shove.player - dt * 5);
   shove.enemy = Math.max(0, shove.enemy - dt * 5);
   if (fallenBoss) {
@@ -5188,6 +5266,11 @@ function playOverdriveSound() {
   sweep(200, 1200, 0.5, "sawtooth", 0.1);
 }
 
+function playLootSound() {
+  beep(1050, 0.06, "square", 0.12);
+  setTimeout(() => beep(1500, 0.08, "square", 0.12), 50);
+}
+
 function playWinSound() {
   beep(523, 0.12, "square", 0.2);
   setTimeout(() => beep(659, 0.12, "square", 0.2), 110);
@@ -5461,6 +5544,8 @@ function startNewRun() {
   fallenBoss = null;
   strikeCooldown = 0;
   screenShake = 0;
+  clearLootDrop();
+  lastLootDropAt = -Infinity;
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER * (1 + upgradeLevel("recruits") * RECRUITS_FIRST_WAVE_PER_LEVEL);
@@ -5779,6 +5864,7 @@ function init() {
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("train-btn").addEventListener("click", trainArmy);
+  document.getElementById("loot-drop").addEventListener("click", () => { ensureAudio(); collectLootDrop(); });
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
   document.getElementById("speed-btn").addEventListener("click", toggleSpeed);
   document.getElementById("music-btn").addEventListener("click", toggleMusic);
