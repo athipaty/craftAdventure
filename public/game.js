@@ -133,6 +133,10 @@ const GEAR_DROP_LATEST = 8;
 const AURA_SIZE = 1.42; // of a cell, so it shows around the gear
 const AURA_BASE_ALPHA = 0.55;
 const AURA_ALPHA_PER_BOOST = 0.3;
+// Winning waves quickly spins the main gear faster, like a small Overdrive that
+// lasts as long as the player keeps it up. It isn't counted in the machine's
+// output, or the next waves would be sized to it and cancel it out.
+const STREAK = { fastSeconds: 10, perLevel: 0.05, maxLevel: 5 };
 // What a boss's chests can hold. weight: how often it comes up.
 const CHEST_PRIZES = [
   { id: "coins", weight: 50, coins: 15 },
@@ -209,12 +213,13 @@ const PLAYER_TITLES = [
   { fromLevel: 50, name: "Gear Legend" },
 ];
 // Lifetime totals that keep the highest value reached instead of adding up.
-const BEST_STATS = ["stars", "worldTier", "owned", "worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
+const BEST_STATS = ["bestStreak", "stars", "worldTier", "owned", "worlds", "topLevel", "rank", "reachWave", "cleanWave", "questsDone", "streak", "upgrades"];
 const ACHIEVEMENTS = [
   { id: "world1", name: "Out of the woods", text: "Clear Green Forest", stat: "worlds", target: 1, coins: 30 },
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "streak5", name: "On fire!", text: "Reach a hot streak of 5", stat: "bestStreak", target: 5, coins: 40 },
   { id: "chests10", name: "Treasure hunter", text: "Open 10 boss chests", stat: "chests", target: 10, coins: 40 },
   { id: "goblins10", name: "Gotcha!", text: "Catch 10 treasure goblins", stat: "goblins", target: 10, coins: 40 },
   { id: "counter10", name: "Quick draw", text: "Counter 10 boss attacks", stat: "counters", target: 10, coins: 40 },
@@ -653,6 +658,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
+  { id: "hotStreak", urgent: true, text: "Hot streak! Win waves quickly and your main gear spins faster. A slow wave ends the streak.", when: () => hotStreak >= 2 },
   { id: "treasureGoblin", urgent: true, text: "A treasure goblin! Tap it before it escapes to grab what it's carrying.", target: "#treasure-goblin", when: () => treasureGoblin?.age > GOBLIN_TIP_AGE },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
@@ -791,6 +797,7 @@ let hitNumbers = []; // { side, amount, color, age } at most one per side, besid
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 let gearTray = []; // { type, level, arriving }: dropped gears below the board, waiting to be placed
+let hotStreak = 0; // fast waves in a row, up to STREAK.maxLevel
 let chestPrizes = null; // ids from CHEST_PRIZES while the chests are open
 let chestPicked = null; // the index chosen, or null until then
 let chestTimer = null;
@@ -2231,6 +2238,7 @@ function statusChips() {
   if (activeDeal) add("bad", STATUS_ICONS.deal, "Risky deal", capitalized(activeDeal.text));
   if (activePath && activePath.id !== "safe") add("bad", activePath.icon, activePath.name, activePath.risk);
   if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
+  if (hotStreak > 0) chips.push({ kind: "good", icon: "\u{1F525}", count: hotStreak > 1 ? hotStreak : null, name: "Hot streak", text: `Main gear ${Math.round(hotStreak * STREAK.perLevel * 100)}% faster. Win waves within ${STREAK.fastSeconds} seconds to keep it.` });
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
   if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
   if (waveEvent?.id === "double") add("good", STATUS_ICONS.doubleEvent, waveEvent.name, capitalized(NEXT_WAVE_HINTS.double));
@@ -2510,13 +2518,29 @@ function wireBoardInput() {
 // Update loop
 // =====================================================================
 
+function streakBoost() {
+  return 1 + hotStreak * STREAK.perLevel;
+}
+
+// Bosses and siege waves are long on purpose, so they neither build nor break it.
+function updateHotStreak() {
+  if (boss || wavePace?.id === "siege") return;
+  if (waveTime > STREAK.fastSeconds) {
+    if (hotStreak > 0) showToast("Hot streak lost");
+    hotStreak = 0;
+    return;
+  }
+  hotStreak = Math.min(STREAK.maxLevel, hotStreak + 1);
+  recordStat("bestStreak", hotStreak);
+}
+
 function updateDrivers(dt) {
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = grid[row][col];
       if (!cell?.driver) continue;
       const before = Math.floor(cell.angle / QUARTER_TURN);
-      const boost = (overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1) * (frozenFor > 0 ? FROST_SLOW : 1);
+      const boost = (overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1) * (frozenFor > 0 ? FROST_SLOW : 1) * streakBoost();
       cell.angle += driverTurnsPerSec * boost * Math.PI * 2 * dt;
       const after = Math.floor(cell.angle / QUARTER_TURN);
       for (let k = before + 1; k <= after; k++) {
@@ -2586,6 +2610,7 @@ function waveStartEnemy(forWave) {
 function winWave() {
   const bossBeaten = Boolean(boss);
   const clearedWorld = isFinalWave(wave);
+  updateHotStreak();
   if (boss) {
     const total = playerPower + enemyPower;
     const markerX = 16 + (battleCssW - 32) * (total > 0 ? playerPower / total : 0.5);
@@ -2596,7 +2621,7 @@ function winWave() {
   }
   winAt = performance.now();
   buzz(bossBeaten ? 90 : 35);
-  showWaveBanner(bossBeaten ? "Boss down!" : "Victory!");
+  showWaveBanner(bossBeaten ? "Boss down!" : hotStreak >= 2 ? `Hot streak x${hotStreak}!` : "Victory!");
   boss = null;
   for (const cell of grid.flat()) {
     if (cell) cell.rusted = false;
@@ -3751,7 +3776,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt, treasureAt, lastPathWave,
+      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt, treasureAt, lastPathWave, hotStreak,
     },
     flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
@@ -3845,6 +3870,7 @@ function restoreRun(data) {
   // Saves from before routes don't have these.
   clearPaths();
   lastPathWave = n.lastPathWave ?? 0;
+  hotStreak = n.hotStreak ?? 0;
   nextPath = PATHS[data.paths?.next] || null;
   activePath = PATHS[data.paths?.active] || null;
   clearTreasureGoblin();
@@ -4535,6 +4561,21 @@ function drawBoostAuras(ctx) {
   ctx.globalAlpha = 1;
 }
 
+function drawStreakGlow(ctx) {
+  if (hotStreak <= 0) return;
+  const cx = (DRIVER_COL + 0.5) * cellSize;
+  const cy = (DRIVER_ROW + 0.5) * cellSize;
+  const pulse = REDUCED_MOTION || save.lessMotion ? 0.9 : 0.8 + Math.sin(performance.now() / 150) * 0.2;
+  const r = cellSize * (0.72 + hotStreak * 0.07);
+  const glow = ctx.createRadialGradient(cx, cy, cellSize * 0.3, cx, cy, r);
+  glow.addColorStop(0, `rgba(255, 150, 40, ${0.85 * pulse})`);
+  glow.addColorStop(1, "rgba(255, 90, 20, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawBoostLinks(ctx) {
   const pulse = 0.65 + Math.sin(performance.now() / 180) * 0.35;
   ctx.fillStyle = `rgba(190, 255, 120, ${pulse})`;
@@ -4630,6 +4671,7 @@ function drawBoard() {
   ctx.clearRect(0, 0, boardCssW, boardCssH);
   drawWoodBoard(ctx);
   drawBoostAuras(ctx);
+  drawStreakGlow(ctx);
 
   // The one-tooth gear goes on top so its tooth overlaps the gears it touches.
   for (const drawDrivers of [false, true]) {
@@ -6348,6 +6390,7 @@ function startNewRun() {
   nextWavePlan = null;
   clearPaths();
   clearChests();
+  hotStreak = 0;
   rerollsLeft = REROLLS_PER_RUN;
   // A daily run tried again after midnight becomes the new day's challenge.
   if (currentDaily && currentDaily.day !== todayKey()) {
@@ -6595,6 +6638,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
       ["Treasure goblin", TREASURE_GOBLIN_NOTE, enemyIcon("runner")],
