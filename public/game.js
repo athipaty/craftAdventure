@@ -132,6 +132,14 @@ const LOOT_DROP_COOLDOWN = 4; // seconds between drops, so they stay a treat, no
 const LOOT_DROP_LIFETIME = 3.5; // seconds before an uncollected drop disappears
 const LOOT_DROP_COINS_MIN = 1;
 const LOOT_DROP_COINS_MAX = 3;
+const GEAR_DROP_FIRST_WAVE = 2;
+const GEAR_DROP_WAVE_CHANCE = 0.35; // odds a normal wave has a free gear to drop
+const GEAR_DROP_EARLIEST = 4; // seconds into the wave
+const GEAR_DROP_LATEST = 14;
+const GEAR_DROP_LIFETIME = 5; // longer than coins: it's worth more, and the battle is busy
+const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
+const BOSS_DROP_LEVEL = 2;
+const NO_GEAR_DROP = -1;
 const CROWD_MAX = 10; // soldiers drawn behind each fighter
 const CROWD_FIRST_GAP = 30; // pixels behind the fighter, so it stays in plain view
 const CROWD_BOSS_GAP = 42;
@@ -619,6 +627,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
+  { id: "gearDrop", urgent: true, text: "A monster dropped a free gear! Tap it before it disappears.", target: "#loot-drop", when: () => lootDrop?.gearLevel },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.", when: () => soldiersShortForGear() > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
@@ -757,7 +766,8 @@ let rewardTimer = 0;
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
-let lootDrop = null; // { x, y, age, coins } a coin drop at the front line, waiting to be tapped
+let lootDrop = null; // { x, y, age, life, coins } or { x, y, age, life, gearLevel }: a drop at the front line, waiting to be tapped
+let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
 let lastLootDropAt = -Infinity; // runTime of the last drop, so they don't come constantly
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
@@ -2060,8 +2070,11 @@ function resetRally() {
 function updateRallyButton() {
   const button = document.getElementById("rally-btn");
   const full = rallying && rallyHeld >= rallyFullSeconds();
-  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.round(rallyReserve)}`;
+  const share = rallying ? Math.min(1, rallyHeld / rallyFullSeconds()) : 0;
+  // Rounded down, so it only says 100% when it's really full and the label is Charge!
+  const label = !rallying ? "Rally" : full ? `Charge! ${Math.round(rallyReserve * rallyBonus())}` : `Charge ${Math.floor(share * 100)}%`;
   setLabel(button, label);
+  button.style.setProperty("--charge", `${Math.round(share * 100)}%`);
   button.disabled = gameState !== "playing";
   button.classList.toggle("holding", rallying);
   button.classList.toggle("full", full);
@@ -2184,56 +2197,161 @@ function updateDragPreview(e) {
   drag.previewRate = previewDropRate(target);
 }
 
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function rewardChip(id, kind) {
+  const reward = REWARDS.find((r) => r.id === id);
+  const count = partCount(id);
+  return { kind, icon: REWARD_ICONS[id] || "✨", count: count > 1 ? count : null, name: reward?.name || id, text: reward?.text || "" };
+}
+
 // Most important first: what's hurting now, what's helping now, then rewards with
-// the newest first. Whatever doesn't fit is counted at the end. Icon-only — each
-// entry is [kind, icon, count], count shown as a small ×N badge when > 1.
+// the newest first. Each chip shows an icon, plus a small ×N badge when count > 1,
+// and carries the name and text its tooltip explains it with.
 function statusChips() {
   const chips = [];
-  if (frozenFor > 0) chips.push(["bad", STATUS_ICONS.frozen, null]);
-  if (activeDeal) chips.push(["bad", STATUS_ICONS.deal, null]);
-  if (wavePace) chips.push(["bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, null]);
-  if (overdriveLeft > 0) chips.push(["good", STATUS_ICONS.overdrive, null]);
-  if (rallying) chips.push(["good", STATUS_ICONS.rally, null]);
-  if (waveEvent?.id === "double") chips.push(["good", STATUS_ICONS.doubleEvent, null]);
-  if (heroIs("guardian") && !rustBlocked) chips.push(["good", STATUS_ICONS.guardian, null]);
-  if (partCount("secondWind") > 0) chips.push(["good", REWARD_ICONS.secondWind, null]);
-  const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
-  for (const id of parts) {
-    const count = partCount(id);
-    chips.push(["part", REWARD_ICONS[id] || "✨", count > 1 ? count : null]);
+  const add = (kind, icon, name, text) => chips.push({ kind, icon, count: null, name, text });
+  if (frozenFor > 0) add("bad", STATUS_ICONS.frozen, "Frozen", "The main gear is frozen. Use Lightning to thaw it.");
+  if (activeDeal) add("bad", STATUS_ICONS.deal, "Risky deal", capitalized(activeDeal.text));
+  if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
+  if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
+  if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
+  if (waveEvent?.id === "double") add("good", STATUS_ICONS.doubleEvent, waveEvent.name, capitalized(NEXT_WAVE_HINTS.double));
+  if (heroIs("guardian") && !rustBlocked) {
+    const hero = HEROES.find((h) => h.id === "guardian");
+    add("good", STATUS_ICONS.guardian, hero.name, hero.text);
   }
+  if (partCount("secondWind") > 0) chips.push(rewardChip("secondWind", "good"));
+  const parts = Object.keys(runParts).filter((id) => id !== "secondWind" && partCount(id) > 0).reverse();
+  for (const id of parts) chips.push(rewardChip(id, "part"));
   return chips;
 }
 
+const STATUS_CHIP_SIZES = [22, 18, 15]; // every chip stays on show: they shrink to fit, biggest first
 let lastStatusKey = "";
+let statusRoom = ""; // the row's room for chips, kept up to date by wireStatusTips()
 function updateStatusRow() {
   const chips = statusChips();
-  const key = JSON.stringify(chips);
+  const box = document.getElementById("status-row");
+  // Also rebuilt when the room for them changes, like turning the phone.
+  const key = JSON.stringify([chips, statusRoom]);
   if (key === lastStatusKey) return;
   lastStatusKey = key;
   const row = document.getElementById("status-chips");
-  const makeChip = (kind, icon, count) => {
+  row.replaceChildren(...chips.map(({ kind, icon, count, name, text }) => {
     const chip = document.createElement("span");
     chip.className = `status-chip ${kind}`;
     chip.textContent = icon;
+    chip.dataset.name = name;
+    chip.dataset.text = text;
     if (count) {
+      chip.dataset.count = count;
       const badge = document.createElement("b");
       badge.className = "status-chip-count";
       badge.textContent = `×${count}`;
       chip.append(badge);
     }
     return chip;
-  };
-  row.replaceChildren(...chips.map(([kind, icon, count]) => makeChip(kind, icon, count)));
-  // Takes chips off the end until the rest and the count fit in the row.
-  const box = document.getElementById("status-row");
-  let hidden = 0;
-  while (box.scrollHeight > box.clientHeight && row.childElementCount > 0) {
-    if (hidden > 0) row.lastElementChild.remove();
-    row.lastElementChild?.remove();
-    hidden += 1;
-    row.append(makeChip("part", `+${hidden}`, null));
+  }));
+  for (const size of STATUS_CHIP_SIZES) {
+    box.style.setProperty("--chip-size", `${size}px`);
+    if (box.scrollHeight <= box.clientHeight) break;
   }
+  refreshStatusTip();
+}
+
+// The row ignores the pointer so gears under it can still be dragged, so this
+// looks for a chip under the pointer instead of waiting for the chip to be hit.
+const STATUS_TIP_TOUCH_REACH = 6; // chips are small for a finger
+const STATUS_TIP_TOUCH_SECONDS = 3;
+const STATUS_TIP_TAP_MOVE = 10;
+let statusTipName = null;
+let statusTipTimer = null;
+let statusTipPress = null;
+
+function chipAtPoint(e) {
+  const reach = e.pointerType === "mouse" ? 0 : STATUS_TIP_TOUCH_REACH;
+  let best = null;
+  let bestDistance = Infinity;
+  for (const chip of document.querySelectorAll(".status-chip")) {
+    const r = chip.getBoundingClientRect();
+    const dx = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+    const dy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+    if (dx > reach || dy > reach) continue;
+    const distance = Math.hypot(e.clientX - (r.left + r.right) / 2, e.clientY - (r.top + r.bottom) / 2);
+    if (distance < bestDistance) {
+      best = chip;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function showStatusTip(chip) {
+  const tip = document.getElementById("status-tip");
+  const { name, text, count } = chip.dataset;
+  statusTipName = name;
+  setLabel(document.getElementById("status-tip-name"), count ? `${name} x${count}` : name);
+  setLabel(document.getElementById("status-tip-text"), text);
+  tip.classList.remove("hidden");
+  const wrap = tip.parentElement.getBoundingClientRect();
+  const r = chip.getBoundingClientRect();
+  const center = (r.left + r.right) / 2 - wrap.left;
+  const left = Math.max(6, Math.min(center - tip.offsetWidth / 2, wrap.width - tip.offsetWidth - 6));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${r.bottom - wrap.top + 7}px`;
+  tip.style.setProperty("--arrow-x", `${center - left}px`);
+}
+
+function hideStatusTip() {
+  statusTipName = null;
+  clearTimeout(statusTipTimer);
+  document.getElementById("status-tip").classList.add("hidden");
+}
+
+// The chips were just rebuilt: follow the same chip, or close if it has gone.
+function refreshStatusTip() {
+  if (statusTipName === null) return;
+  const chip = [...document.querySelectorAll(".status-chip")].find((c) => c.dataset.name === statusTipName);
+  if (chip) showStatusTip(chip);
+  else hideStatusTip();
+}
+
+function wireStatusTips() {
+  const wrap = document.getElementById("board-wrap");
+  const box = document.getElementById("status-row");
+  const rate = document.getElementById("machine-rate");
+  // Watched rather than measured every frame, which would make the browser redo its layout.
+  const watcher = new ResizeObserver(() => { statusRoom = `${box.clientWidth}|${rate.offsetWidth}`; });
+  watcher.observe(box);
+  watcher.observe(rate);
+  wrap.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    const chip = drag ? null : chipAtPoint(e);
+    wrap.style.cursor = chip ? "help" : "";
+    if (!chip) hideStatusTip();
+    else if (chip.dataset.name !== statusTipName) showStatusTip(chip);
+  });
+  wrap.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") hideStatusTip(); });
+  // There's no hover on a phone, so a tap opens it for a moment. The tap still
+  // reaches a gear underneath.
+  wrap.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    hideStatusTip();
+    statusTipPress = { x: e.clientX, y: e.clientY };
+  });
+  wrap.addEventListener("pointerup", (e) => {
+    if (e.pointerType === "mouse" || !statusTipPress) return;
+    const moved = Math.hypot(e.clientX - statusTipPress.x, e.clientY - statusTipPress.y);
+    statusTipPress = null;
+    const chip = moved <= STATUS_TIP_TAP_MOVE ? chipAtPoint(e) : null;
+    if (!chip) return;
+    showStatusTip(chip);
+    clearTimeout(statusTipTimer);
+    statusTipTimer = setTimeout(hideStatusTip, STATUS_TIP_TOUCH_SECONDS * 1000);
+  });
 }
 
 function updateRateReadout() {
@@ -2293,6 +2411,7 @@ function wireBoardInput() {
   boardCanvas.addEventListener("pointerup", onPointerUp);
   boardCanvas.addEventListener("pointercancel", () => { drag = null; });
   boardCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  wireStatusTips();
 }
 
 // =====================================================================
@@ -3002,6 +3121,7 @@ function beginWave() {
   document.getElementById("build-bar").classList.add("hidden");
   startWave();
   gameState = "playing";
+  gearDropAt = planGearDrop();
   if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
   updateFeatureButtons();
   showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
@@ -3066,7 +3186,7 @@ function runSnapshot() {
       angle: cell.angle,
       spin: cell.spin,
     })),
-    boss: boss && { kind: boss.kind.id, hp: boss.hp, maxHp: boss.maxHp, attackIn: boss.attackIn, reinforcePerSec: boss.reinforcePerSec, shield: boss.shield },
+    boss: boss && { kind: boss.kind.id, hp: boss.hp, maxHp: boss.maxHp, attackIn: boss.attackIn, reinforcePerSec: boss.reinforcePerSec, shield: boss.shield, gearDropped: Boolean(boss.gearDropped) },
     enemyType: enemyType?.id ?? null,
     waveEvent: waveEvent?.id ?? null,
     blockedCells: [...blockedCells],
@@ -3085,7 +3205,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount,
+      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt,
     },
     flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
@@ -3170,6 +3290,7 @@ function restoreRun(data) {
   runCoinScale = n.runCoinScale ?? 1;
   runBonusCoins = n.runBonusCoins ?? 0;
   strikeCount = n.strikeCount ?? 0;
+  gearDropAt = n.gearDropAt ?? NO_GEAR_DROP;
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
   runEasy = Boolean(data.flags.runEasy);
@@ -4860,22 +4981,64 @@ function spawnFrontLineHit(marcher) {
 // barely noticeable over its few-second life. Tap it before it fades to
 // collect; miss it and it's gone.
 function maybeDropLoot(x, y) {
-  if (lootDrop || gameState !== "playing") return;
+  if (gameState !== "playing" || maybeDropGear(x, y)) return;
+  if (lootDrop) return;
   if (runTime - lastLootDropAt < LOOT_DROP_COOLDOWN) return;
   if (Math.random() >= LOOT_DROP_CHANCE) return;
   lastLootDropAt = runTime;
   const coins = LOOT_DROP_COINS_MIN + Math.floor(Math.random() * (LOOT_DROP_COINS_MAX - LOOT_DROP_COINS_MIN + 1));
-  lootDrop = { x, y: y - 20, age: 0, coins };
+  showLootDrop({ x, y: y - 20, age: 0, life: LOOT_DROP_LIFETIME, coins });
+}
+
+// The same in a daily challenge for everyone, like the rest of its waves.
+function planGearDrop() {
+  if (wave < GEAR_DROP_FIRST_WAVE || boss) return NO_GEAR_DROP;
+  const random = runRandom(`gearDrop${wave}`);
+  if (random() >= GEAR_DROP_WAVE_CHANCE) return NO_GEAR_DROP;
+  return GEAR_DROP_EARLIEST + random() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
+}
+
+// A free gear on top of what can be bought: it doesn't raise the price, and a
+// full board just waits for the next hit. Worth more than coins, so it takes over.
+function maybeDropGear(x, y) {
+  if (!bestEmptyCell()) return false;
+  let gearLevel = 0;
+  if (boss) {
+    if (boss.gearDropped || boss.hp > boss.maxHp * BOSS_DROP_HEALTH) return false;
+    boss.gearDropped = true;
+    gearLevel = BOSS_DROP_LEVEL;
+  } else {
+    if (gearDropAt === NO_GEAR_DROP || waveTime < gearDropAt) return false;
+    gearDropAt = NO_GEAR_DROP;
+    gearLevel = 1;
+  }
+  showLootDrop({ x, y: y - 20, age: 0, life: GEAR_DROP_LIFETIME, gearLevel });
+  return true;
+}
+
+function showLootDrop(drop) {
+  lootDrop = drop;
   const el = document.getElementById("loot-drop");
-  el.style.left = `${lootDrop.x}px`;
-  el.style.top = `${lootDrop.y}px`;
-  document.getElementById("loot-drop-amount").textContent = `+${coins}`;
+  el.style.left = `${drop.x}px`;
+  el.style.top = `${drop.y}px`;
+  el.classList.toggle("gear", Boolean(drop.gearLevel));
+  el.setAttribute("aria-label", drop.gearLevel ? "Collect free gear" : "Collect coins");
+  const icon = document.getElementById("loot-drop-icon");
+  if (drop.gearLevel) icon.replaceChildren(gearIcon(boughtGearType()));
+  else icon.textContent = "\u{1F4B0}";
+  const amount = document.getElementById("loot-drop-amount");
+  amount.textContent = !drop.gearLevel ? `+${drop.coins}` : drop.gearLevel > 1 ? `Level ${drop.gearLevel}!` : "Free!";
   el.classList.remove("hidden");
 }
 
 function collectLootDrop() {
   if (!lootDrop) return;
-  runBonusCoins += lootDrop.coins;
+  if (lootDrop.gearLevel) {
+    if (bestEmptyCell()) placeGear(boughtGearType()).level = lootDrop.gearLevel;
+    showWaveBanner("Free gear!");
+  } else {
+    runBonusCoins += lootDrop.coins;
+  }
   for (let i = 0; i < 6; i++) {
     spawnParticle({
       x: lootDrop.x,
@@ -4946,7 +5109,7 @@ function updateFx(dt) {
     // Also cleared the moment play isn't active (a wave ending, a pause,
     // game over) — simpler and safer than chasing every place gameState
     // changes, and it would otherwise outlive the screen it was shown over.
-    if (lootDrop.age >= LOOT_DROP_LIFETIME || gameState !== "playing") clearLootDrop();
+    if (lootDrop.age >= lootDrop.life || gameState !== "playing" || (lootDrop.gearLevel && !bestEmptyCell())) clearLootDrop();
   }
   shove.player = Math.max(0, shove.player - dt * 5);
   shove.enemy = Math.max(0, shove.enemy - dt * 5);
@@ -5546,6 +5709,7 @@ function startNewRun() {
   screenShake = 0;
   clearLootDrop();
   lastLootDropAt = -Infinity;
+  gearDropAt = NO_GEAR_DROP;
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER * (1 + upgradeLevel("recruits") * RECRUITS_FIRST_WAVE_PER_LEVEL);
@@ -5730,6 +5894,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Free gear", "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [

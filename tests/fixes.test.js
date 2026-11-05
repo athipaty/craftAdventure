@@ -74,7 +74,22 @@ async function check(name, fn) {
       assert.match(label.full, /^Charge! /); assert.match(label.before, /^Charge \d/);
     }
   });
-  await check("status labels put what matters first, and count what doesn't fit", async () => {
+  await check("the Rally button shows how full it is, and only says Charge! at 100%", async () => {
+    const read = (held) => page.evaluate((h) => {
+      save.hero = "archer"; rallying = true; rallyHeld = h; rallyReserve = 10; updateRallyButton();
+      const b = document.getElementById("rally-btn");
+      const out = { label: b.textContent, fill: b.style.getPropertyValue("--charge"), full: b.classList.contains("full") };
+      rallying = false; rallyHeld = 0; rallyReserve = 0; save.hero = "knight"; updateRallyButton();
+      return out;
+    }, held);
+    assert.deepEqual(await read(0), { label: "Charge 0%", fill: "0%", full: false });
+    assert.deepEqual(await read(2.5), { label: "Charge 50%", fill: "50%", full: false });
+    const almost = await read(4.99);
+    assert.equal(almost.label, "Charge 99%"); assert.equal(almost.full, false);
+    const done = await read(5);
+    assert.match(done.label, /^Charge! \d+$/); assert.equal(done.fill, "100%"); assert.equal(done.full, true);
+  });
+  await check("status icons put what matters first, and all of them fit", async () => {
     await page.evaluate(() => { playerPower = 1000; enemyPower = 1000; frozenFor = 3; activeDeal = WAVE_DEALS.army; wavePace = WAVE_PACES.rush; overdriveLeft = 3; rallying = true; runParts = { staticCharge: 2, warChest: 1, cooling: 1, longChain: 1, bossHunter: 1, warDrums: 1, patterns: 1, stormEngine: 1, turbo: 1, thickOil: 1, forgeBonus: 1 }; });
     for (const [w, h] of [[390, 844], [320, 568], [844, 390]]) {
       await page.setViewportSize({ width: w, height: h });
@@ -88,10 +103,7 @@ async function check(name, fn) {
       const frozenIcon = await page.evaluate(() => STATUS_ICONS.frozen);
       assert.equal(r.fits, true, `${w}x${h} overflows`);
       assert.equal(r.chips[0], frozenIcon, `${w}x${h} first icon`);
-      assert.match(r.chips.at(-1), /^\+\d+$/, `${w}x${h} shows a count`);
-      const hidden = Number(r.chips.at(-1).match(/\d+/)[0]);
-      assert.equal(r.chips.length - 1 + hidden, r.total, `${w}x${h} count adds up`);
-      console.log("       ", `${w}x${h}`, r.chips.length - 1, "shown,", hidden, "counted");
+      assert.equal(r.chips.length, r.total, `${w}x${h} shows them all`);
     }
     await page.setViewportSize({ width: 390, height: 844 });
   });
