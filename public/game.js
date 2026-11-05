@@ -133,6 +133,16 @@ const GEAR_DROP_LATEST = 8;
 const AURA_SIZE = 1.42; // of a cell, so it shows around the gear
 const AURA_BASE_ALPHA = 0.55;
 const AURA_ALPHA_PER_BOOST = 0.3;
+const GOBLIN_TIP_AGE = 1.2; // seconds in, so it's on screen when the tip points to it
+const GOBLIN_FIRST_WAVE = 2;
+const GOBLIN_WAVE_CHANCE = 0.2; // odds a normal wave has a treasure goblin, about three a run
+const GOBLIN_EARLIEST = 4; // seconds into the wave
+const GOBLIN_LATEST = 9;
+const GOBLIN_SECONDS = 4.5; // to cross the battle
+const GOBLIN_SECONDS_EASY = 6.5;
+const GOBLIN_GEAR_CHANCE = 0.3; // otherwise it carries coins
+const GOBLIN_COINS_MIN = 5;
+const GOBLIN_COINS_MAX = 10;
 const SPECIAL_DROP_CHANCE = 0.15; // about three a run; the rest are soldier gears
 const TRAY_SLOTS = 5; // gears waiting below the board; a drop waits its turn when it's full
 const TAP_SLOP = 10; // pixels a press can move and still count as a tap
@@ -182,6 +192,7 @@ const ACHIEVEMENTS = [
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "goblins10", name: "Gotcha!", text: "Catch 10 treasure goblins", stat: "goblins", target: 10, coins: 40 },
   { id: "counter10", name: "Quick draw", text: "Counter 10 boss attacks", stat: "counters", target: 10, coins: 40 },
   { id: "counter50", name: "Untouchable", text: "Counter 50 boss attacks", stat: "counters", target: 50, coins: 120 },
   { id: "stars12", name: "Star engineer", text: "Earn all 12 world stars", stat: "stars", target: 12, coins: 250 },
@@ -618,6 +629,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
+  { id: "treasureGoblin", urgent: true, text: "A treasure goblin! Tap it before it escapes to grab what it's carrying.", target: "#treasure-goblin", when: () => treasureGoblin?.age > GOBLIN_TIP_AGE },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
@@ -755,6 +767,8 @@ let hitNumbers = []; // { side, amount, color, age } at most one per side, besid
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 let gearTray = []; // { type, level, arriving }: dropped gears below the board, waiting to be placed
+let treasureAt = NO_GEAR_DROP; // waveTime this wave's treasure goblin appears, spent once it has
+let treasureGoblin = null; // { age, seconds, sparkle } while one is running past
 let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
@@ -2438,6 +2452,10 @@ function renderGearTray() {
 }
 
 function wireBoardInput() {
+  // On press, as it won't hold still for a tap; click is for the keyboard.
+  const goblin = document.getElementById("treasure-goblin");
+  goblin.addEventListener("pointerdown", (e) => { e.preventDefault(); ensureAudio(); catchTreasureGoblin(); });
+  goblin.addEventListener("click", catchTreasureGoblin);
   const tray = document.getElementById("gear-tray");
   tray.addEventListener("pointerdown", onTrayPointerDown);
   tray.addEventListener("pointermove", onPointerMove);
@@ -3370,6 +3388,7 @@ function beginWave() {
   startWave();
   gameState = "playing";
   gearDropAt = planGearDrop();
+  treasureAt = planTreasureGoblin();
   if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
   updateFeatureButtons();
   showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
@@ -3454,7 +3473,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt,
+      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt, treasureAt,
     },
     flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
@@ -3542,6 +3561,8 @@ function restoreRun(data) {
   runBonusCoins = n.runBonusCoins ?? 0;
   strikeCount = n.strikeCount ?? 0;
   gearDropAt = n.gearDropAt ?? NO_GEAR_DROP;
+  treasureAt = n.treasureAt ?? NO_GEAR_DROP;
+  clearTreasureGoblin();
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
   runEasy = Boolean(data.flags.runEasy);
@@ -5317,13 +5338,17 @@ function maybeDropGear() {
     gearDropAt = NO_GEAR_DROP;
     level = 1;
   }
-  const item = { type: droppedGearType(), level, arriving: true };
-  gearTray.push(item);
-  renderGearTray();
-  flyGearToTray(item, gearTray.length - 1);
+  sendGearToTray(droppedGearType(), level, frontLineFx());
 }
 
-function flyGearToTray(item, index) {
+function sendGearToTray(type, level, from) {
+  const item = { type, level, arriving: true };
+  gearTray.push(item);
+  renderGearTray();
+  flyGearToTray(item, gearTray.length - 1, from);
+}
+
+function flyGearToTray(item, index, from) {
   const land = () => {
     item.arriving = false;
     playLootSound();
@@ -5334,7 +5359,6 @@ function flyGearToTray(item, index) {
   }
   const frame = document.getElementById("app-frame").getBoundingClientRect();
   const slot = document.querySelector(`.tray-slot[data-index="${index}"]`).getBoundingClientRect();
-  const from = frontLineFx();
   const dx = slot.left + slot.width / 2 - frame.left - from.x;
   const dy = slot.top + slot.height / 2 - frame.top - from.y;
   const flyer = gearIcon(item.type, false, item.level);
@@ -5351,6 +5375,90 @@ function flyGearToTray(item, index) {
     flyer.remove();
     land();
   };
+}
+
+// The same in a daily challenge for everyone, like the rest of its waves.
+function planTreasureGoblin() {
+  if (wave < GOBLIN_FIRST_WAVE || boss) return NO_GEAR_DROP;
+  const random = runRandom(`treasure${wave}`);
+  if (random() >= GOBLIN_WAVE_CHANCE) return NO_GEAR_DROP;
+  return GOBLIN_EARLIEST + random() * (GOBLIN_LATEST - GOBLIN_EARLIEST);
+}
+
+function spawnTreasureGoblin() {
+  treasureAt = NO_GEAR_DROP;
+  treasureGoblin = { age: 0, seconds: runEasy ? GOBLIN_SECONDS_EASY : GOBLIN_SECONDS, sparkle: 0 };
+  const el = document.getElementById("treasure-goblin");
+  document.getElementById("treasure-goblin-art").replaceChildren(enemyIcon("runner"));
+  el.classList.remove("hidden");
+  placeTreasureGoblin();
+  playGoblinSound();
+}
+
+function treasureGoblinPoint() {
+  const size = 32;
+  const share = treasureGoblin.age / treasureGoblin.seconds;
+  const hop = save.lessMotion || REDUCED_MOTION ? 0 : Math.abs(Math.sin(treasureGoblin.age * 11)) * 7;
+  return {
+    x: laneRect.x + laneRect.w + size - (laneRect.w + size * 2) * share,
+    y: laneRect.y + laneRect.h * 0.6 - hop,
+  };
+}
+
+function placeTreasureGoblin() {
+  const { x, y } = treasureGoblinPoint();
+  document.getElementById("treasure-goblin").style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+}
+
+// In real time, so double speed doesn't make it harder to catch. It waits for
+// a pause or a tip, and is gone when the wave ends.
+function updateTreasureGoblin(dt) {
+  if (gameState === "playing" && treasureAt !== NO_GEAR_DROP && waveTime >= treasureAt) spawnTreasureGoblin();
+  if (!treasureGoblin || gameState === "paused" || gameState === "tip") return;
+  if (gameState !== "playing") {
+    clearTreasureGoblin();
+    return;
+  }
+  treasureGoblin.age += dt;
+  if (treasureGoblin.age >= treasureGoblin.seconds) {
+    clearTreasureGoblin();
+    showToast("It got away!");
+    return;
+  }
+  placeTreasureGoblin();
+  treasureGoblin.sparkle -= dt;
+  if (treasureGoblin.sparkle <= 0 && !save.lessMotion) {
+    treasureGoblin.sparkle = 0.12;
+    const { x, y } = treasureGoblinPoint();
+    spawnParticle({ x: x + 14, y, vx: randomBetween(10, 40), vy: randomBetween(-40, -10), gravity: 120, life: randomBetween(0.25, 0.45), size: randomBetween(1.5, 3), color: "#ffcc33" });
+  }
+}
+
+// Coins, or a gear for the tray when there's room for one.
+function catchTreasureGoblin() {
+  if (!treasureGoblin || gameState !== "playing") return;
+  const from = treasureGoblinPoint();
+  const random = runRandom(`treasureLoot${wave}`);
+  const roll = random();
+  if (roll < GOBLIN_GEAR_CHANCE && gearTray.length < TRAY_SLOTS) {
+    sendGearToTray(droppedGearType(), 1, from);
+    showToast("Treasure! Free gear");
+  } else {
+    const coins = GOBLIN_COINS_MIN + Math.floor(random() * (GOBLIN_COINS_MAX - GOBLIN_COINS_MIN + 1));
+    runBonusCoins += coins;
+    showToast(`Treasure! +${coins} coins`);
+  }
+  for (let i = 0; i < 14; i++) {
+    spawnParticle({ x: from.x, y: from.y, vx: randomBetween(-110, 110), vy: randomBetween(-170, -40), gravity: 260, life: randomBetween(0.3, 0.6), size: randomBetween(2, 4), color: i % 2 ? "#ffcc33" : "#fff3c4" });
+  }
+  playLootSound();
+  recordStat("goblins");
+  clearTreasureGoblin();
+}
+
+function clearTreasureGoblin() {
+  treasureGoblin = null;
+  document.getElementById("treasure-goblin")?.classList.add("hidden");
 }
 
 function spawnConfetti() {
@@ -5374,6 +5482,7 @@ function spawnConfetti() {
 }
 
 function updateFx(dt) {
+  updateTreasureGoblin(dt);
   for (const p of particles) {
     p.age += dt;
     p.vy += p.gravity * dt;
@@ -5721,6 +5830,10 @@ function playLootSound() {
   setTimeout(() => beep(1500, 0.08, "square", 0.12), 50);
 }
 
+function playGoblinSound() {
+  for (const [delay, note] of [[0, 1320], [70, 1760], [140, 1320], [210, 1760]]) setTimeout(() => beep(note, 0.05, "square", 0.08), delay);
+}
+
 function playWinSound() {
   beep(523, 0.12, "square", 0.2);
   setTimeout(() => beep(659, 0.12, "square", 0.2), 110);
@@ -5994,6 +6107,8 @@ function startNewRun() {
   screenShake = 0;
   gearTray = [];
   gearDropAt = NO_GEAR_DROP;
+  treasureAt = NO_GEAR_DROP;
+  clearTreasureGoblin();
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER * (1 + upgradeLevel("recruits") * RECRUITS_FIRST_WAVE_PER_LEVEL);
@@ -6180,6 +6295,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Treasure goblin", "Sometimes runs past carrying coins or a gear. Tap it before it escapes.", enemyIcon("runner")],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],

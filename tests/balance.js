@@ -30,6 +30,8 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
       if (gameState !== "playing") break;
       if (canTrain() && Math.random() < 0.02) trainArmy();
       while (gearTray.length && bestEmptyCell()) { const spot = bestEmptyCell(); placeTrayGear(0, spot.row, spot.col); }
+      if (treasureAt !== NO_GEAR_DROP && waveTime >= treasureAt) spawnTreasureGoblin();
+      if (treasureGoblin) catchTreasureGoblin();
       if (overdriveReady()) activateOverdrive();
       if (smart) {
         if (ticks % 10 === 0) merge();
