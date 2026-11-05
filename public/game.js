@@ -149,9 +149,10 @@ const CHEST_REVEAL_MS = 450; // then the others open, to show what was missed
 // when it's won, unless it says otherwise.
 const PATH_FIRST_WAVE = 3;
 const PATH_GAP_WAVES = 3; // waves between choices at the least
+const PATH_ELITE_FIRST_WAVE = 8; // earlier, it's a trap for a machine that's still small
 const PATHS = {
   safe: { id: "safe", icon: "\u{1F6E1}\uFE0F", name: "Safe road", risk: "No extra danger", reward: "No bonus" },
-  elite: { id: "elite", icon: "\u2694\uFE0F", name: "Elite ambush", risk: "40% more enemies", reward: "Win for better reward choices", enemy: 1.4, lucky: true },
+  elite: { id: "elite", icon: "\u2694\uFE0F", name: "Elite ambush", risk: "40% more enemies", reward: "Win for better reward choices", enemy: 1.4, lucky: true, available: () => wave >= PATH_ELITE_FIRST_WAVE },
   treasure: { id: "treasure", icon: "\u{1F4B0}", name: "Treasure trail", risk: "Enemies grow 25% faster", reward: "A treasure goblin, and win for +10 coins", growth: 1.25, goblin: true, coins: 10 },
   supply: { id: "supply", icon: "\u{1F4E6}", name: "Supply camp", risk: "20% more enemies", reward: "A level 2 gear right now", enemy: 1.2, gearLevel: 2, available: () => gearTray.length < TRAY_SLOTS },
 };
@@ -292,7 +293,7 @@ const WORLDS = [
     theme: { skyTop: "#f0a64f", skyBottom: "#fbe6b0", hillBack: "#e8c27a", hillFront: "#d9a95c", ground: "#c9954a", groundDark: "#b5823c", deco: "cactus" },
   },
   {
-    id: "ice", name: "Frozen Peaks", finalHp: 1.25, finalWave: 25, scale: 1.58, clearCoins: 400,
+    id: "ice", name: "Frozen Peaks", finalHp: 1.25, finalWave: 25, scale: 1.56, clearCoins: 400,
     enemies: [["frost", 1], ["runner", 3], ["brute", 8], ["shaman", 12]],
     theme: { skyTop: "#8fb8e0", skyBottom: "#eaf6ff", hillBack: "#dcecf8", hillFront: "#c2dcef", ground: "#e8f2fa", groundDark: "#cfe2f0", deco: "snow" },
   },
