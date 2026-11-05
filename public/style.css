@@ -332,6 +332,38 @@ button {
   pointer-events: none;
 }
 
+/* Runs across the battle, above it but under tips and menus. Only its transform
+   changes as it goes, and its size is what's easy to tap rather than what it looks. */
+#treasure-goblin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 26;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: none;
+  background: none;
+  touch-action: none;
+  will-change: transform;
+}
+
+#treasure-goblin .art-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 6px #ffcc33);
+  pointer-events: none;
+}
+
+#treasure-goblin-sack {
+  position: absolute;
+  right: 2px;
+  top: 8px;
+  font-size: 1.35rem;
+  pointer-events: none;
+}
+
 /* Dropped gears wait here to be dragged onto the board. */
 #gear-tray {
   flex-shrink: 0;
