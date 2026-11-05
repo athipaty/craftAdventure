@@ -70,7 +70,8 @@ button {
   margin: 0;
 }
 
-#play-btn {
+#play-btn,
+#continue-btn {
   margin-top: 10px;
   padding: 16px 48px;
   font-size: 1.3rem;
@@ -82,7 +83,23 @@ button {
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
-#play-btn:active {
+#play-btn.has-run {
+  padding: 11px 22px;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: #3a2414;
+  border: 2px solid var(--accent-dark);
+  box-shadow: none;
+}
+
+#continue-btn {
+  max-width: 90%;
+  padding: 15px 20px;
+  font-size: 1rem;
+}
+
+#play-btn:active,
+#continue-btn:active {
   transform: translateY(4px);
   box-shadow: 0 2px 0 #2f6b18, 0 4px 10px rgba(0, 0, 0, 0.4);
 }
@@ -117,22 +134,96 @@ button {
 
 #score-indicator {
   flex: 1;
+  min-width: 0;
 }
 
-#restart-btn {
-  padding: 7px 14px;
+#pause-btn {
+  padding: 7px 13px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
   font-size: 0.85rem;
+  font-weight: 800;
 }
 
-#restart-btn:active {
+#speed-btn {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+#speed-btn.fast {
+  background: var(--accent);
+  color: #3a2414;
+}
+
+#pause-settings,
+#reward-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+#pause-settings .workshop-btn,
+#reward-actions .workshop-btn {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+
+#reward-actions {
+  margin-top: 6px;
+}
+
+#reroll-btn:disabled {
+  opacity: 0.45;
+}
+
+#pause-btn:active {
   background: rgba(255, 255, 255, 0.24);
 }
 
+#pause-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(10, 5, 2, 0.82);
+}
+
+#pause-screen h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  color: var(--accent);
+}
+
+#resume-btn {
+  padding: 14px 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.15rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
+#mute-btn {
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
 #battle-lane {
-  height: 92px;
+  height: 124px;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.18);
   border-bottom: 2px solid rgba(0, 0, 0, 0.3);
@@ -162,7 +253,7 @@ button {
 
 #combo-toast {
   position: absolute;
-  top: 10px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--panel);
@@ -182,6 +273,182 @@ button {
   100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(1); }
 }
 
+#action-row {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 8px;
+  position: relative;
+  min-height: 84px; /* room for a two-line label and both side buttons, so the board never has to move */
+  margin-top: 4px;
+  padding: 0 10px;
+}
+
+@media (max-width: 360px) {
+  #action-row {
+    min-height: 92px;
+  }
+
+  #battle-lane {
+    height: 104px;
+  }
+}
+
+/* Sits over the buttons only while a gear is being dragged. */
+#scrap-zone {
+  position: absolute;
+  inset: 0 10px -4px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #ff9a85;
+  border-radius: 10px;
+  background: #4a1a12;
+  color: #ffd9cf;
+  font-weight: 800;
+  font-size: 0.95rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+#scrap-zone.hover {
+  background: var(--enemy);
+  color: #ffffff;
+}
+
+#side-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#rally-btn {
+  flex: 1;
+  min-width: 118px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(58, 125, 219, 0.55);
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+#rally-btn.holding {
+  background: #3a7ddb;
+}
+
+#rally-btn.full {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #4a1a12;
+}
+
+#overdrive-btn {
+  flex: 1;
+  min-width: 118px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #ff8a3d var(--charge, 100%), rgba(255, 255, 255, 0.12) var(--charge, 100%));
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+#overdrive-btn.ready {
+  background: linear-gradient(180deg, #ffb057, #e0651c);
+  color: #3a1500;
+  box-shadow: 0 3px 0 #94400d;
+  animation: overdrive-pulse 1s ease-in-out infinite;
+}
+
+#overdrive-btn.active {
+  box-shadow: 0 0 14px #ff8a3d;
+}
+
+#overdrive-btn.ready:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #94400d;
+}
+
+@keyframes overdrive-pulse {
+  50% { filter: brightness(1.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overdrive-btn.ready {
+    animation: none;
+  }
+}
+
+#fx-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  pointer-events: none;
+}
+
+#main-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#train-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #b48cf0, #7a4fc4);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 3px 0 #4f2f8c;
+}
+
+#train-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #4f2f8c;
+}
+
+#train-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: #a99a80;
+  box-shadow: none;
+}
+
+#buy-gear-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8bd65a, #4f9e2d);
+  color: #14300a;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 3px 0 #2f6d18;
+}
+
+#buy-gear-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2f6d18;
+}
+
+#buy-gear-btn.risky {
+  background: linear-gradient(180deg, #ffd24d, #e08a1c);
+  color: #3a1f00;
+  box-shadow: 0 3px 0 #94570d;
+}
+
+#buy-gear-btn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: #a99a80;
+  box-shadow: none;
+}
+
 .hint {
   text-align: center;
   font-size: 0.72rem;
@@ -190,65 +457,40 @@ button {
   padding: 2px 10px 8px;
 }
 
-/* ---------- Ability bar ---------- */
+/* ---------- Announcements ---------- */
 
-#ability-bar {
-  display: flex;
-  gap: 8px;
-  padding: 6px 10px 2px;
-}
-
-.ability-btn {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 4px 6px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #6b4a26, #432b16);
-  border: 1px solid rgba(255, 204, 51, 0.35);
-  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4), 0 6px 10px rgba(0, 0, 0, 0.3);
-  color: var(--text);
-  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.15s ease;
-}
-
-.ability-btn:active:not(:disabled) {
-  transform: translateY(3px);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.ability-btn:disabled {
-  opacity: 0.45;
-  filter: grayscale(0.5);
-}
-
-.ability-icon {
-  font-size: 1.3rem;
-  line-height: 1;
-}
-
-.ability-name {
-  font-size: 0.64rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.ability-cost {
-  font-size: 0.7rem;
-  font-weight: 800;
+/* At the bottom, so it covers neither the top bar nor the board. */
+#announcement {
+  position: absolute;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 38;
+  width: max-content;
+  max-width: 92%;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  background: var(--panel);
   color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-align: center;
+  pointer-events: none;
+  animation: announcement-pop 1.6s ease forwards;
+}
+
+@keyframes announcement-pop {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ---------- Wave banner ---------- */
 
 #wave-banner {
+  white-space: nowrap;
   position: absolute;
   top: 40%;
   left: 50%;
@@ -271,6 +513,694 @@ button {
   25% { transform: translate(-50%, -50%) scale(1); }
   80% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/* ---------- Worlds ---------- */
+
+#world-clear-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 29;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.85);
+}
+
+#world-clear-screen h2 {
+  margin: 0;
+  font-size: 1.9rem;
+  color: var(--accent);
+}
+
+#world-clear-screen p {
+  margin: 0;
+  color: #bff29a;
+  font-weight: 800;
+}
+
+#world-clear-coins {
+  color: var(--accent) !important;
+  font-size: 1.2rem;
+}
+
+#next-world-btn {
+  padding: 14px 30px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.1rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
+#worlds-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 34;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-bottom);
+}
+
+#worlds-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#worlds-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.world-card {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  padding: 14px 14px;
+  border-radius: 12px;
+  border: 2px solid #22150b;
+  background: linear-gradient(180deg, var(--world-sky), var(--world-ground));
+  color: #fff;
+  text-align: left;
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+
+.world-card b {
+  font-size: 1.1rem;
+}
+
+.world-card span {
+  grid-column: 1;
+  font-size: 0.8rem;
+}
+
+.world-card em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-style: normal;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.world-card:disabled {
+  filter: grayscale(0.85) brightness(0.55);
+}
+
+/* ---------- Tips ---------- */
+
+#tip-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 5, 2, 0.4);
+}
+
+#tip-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 340px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 2px solid var(--accent);
+  background: var(--panel);
+  text-align: center;
+}
+
+#tip-text {
+  margin: 0;
+  line-height: 1.35;
+}
+
+#tip-ok-btn {
+  padding: 10px 30px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #4a1a12;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.tip-target {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  animation: tip-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes tip-pulse {
+  50% { outline-offset: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-target {
+    animation: none;
+  }
+}
+
+/* ---------- Reward screen ---------- */
+
+#reward-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.82);
+  animation: reward-in 0.25s ease;
+}
+
+@keyframes reward-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#reward-screen h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  color: var(--accent);
+}
+
+#reward-screen p {
+  margin: 0;
+  color: #e4d3b8;
+}
+
+#reward-screen #reward-next {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+#reward-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+  margin-top: 8px;
+}
+
+.reward-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.reward-option b {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+
+.reward-option small {
+  margin-left: 4px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reward-option.rare {
+  border-color: #4f9fe0;
+  background: #1f2c3f;
+}
+
+.reward-option.rare b {
+  color: #8fcbff;
+}
+
+.reward-option.epic {
+  border-color: #c58cf5;
+  background: #33204a;
+  box-shadow: 0 0 12px rgba(197, 140, 245, 0.45);
+}
+
+.reward-option.epic b {
+  color: #e2c4ff;
+}
+
+.reward-option:active {
+  background: #5a3a20;
+}
+
+/* ---------- Workshop ---------- */
+
+.workshop-btn {
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+#title-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.workshop-btn b {
+  color: var(--accent);
+}
+
+.workshop-btn:active {
+  background: #5a3a20;
+}
+
+#quests-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  text-align: center;
+  background: var(--bg-bottom);
+}
+
+#quests-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#quests-screen p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e4d3b8;
+}
+
+#quests-screen p b {
+  color: var(--accent);
+}
+
+/* The page blocks touch scrolling for the board, so this turns it back on. */
+#quests-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#quests-scroll h3 {
+  margin: 6px 0;
+  font-size: 0.9rem;
+  color: var(--accent);
+  text-align: left;
+}
+
+#player-level {
+  width: 100%;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#player-level b {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+#player-level small {
+  color: #c9b896;
+  font-size: 0.7rem;
+}
+
+#player-level-bar {
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+#player-level-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #8fc0ff;
+}
+
+#run-build p {
+  margin: 0;
+  max-width: 340px;
+  color: #e4d3b8;
+  font-size: 0.8rem;
+}
+
+#run-build #run-build-gears {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.world-easy-btn,
+.world-head-start {
+  flex-shrink: 0;
+  margin-top: -2px;
+  padding: 8px 12px;
+  border: 2px solid var(--accent-dark);
+  border-radius: 10px;
+  background: #3a2414;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+#gameover-screen #level-gain {
+  color: #bcd9ff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+#gameover-screen #level-gain.leveled {
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.achievement-text {
+  color: #c9b896;
+}
+
+#achievements-list,
+#quests-list,
+#daily-quests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quest.done {
+  opacity: 0.6;
+  border-color: #6fb83f;
+}
+
+#daily-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 36;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.92);
+}
+
+#daily-screen h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  color: var(--accent);
+}
+
+#daily-screen p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #e4d3b8;
+}
+
+#daily-screen p b {
+  color: var(--accent);
+}
+
+#daily-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.daily-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 1px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: #3a2414;
+  font-size: 0.9rem;
+}
+
+.daily-day small {
+  font-size: 0.6rem;
+  color: #c9b896;
+}
+
+.daily-day b {
+  color: var(--accent);
+}
+
+.daily-day.claimed {
+  opacity: 0.55;
+}
+
+.daily-day.today {
+  border-color: var(--accent);
+  background: #5a3a20;
+}
+
+#daily-claim-btn {
+  padding: 14px 34px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.1rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
+#daily-claim-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #2f6b18;
+}
+
+#gameover-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#gameover-screen #gameover-goals p {
+  color: #bff29a;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+#pause-parts {
+  max-width: 340px;
+  margin: 0;
+  padding: 0 16px;
+  color: #e4d3b8;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+#pause-quests {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+}
+
+.quest {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.quest b {
+  color: var(--text);
+}
+
+.quest em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.quest-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.quest-bar span {
+  display: block;
+  height: 100%;
+  background: #8bd65a;
+}
+
+.quest small {
+  color: #c9b896;
+  text-align: right;
+}
+
+#workshop-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  text-align: center;
+  background: var(--bg-bottom);
+}
+
+#workshop-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#workshop-screen p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e4d3b8;
+}
+
+#workshop-coins {
+  color: var(--accent);
+}
+
+/* The page blocks touch scrolling for the board, so the list turns it back on. */
+#workshop-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#workshop-scroll h3 {
+  margin: 10px 0 6px;
+  font-size: 0.95rem;
+  color: var(--accent);
+  text-align: left;
+}
+
+#workshop-list,
+#collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upgrade.selected {
+  border-color: #8bd65a;
+  background: #2f3a1c;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid #22150b;
+  vertical-align: -1px;
+}
+
+.world-card.weekly {
+  background: linear-gradient(180deg, #7a4fc4, #3a2470);
+  border-color: var(--accent);
+}
+
+.upgrade {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--accent-dark);
+  background: #3a2414;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.upgrade b {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.upgrade span {
+  grid-column: 1;
+}
+
+.upgrade em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.upgrade:active:not(:disabled) {
+  background: #5a3a20;
+}
+
+.upgrade:disabled {
+  border-color: rgba(255, 255, 255, 0.15);
+  opacity: 0.6;
 }
 
 /* ---------- Game over screen ---------- */
@@ -300,9 +1230,50 @@ button {
   color: #e4d3b8;
 }
 
+#gameover-screen #new-record,
+#gameover-screen #coins-earned {
+  color: var(--accent);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+#run-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  width: 100%;
+  max-width: 320px;
+  margin: 0;
+}
+
+#run-stats div {
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#run-stats dt {
+  font-size: 0.72rem;
+  color: #c9b896;
+}
+
+#run-stats dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+#gameover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
 #retry-btn {
-  margin-top: 10px;
-  padding: 14px 40px;
+  padding: 12px 26px;
   font-size: 1.1rem;
   font-weight: 700;
   color: #4a1a12;
@@ -359,14 +1330,11 @@ button {
    demanding the person physically rotate their device — which doesn't
    help at all if their phone/tablet has its own rotation lock on, or if
    they'd rather not — hold the whole game inside a fixed portrait-shaped
-   frame instead. In the normal case (already portrait, or a desktop
-   window) the frame just fills the viewport, same as before. Only when
-   an actual touch device is held sideways does the media query below
-   shrink it down to a portrait rectangle centered in the middle of the
-   screen, letterboxed by the page background on either side — so the
-   game always plays upright no matter how the device is held. pointer:
-   coarse keeps a wide desktop window (which is "landscape" in shape but
-   not in this sense) from ever triggering it. */
+   frame instead. On a portrait screen the frame just fills the viewport.
+   On any landscape screen — a phone held sideways or a desktop browser
+   window — the media query below shrinks it to a portrait rectangle
+   centered on screen, letterboxed by the page background on either side,
+   so the game always plays upright with the same proportions. */
 
 #app-frame {
   position: fixed;
@@ -375,7 +1343,7 @@ button {
   background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
 }
 
-@media (pointer: coarse) and (orientation: landscape) {
+@media (orientation: landscape) {
   #app-frame {
     inset: auto;
     top: 50%;
@@ -385,5 +1353,769 @@ button {
     aspect-ratio: 9 / 16;
     max-width: 100vw;
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* A phone held sideways is too short for the stacked layout, which would leave
+   a tiny board. Use the whole screen instead: the board on the left, everything
+   else in a column on the right. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #app-frame {
+    inset: 0;
+    top: 0;
+    left: 0;
+    transform: none;
+    height: auto;
+    aspect-ratio: auto;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  #game-screen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 124px auto minmax(0, 1fr);
+  }
+
+  #board-wrap {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  #action-row {
+    margin-top: 10px;
+  }
+
+  #title-screen {
+    gap: 6px;
+    padding: 8px 24px;
+  }
+
+  #title-screen h1 {
+    font-size: 2.2rem;
+  }
+
+  #play-btn {
+    margin-top: 2px;
+    padding: 10px 40px;
+    font-size: 1.1rem;
+  }
+
+  #title-actions .workshop-btn {
+    padding: 7px 16px;
+    font-size: 0.85rem;
+  }
+
+  #player-level {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    column-gap: 8px;
+  }
+
+  #player-level-bar {
+    width: 100%;
+    order: 2;
+  }
+
+  #reward-options {
+    flex-direction: row;
+    max-width: 720px;
+  }
+
+  #gameover-screen {
+    gap: 6px;
+    padding: 10px 24px;
+  }
+
+  #gameover-actions .workshop-btn {
+    padding: 7px 14px;
+    font-size: 0.82rem;
+  }
+
+  #world-clear-screen {
+    gap: 6px;
+  }
+
+  #worlds-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+    max-width: 760px;
+  }
+
+  #run-stats {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 560px;
+  }
+
+  #pause-screen {
+    gap: 6px;
+  }
+
+  #pause-quests {
+    flex-direction: row;
+    max-width: 780px;
+  }
+
+  #pause-quests .quest {
+    flex: 1;
+    min-width: 0;
+  }
+
+  #workshop-scroll {
+    max-width: 760px;
+  }
+
+  #workshop-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+
+  #collection-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+
+  #collection-list h3 {
+    grid-column: 1 / -1;
+  }
+
+  .reward-option {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* Short phones: the run summary has to fit without scrolling. */
+@media (orientation: portrait) and (max-height: 700px) {
+  #gameover-screen {
+    gap: 4px;
+    padding: 8px 14px;
+  }
+
+  #gameover-screen h2 {
+    font-size: 1.4rem;
+  }
+
+  #gameover-screen p,
+  #gameover-screen #new-record,
+  #gameover-screen #coins-earned,
+  #gameover-screen #level-gain,
+  #gameover-screen #level-gain.leveled,
+  #gameover-screen #gameover-goals p {
+    font-size: 0.8rem;
+  }
+
+  #gameover-screen #run-build p {
+    font-size: 0.72rem;
+  }
+
+  #run-stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  #run-stats div {
+    padding: 3px;
+  }
+
+  #run-stats dt {
+    font-size: 0.6rem;
+  }
+
+  #run-stats dd {
+    font-size: 0.85rem;
+  }
+
+  #gameover-actions {
+    gap: 5px;
+  }
+
+  #gameover-actions button {
+    padding: 7px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+.world-level-btn {
+  flex-shrink: 0;
+  margin-top: -2px;
+  padding: 8px 12px;
+  border: 2px solid #c9402f;
+  border-radius: 10px;
+  background: #3f1a12;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+#away-screen,
+#backup-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 37;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(10, 5, 2, 0.94);
+}
+
+#away-screen h2,
+#backup-screen h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  color: var(--accent);
+}
+
+#away-screen p,
+#backup-screen p {
+  max-width: 340px;
+  margin: 0;
+  color: #e4d3b8;
+}
+
+#away-screen b {
+  color: var(--accent);
+}
+
+#away-claim-btn {
+  padding: 14px 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-size: 1.15rem;
+  font-weight: 800;
+  box-shadow: 0 5px 0 #2f6b18;
+}
+
+#backup-text {
+  width: 100%;
+  max-width: 400px;
+  flex: 1;
+  min-height: 60px;
+  max-height: 200px;
+  padding: 8px;
+  border: 2px solid var(--accent-dark);
+  border-radius: 10px;
+  background: #1c130a;
+  color: #e4d3b8;
+  font-family: monospace;
+  font-size: 0.7rem;
+  resize: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+#backup-file-label {
+  cursor: pointer;
+}
+
+#backup-file {
+  display: none;
+}
+
+/* How much the machine makes, and what a drag would change it to. */
+#machine-rate {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(28, 19, 10, 0.72);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+#machine-rate.up {
+  background: #2f6b18;
+}
+
+#machine-rate.down {
+  background: #8c1d10;
+}
+
+#build-bar {
+  position: absolute;
+  inset: 0 10px -4px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 2px solid var(--accent-dark);
+  border-radius: 10px;
+  background: #3a2414;
+  color: var(--text);
+  font-weight: 800;
+}
+
+#build-start-btn {
+  flex-shrink: 0;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8fe25a, #4f9e2c);
+  color: #1a3a12;
+  font-weight: 800;
+  box-shadow: 0 4px 0 #2f6b18;
+}
+
+#deal-btn {
+  width: 100%;
+  max-width: 340px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border: 2px dashed #ff9a85;
+  border-radius: 10px;
+  background: #4a1a12;
+  color: #ffd9cf;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+#deal-btn.taken {
+  border-style: solid;
+  border-color: #ffcc33;
+  background: #8c1d10;
+  color: #ffffff;
+}
+
+#world-clear-stars {
+  max-width: 340px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Short phones: everything on the reward screen still has to fit. */
+@media (orientation: portrait) and (max-height: 700px) {
+  #reward-screen {
+    gap: 4px;
+    padding: 6px 12px;
+  }
+
+  #reward-screen h2 {
+    font-size: 1.25rem;
+  }
+
+  #reward-options {
+    gap: 5px;
+    margin-top: 2px;
+  }
+
+  .reward-option {
+    gap: 1px;
+    padding: 5px 10px;
+    font-size: 0.74rem;
+  }
+
+  .reward-option b {
+    font-size: 0.92rem;
+  }
+
+  #deal-btn {
+    margin-top: 2px;
+    padding: 5px 10px;
+    font-size: 0.72rem;
+  }
+
+  #reward-actions {
+    margin-top: 2px;
+  }
+
+  #reward-actions .workshop-btn {
+    padding: 6px 12px;
+    font-size: 0.76rem;
+  }
+}
+
+/* Two rows the same height as before: buying and training above, the three
+   abilities below, so nothing has to shrink the board. */
+#action-row {
+  flex-direction: column;
+  gap: 6px;
+}
+
+#main-actions,
+#side-actions {
+  flex: 1 1 0;
+  width: 100%;
+  max-width: none;
+  flex-direction: row;
+}
+
+#main-actions > button,
+#side-actions > button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  line-height: 1.1;
+}
+
+#strike-btn {
+  border-radius: 10px;
+  background: linear-gradient(90deg, #d9b52a var(--charge, 100%), rgba(255, 255, 255, 0.12) var(--charge, 100%));
+  color: #fdf6e8;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+#strike-btn.ready {
+  background: linear-gradient(180deg, #ffe14d, #d9a51c);
+  color: #3a2a00;
+  box-shadow: 0 3px 0 #94700d;
+}
+
+#strike-btn.ready:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #94700d;
+}
+
+#strike-btn.counter {
+  background: linear-gradient(180deg, #ffffff, #ffe14d);
+  box-shadow: 0 0 16px #ffe14d;
+  animation: overdrive-pulse 0.3s ease-in-out infinite;
+}
+
+#strike-btn.shield {
+  background: linear-gradient(180deg, #c3ccd5, #59606b);
+  color: #14171d;
+  box-shadow: 0 3px 0 #33383f;
+}
+
+#strike-btn.shield:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #33383f;
+}
+
+#strike-btn:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #strike-btn.counter {
+    animation: none;
+  }
+}
+
+@media (max-width: 360px) {
+  #main-actions > button,
+  #side-actions > button {
+    font-size: 0.76rem;
+  }
+}
+
+/* Over the top of the board, and never in the way of dragging a gear. */
+#status-row {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 3px;
+  max-height: 46px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#status-chips {
+  display: contents;
+}
+
+.status-chip {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(28, 19, 10, 0.72);
+  color: #e4d3b8;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-chip.good {
+  background: #2f6b18;
+  color: #ffffff;
+}
+
+.status-chip.bad {
+  background: #8c1d10;
+  color: #ffffff;
+}
+
+#more-screen,
+#guide-screen,
+#trophy-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-bottom);
+}
+
+#more-screen h2,
+#guide-screen h2,
+#trophy-screen h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+#more-list,
+#guide-list,
+#trophy-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+#more-list .workshop-btn {
+  flex-shrink: 0;
+}
+
+#more-list h3,
+#guide-list h3,
+#trophy-list h3 {
+  flex-shrink: 0;
+  margin: 8px 0 0;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.guide-row,
+.trophy-row {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #3a2414;
+  color: var(--text);
+}
+
+.guide-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+}
+
+.guide-row b {
+  color: var(--accent);
+  font-size: 0.92rem;
+}
+
+.guide-row small {
+  margin-left: 4px;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.guide-row small.rare {
+  color: #8fcbff;
+}
+
+.guide-row small.epic {
+  color: #e2c4ff;
+}
+
+.trophy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+
+.trophy-row b {
+  color: var(--accent);
+}
+
+#reward-guide-btn {
+  padding: 5px 14px;
+  font-size: 0.76rem;
+}
+
+#pause-guide-btn {
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+
+#world-clear-story {
+  max-width: 340px;
+  color: #e4d3b8;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+html.big-text {
+  font-size: 112%;
+}
+
+html.less-motion *,
+html.less-motion *::before,
+html.less-motion *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Opened from the More menu, so it has to sit above it. */
+#backup-screen {
+  z-index: 39;
+}
+
+/* Pictures in the guide and on reward cards. */
+.art-icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+}
+
+.emoji-icon {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.guide-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.guide-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reward-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.reward-words {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The same icons on the buttons that use them. */
+#strike-btn::before { content: "\26A1 "; }
+#strike-btn.shield::before { content: "\1F6E1\FE0F  "; }
+#overdrive-btn::before { content: "\1F525  "; }
+#rally-btn::before { content: "\1F4E3  "; }
+#train-btn::before { content: "\2694\FE0F  "; }
+
+@media (orientation: portrait) and (max-height: 700px) {
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Side by side in landscape, so the picture sits above the words. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .reward-option {
+    flex-direction: column;
+    text-align: center;
+    gap: 4px;
+  }
+
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1.25rem;
+  }
+}
+
+/* A short landscape screen needs everything on the reward screen to be compact. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #reward-screen {
+    gap: 3px;
+    padding: 4px 12px;
+  }
+
+  #reward-screen h2 {
+    font-size: 1.15rem;
+  }
+
+  #reward-screen #reward-next {
+    font-size: 0.78rem;
+  }
+
+  #reward-options {
+    margin-top: 2px;
+    gap: 6px;
+  }
+
+  .reward-option {
+    gap: 2px;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .reward-option b {
+    font-size: 0.86rem;
+  }
+
+  .reward-option .art-icon,
+  .reward-option .emoji-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 1.05rem;
+  }
+
+  #deal-btn {
+    max-width: 720px;
+    margin-top: 2px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+  }
+
+  #reward-actions {
+    margin-top: 2px;
+  }
+
+  #reward-guide-btn,
+  #reward-actions .workshop-btn {
+    padding: 4px 12px;
+    font-size: 0.72rem;
   }
 }

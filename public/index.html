@@ -12,24 +12,32 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
-  <div id="desktop-block">
-    <div class="desktop-block-icon">📱</div>
-    <p>Gear Fight! is a mobile game — open this page on your phone to play.</p>
-  </div>
-
   <div id="app-frame">
     <div id="title-screen">
       <h1>Gear <span class="accent">Fight!</span></h1>
-      <p>Tap a gear to tick it forward — same-number gears mesh together and tick too. Fire gears to grow your army and push the enemy back before they push you.</p>
+      <p>Build a gear machine, send soldiers to fight, and beat the bosses.</p>
+      <button id="continue-btn" class="hidden"></button>
       <button id="play-btn">Play game</button>
+      <div id="title-actions">
+        <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
+        <button id="title-quests-btn" class="workshop-btn">Quests &amp; awards</button>
+        <button id="title-more-btn" class="workshop-btn">More</button>
+      </div>
+      <div id="player-level">
+        <b id="player-level-name">Level 1 Apprentice</b>
+        <div id="player-level-bar"><span id="player-level-fill"></span></div>
+        <small id="player-level-xp">0 / 100 XP</small>
+      </div>
       <p id="best-line" class="hidden">Best wave: <b id="best-wave">1</b></p>
     </div>
 
     <div id="game-screen" class="hidden">
       <div id="hud">
         <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
-        <span id="score-indicator">Army <b id="army-score">0</b></span>
-        <button id="restart-btn" title="Restart from wave 1">Restart</button>
+        <span id="score-indicator"><b id="rank-label">Recruits</b></span>
+        <button id="mute-btn"></button>
+        <button id="speed-btn"></button>
+        <button id="pause-btn" aria-label="Pause">II</button>
       </div>
 
       <div id="battle-lane">
@@ -39,40 +47,196 @@
       <div id="board-wrap">
         <canvas id="board-canvas"></canvas>
         <div id="combo-toast" class="hidden"></div>
+        <div id="status-row">
+          <div id="machine-rate"></div>
+          <div id="status-chips"></div>
+        </div>
       </div>
 
-      <div id="ability-bar">
-        <button id="ability-knight" class="ability-btn" title="Spend Army for an instant power boost">
-          <span class="ability-icon">⚔️</span>
-          <span class="ability-name">Train Knight</span>
-          <span class="ability-cost" id="knight-cost">🪙 10</span>
-        </button>
-        <button id="ability-gear" class="ability-btn" title="Spend Army to instantly finish your closest gear">
-          <span class="ability-icon">⚙️</span>
-          <span class="ability-name">Buy Gear</span>
-          <span class="ability-cost" id="gear-cost">🪙 12</span>
-        </button>
-        <button id="ability-lightning" class="ability-btn" title="Spend Army to strike every gear on the board at once">
-          <span class="ability-icon">⚡</span>
-          <span class="ability-name">Lightning</span>
-          <span class="ability-cost" id="lightning-cost">🪙 22</span>
-        </button>
+      <div id="action-row">
+        <div id="main-actions">
+          <button id="buy-gear-btn" disabled>Buy gear: 3 soldiers</button>
+          <button id="train-btn" disabled>Train Knight: 30</button>
+        </div>
+        <div id="side-actions">
+          <button id="strike-btn">Lightning!</button>
+          <button id="overdrive-btn">Overdrive!</button>
+          <button id="rally-btn">Rally</button>
+        </div>
+        <div id="scrap-zone" class="hidden"></div>
+        <div id="build-bar" class="hidden">
+          <span id="build-text"></span>
+          <button id="build-start-btn">Start wave</button>
+        </div>
       </div>
 
-      <p class="hint">Tap a gear to tick it &nbsp;|&nbsp; Same-number gears mesh and tick together</p>
+      <p class="hint">Each hit fills connected gears &nbsp;|&nbsp; Full gears pay out &nbsp;|&nbsp; Drag a gear to move or scrap it</p>
     </div>
+
+    <canvas id="fx-canvas"></canvas>
+
+    <div id="announcement" class="hidden"></div>
 
     <div id="wave-banner" class="hidden">
       <span id="wave-banner-text"></span>
     </div>
 
+    <div id="pause-screen" class="hidden">
+      <h2>Paused</h2>
+      <button id="resume-btn">Resume</button>
+      <button id="restart-btn" class="workshop-btn">Restart from wave 1</button>
+      <p id="pause-parts" class="hidden"></p>
+      <button id="pause-guide-btn" class="workshop-btn">Guide</button>
+      <div id="pause-settings">
+        <button id="music-btn" class="workshop-btn"></button>
+        <button id="vibrate-btn" class="workshop-btn"></button>
+      </div>
+      <div id="pause-quests"></div>
+    </div>
+
+    <div id="tip-screen" class="hidden">
+      <div id="tip-card">
+        <p id="tip-text"></p>
+        <button id="tip-ok-btn">Got it</button>
+      </div>
+    </div>
+
+    <div id="reward-screen" class="hidden">
+      <h2 id="reward-title"></h2>
+      <p id="reward-next"></p>
+      <div id="reward-options"></div>
+      <button id="deal-btn" class="hidden"></button>
+      <button id="reward-guide-btn" class="workshop-btn">Guide</button>
+      <div id="reward-actions">
+        <button id="reroll-btn" class="workshop-btn"></button>
+        <button id="skip-btn" class="workshop-btn"></button>
+      </div>
+    </div>
+
     <div id="gameover-screen" class="hidden">
       <h2>Overrun!</h2>
+      <p id="new-record" class="hidden">New record!</p>
       <p>Your army reached wave <b id="final-wave">1</b>.</p>
-      <button id="retry-btn">Try again</button>
+      <dl id="run-stats">
+        <div><dt>Soldiers sent</dt><dd id="stat-soldiers">0</dd></div>
+        <div><dt>Bosses beaten</dt><dd id="stat-bosses">0</dd></div>
+        <div><dt>Enemies blasted</dt><dd id="stat-blasted">0</dd></div>
+        <div><dt>Time</dt><dd id="stat-time">0:00</dd></div>
+      </dl>
+      <div id="run-build">
+        <p id="run-build-gears"></p>
+        <p id="run-build-parts"></p>
+      </div>
+      <p id="coins-earned"></p>
+      <p id="level-gain"></p>
+      <div id="gameover-goals"></div>
+      <div id="gameover-actions">
+        <button id="share-btn" class="workshop-btn hidden">Share your score</button>
+        <button id="retry-btn">Try again</button>
+        <button id="gameover-worlds-btn" class="workshop-btn">Worlds</button>
+        <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
+        <button id="gameover-quests-btn" class="workshop-btn">Quests &amp; awards</button>
+      </div>
+    </div>
+
+    <div id="daily-screen" class="hidden">
+      <h2>Daily reward</h2>
+      <p>Day streak: <b id="daily-streak">0</b>. Missing a day won't reset it.</p>
+      <div id="daily-days"></div>
+      <button id="daily-claim-btn">Claim <b id="daily-amount">10</b> coins</button>
+    </div>
+
+    <div id="more-screen" class="hidden">
+      <h2>More</h2>
+      <div id="more-list">
+        <button id="guide-btn" class="workshop-btn">Game guide</button>
+        <button id="trophy-btn" class="workshop-btn">Trophy room</button>
+        <button id="how-to-play-btn" class="workshop-btn">How to play</button>
+        <button id="title-backup-btn" class="workshop-btn">Backup</button>
+        <h3>Settings</h3>
+        <button id="language-btn" class="workshop-btn"></button>
+        <button id="big-text-btn" class="workshop-btn"></button>
+        <button id="color-blind-btn" class="workshop-btn"></button>
+        <button id="less-motion-btn" class="workshop-btn"></button>
+      </div>
+      <button id="more-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="guide-screen" class="hidden">
+      <h2>Game guide</h2>
+      <div id="guide-list"></div>
+      <button id="guide-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="trophy-screen" class="hidden">
+      <h2>Trophy room</h2>
+      <div id="trophy-list"></div>
+      <button id="trophy-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="away-screen" class="hidden">
+      <h2>Welcome back!</h2>
+      <p>Your machine earned <b id="away-coins">0</b> coins while you were away.</p>
+      <button id="away-claim-btn">Collect</button>
+    </div>
+
+    <div id="backup-screen" class="hidden">
+      <h2>Backup</h2>
+      <p id="backup-message"></p>
+      <textarea id="backup-text" spellcheck="false" aria-label="Backup text"></textarea>
+      <div id="backup-actions">
+        <button id="download-backup-btn" class="workshop-btn">Save file</button>
+        <button id="copy-backup-btn" class="workshop-btn">Copy</button>
+        <label id="backup-file-label" class="workshop-btn">Open file<input id="backup-file" type="file" accept=".json,application/json" /></label>
+      </div>
+      <button id="restore-btn" class="workshop-btn"></button>
+      <button id="backup-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="world-clear-screen" class="hidden">
+      <h2 id="world-clear-title">World cleared!</h2>
+      <p id="world-clear-coins"></p>
+      <p id="world-clear-stars"></p>
+      <p id="world-clear-story"></p>
+      <p id="world-clear-next"></p>
+      <button id="next-world-btn">Next world</button>
+      <button id="keep-going-btn" class="workshop-btn">Keep going (endless)</button>
+      <button id="clear-worlds-btn" class="workshop-btn">Worlds</button>
+    </div>
+
+    <div id="worlds-screen" class="hidden">
+      <h2>Choose a world</h2>
+      <div id="worlds-list"></div>
+      <button id="worlds-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="quests-screen" class="hidden">
+      <h2>Quests &amp; awards</h2>
+      <p>Progress carries across runs. <b id="quests-done-count">0</b> quests done so far.</p>
+      <div id="quests-scroll">
+        <h3>Today</h3>
+        <div id="daily-quests-list"></div>
+        <h3>Goals</h3>
+        <div id="quests-list"></div>
+        <h3>Achievements <span id="achievement-count"></span></h3>
+        <div id="achievements-list"></div>
+      </div>
+      <button id="quests-close-btn" class="workshop-btn">Back</button>
+    </div>
+
+    <div id="workshop-screen" class="hidden">
+      <h2>Workshop</h2>
+      <p><b id="workshop-coins">0</b> coins to spend. Everything here lasts for every run.</p>
+      <div id="workshop-scroll">
+        <div id="collection-list"></div>
+        <h3>Upgrades</h3>
+        <div id="workshop-list"></div>
+      </div>
+      <button id="workshop-close-btn" class="workshop-btn">Back</button>
     </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
