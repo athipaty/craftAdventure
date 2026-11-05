@@ -23,6 +23,7 @@ const TH_WORDS = {
   "soldiers do less": "ทหารทำดาเมจน้อยลง", "freezes the main gear": "แช่แข็งเฟืองหลัก", "burns gear progress": "เผาความคืบหน้าเฟือง", "rust attacks": "สนิมโจมตี",
   "your soldiers count double": "ทหารนับเป็นสองเท่า", "a row is blocked": "แถวหนึ่งถูกปิด", "calls reinforcements": "เรียกกำลังเสริม", "drains gear progress": "ดูดความคืบหน้าเฟือง",
   "melts your gears": "หลอมเฟือง", "short and fierce": "สั้นแต่ดุเดือด", "long, pays 5 coins": "ยาวนาน ได้ 5 เหรียญ",
+  "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "Free gear!": "เฟืองฟรี!", "A monster dropped a free gear! Tap it before it disappears.": "มอนสเตอร์ทำเฟืองฟรีหล่น! แตะเก็บก่อนที่จะหายไป", "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears.": "บางครั้งมอนสเตอร์จะทำหล่นที่แนวหน้า และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง แตะเก็บก่อนที่จะหายไป",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
 

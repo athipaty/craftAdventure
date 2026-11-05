@@ -29,6 +29,7 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
       if (gameState === "building") { beginWave(); continue; }
       if (gameState !== "playing") break;
       if (canTrain() && Math.random() < 0.02) trainArmy(); else if (canBuyGear() && !buyIsRisky()) buyGear();
+      if (lootDrop?.gearLevel) collectLootDrop();
       if (overdriveReady()) activateOverdrive();
       if (smart) {
         if (ticks % 10 === 0) merge();

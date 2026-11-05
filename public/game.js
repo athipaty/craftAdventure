@@ -132,6 +132,14 @@ const LOOT_DROP_COOLDOWN = 4; // seconds between drops, so they stay a treat, no
 const LOOT_DROP_LIFETIME = 3.5; // seconds before an uncollected drop disappears
 const LOOT_DROP_COINS_MIN = 1;
 const LOOT_DROP_COINS_MAX = 3;
+const GEAR_DROP_FIRST_WAVE = 2;
+const GEAR_DROP_WAVE_CHANCE = 0.35; // odds a normal wave has a free gear to drop
+const GEAR_DROP_EARLIEST = 4; // seconds into the wave
+const GEAR_DROP_LATEST = 14;
+const GEAR_DROP_LIFETIME = 5; // longer than coins: it's worth more, and the battle is busy
+const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
+const BOSS_DROP_LEVEL = 2;
+const NO_GEAR_DROP = -1;
 const CROWD_MAX = 10; // soldiers drawn behind each fighter
 const CROWD_FIRST_GAP = 30; // pixels behind the fighter, so it stays in plain view
 const CROWD_BOSS_GAP = 42;
@@ -619,6 +627,7 @@ const TIPS = [
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "buy", text: "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.", target: "#buy-gear-btn", when: () => canBuyGear() },
+  { id: "gearDrop", urgent: true, text: "A monster dropped a free gear! Tap it before it disappears.", target: "#loot-drop", when: () => lootDrop?.gearLevel },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.", when: () => soldiersShortForGear() > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
@@ -757,7 +766,8 @@ let rewardTimer = 0;
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
-let lootDrop = null; // { x, y, age, coins } a coin drop at the front line, waiting to be tapped
+let lootDrop = null; // { x, y, age, life, coins } or { x, y, age, life, gearLevel }: a drop at the front line, waiting to be tapped
+let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
 let lastLootDropAt = -Infinity; // runTime of the last drop, so they don't come constantly
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
@@ -3111,6 +3121,7 @@ function beginWave() {
   document.getElementById("build-bar").classList.add("hidden");
   startWave();
   gameState = "playing";
+  gearDropAt = planGearDrop();
   if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
   updateFeatureButtons();
   showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
@@ -3175,7 +3186,7 @@ function runSnapshot() {
       angle: cell.angle,
       spin: cell.spin,
     })),
-    boss: boss && { kind: boss.kind.id, hp: boss.hp, maxHp: boss.maxHp, attackIn: boss.attackIn, reinforcePerSec: boss.reinforcePerSec, shield: boss.shield },
+    boss: boss && { kind: boss.kind.id, hp: boss.hp, maxHp: boss.maxHp, attackIn: boss.attackIn, reinforcePerSec: boss.reinforcePerSec, shield: boss.shield, gearDropped: Boolean(boss.gearDropped) },
     enemyType: enemyType?.id ?? null,
     waveEvent: waveEvent?.id ?? null,
     blockedCells: [...blockedCells],
@@ -3194,7 +3205,7 @@ function runSnapshot() {
       lastTipAt, bossesBeaten, enemiesBlasted, runQuestCoins, runTime, bestWaveBeforeRun,
       eventRustIn, enemyPowerIn, frozenFor, enemyReinforcePerSec, armyRank, rallyReserve, rallyHeld,
       eventAttackIn, eventReinforcePerSec, overdriveLeft, overdriveCooldown, strikeCooldown,
-      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount,
+      buildLeft, dealPayout, strikeHeld, rerollsLeft, runStartWave, worldLevel, runCoinScale, runBonusCoins, strikeCount, gearDropAt,
     },
     flags: { endless, usedOverdrive, rallying, rustBlocked, dealAccepted, runEasy, pausedFromBuild },
     activeDeal: activeDeal?.id ?? null,
@@ -3279,6 +3290,7 @@ function restoreRun(data) {
   runCoinScale = n.runCoinScale ?? 1;
   runBonusCoins = n.runBonusCoins ?? 0;
   strikeCount = n.strikeCount ?? 0;
+  gearDropAt = n.gearDropAt ?? NO_GEAR_DROP;
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
   runEasy = Boolean(data.flags.runEasy);
@@ -4969,22 +4981,64 @@ function spawnFrontLineHit(marcher) {
 // barely noticeable over its few-second life. Tap it before it fades to
 // collect; miss it and it's gone.
 function maybeDropLoot(x, y) {
-  if (lootDrop || gameState !== "playing") return;
+  if (gameState !== "playing" || maybeDropGear(x, y)) return;
+  if (lootDrop) return;
   if (runTime - lastLootDropAt < LOOT_DROP_COOLDOWN) return;
   if (Math.random() >= LOOT_DROP_CHANCE) return;
   lastLootDropAt = runTime;
   const coins = LOOT_DROP_COINS_MIN + Math.floor(Math.random() * (LOOT_DROP_COINS_MAX - LOOT_DROP_COINS_MIN + 1));
-  lootDrop = { x, y: y - 20, age: 0, coins };
+  showLootDrop({ x, y: y - 20, age: 0, life: LOOT_DROP_LIFETIME, coins });
+}
+
+// The same in a daily challenge for everyone, like the rest of its waves.
+function planGearDrop() {
+  if (wave < GEAR_DROP_FIRST_WAVE || boss) return NO_GEAR_DROP;
+  const random = runRandom(`gearDrop${wave}`);
+  if (random() >= GEAR_DROP_WAVE_CHANCE) return NO_GEAR_DROP;
+  return GEAR_DROP_EARLIEST + random() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
+}
+
+// A free gear on top of what can be bought: it doesn't raise the price, and a
+// full board just waits for the next hit. Worth more than coins, so it takes over.
+function maybeDropGear(x, y) {
+  if (!bestEmptyCell()) return false;
+  let gearLevel = 0;
+  if (boss) {
+    if (boss.gearDropped || boss.hp > boss.maxHp * BOSS_DROP_HEALTH) return false;
+    boss.gearDropped = true;
+    gearLevel = BOSS_DROP_LEVEL;
+  } else {
+    if (gearDropAt === NO_GEAR_DROP || waveTime < gearDropAt) return false;
+    gearDropAt = NO_GEAR_DROP;
+    gearLevel = 1;
+  }
+  showLootDrop({ x, y: y - 20, age: 0, life: GEAR_DROP_LIFETIME, gearLevel });
+  return true;
+}
+
+function showLootDrop(drop) {
+  lootDrop = drop;
   const el = document.getElementById("loot-drop");
-  el.style.left = `${lootDrop.x}px`;
-  el.style.top = `${lootDrop.y}px`;
-  document.getElementById("loot-drop-amount").textContent = `+${coins}`;
+  el.style.left = `${drop.x}px`;
+  el.style.top = `${drop.y}px`;
+  el.classList.toggle("gear", Boolean(drop.gearLevel));
+  el.setAttribute("aria-label", drop.gearLevel ? "Collect free gear" : "Collect coins");
+  const icon = document.getElementById("loot-drop-icon");
+  if (drop.gearLevel) icon.replaceChildren(gearIcon(boughtGearType()));
+  else icon.textContent = "\u{1F4B0}";
+  const amount = document.getElementById("loot-drop-amount");
+  amount.textContent = !drop.gearLevel ? `+${drop.coins}` : drop.gearLevel > 1 ? `Level ${drop.gearLevel}!` : "Free!";
   el.classList.remove("hidden");
 }
 
 function collectLootDrop() {
   if (!lootDrop) return;
-  runBonusCoins += lootDrop.coins;
+  if (lootDrop.gearLevel) {
+    if (bestEmptyCell()) placeGear(boughtGearType()).level = lootDrop.gearLevel;
+    showWaveBanner("Free gear!");
+  } else {
+    runBonusCoins += lootDrop.coins;
+  }
   for (let i = 0; i < 6; i++) {
     spawnParticle({
       x: lootDrop.x,
@@ -5055,7 +5109,7 @@ function updateFx(dt) {
     // Also cleared the moment play isn't active (a wave ending, a pause,
     // game over) — simpler and safer than chasing every place gameState
     // changes, and it would otherwise outlive the screen it was shown over.
-    if (lootDrop.age >= LOOT_DROP_LIFETIME || gameState !== "playing") clearLootDrop();
+    if (lootDrop.age >= lootDrop.life || gameState !== "playing" || (lootDrop.gearLevel && !bestEmptyCell())) clearLootDrop();
   }
   shove.player = Math.max(0, shove.player - dt * 5);
   shove.enemy = Math.max(0, shove.enemy - dt * 5);
@@ -5655,6 +5709,7 @@ function startNewRun() {
   screenShake = 0;
   clearLootDrop();
   lastLootDropAt = -Infinity;
+  gearDropAt = NO_GEAR_DROP;
   wave = 1;
   waveTime = 0;
   playerPower = BASE_POWER * (1 + upgradeLevel("recruits") * RECRUITS_FIRST_WAVE_PER_LEVEL);
@@ -5839,6 +5894,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Free gear", "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [
