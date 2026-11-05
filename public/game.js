@@ -130,7 +130,8 @@ const BUZZ_GAP_MS = 150; // vibration at most this often
 // enough that a quick wave doesn't end first.
 const GEAR_DROP_EARLIEST = 3; // seconds into the wave
 const GEAR_DROP_LATEST = 8;
-const GEAR_DROP_LIFETIME = 5; // seconds to tap it before it's gone
+const TRAY_SLOTS = 5; // gears waiting below the board; a drop waits its turn when it's full
+const TAP_SLOP = 10; // pixels a press can move and still count as a tap
 const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
 const BOSS_DROP_LEVEL = 2;
 const NO_GEAR_DROP = -1;
@@ -612,7 +613,7 @@ const TIPS = [
   { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
-  { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Tap it before it disappears. A gear only works when it's connected to the chain, so drag it there if it lands far away.", target: "#loot-drop", when: () => lootDrop?.gearLevel },
+  { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
   { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
   { id: "short", text: "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
@@ -749,7 +750,7 @@ let rewardTimer = 0;
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
-let lootDrop = null; // { row, col, age, gearLevel }: a gear fallen onto the board, waiting to be tapped
+let gearTray = []; // { type, level, arriving }: dropped gears below the board, waiting to be placed
 let gearDropAt = NO_GEAR_DROP; // waveTime this wave's free gear is due, spent once it has dropped
 
 let gameState = "title"; // "title" | "playing" | "choosing" | "tip" | "paused" | "worldclear" | "gameover"
@@ -1497,8 +1498,12 @@ function canMerge(from, onto) {
 
 // The gear on the target cell levels up and keeps its progress.
 function mergeGears(fromRow, fromCol, toRow, toCol) {
-  const target = grid[toRow][toCol];
   grid[fromRow][fromCol] = null;
+  levelUpGear(toRow, toCol);
+}
+
+function levelUpGear(toRow, toCol) {
+  const target = grid[toRow][toCol];
   target.level += 1;
   target.rusted = false;
   questEvent("merges");
@@ -1544,28 +1549,12 @@ function isBlocked(row, col) {
   return blockedCells.has(`${row},${col}`);
 }
 
-// Anywhere free. Unlike bestEmptyCell() it doesn't favour the chain, so a drop
-// can land far away and be worth dragging into place.
-function randomEmptyCell() {
-  const cells = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      if (!grid[row][col] && !isBlocked(row, col)) cells.push({ row, col });
-    }
-  }
-  return cells.length ? cells[Math.floor(Math.random() * cells.length)] : null;
-}
-
 function newGearType() {
   return currentEvent?.id === "bombs" ? "bomb" : "soldier";
 }
 
 function placeGear(type) {
   const { row, col } = bestEmptyCell();
-  return placeGearAt(row, col, type);
-}
-
-function placeGearAt(row, col, type) {
   grid[row][col] = freshCell(type);
   grid[row][col].flash = 1;
   return grid[row][col];
@@ -1605,7 +1594,7 @@ function pointerOverScrapZone(e) {
 function updateScrapZone() {
   const zone = document.getElementById("scrap-zone");
   // Scrapping pays in soldiers, which are worth nothing during the break.
-  const showing = Boolean(drag) && gameState === "playing";
+  const showing = Boolean(drag) && drag.tray === undefined && gameState === "playing";
   zone.classList.toggle("hidden", !showing);
   if (!showing) return;
   zone.classList.toggle("hover", Boolean(drag.overScrap));
@@ -2101,6 +2090,7 @@ function cellAt({ x, y }) {
 // A dragged gear can land on an empty cell or swap with another normal gear.
 // The one-tooth gear stays bolted down.
 function canDropOn(target) {
+  if (drag.tray !== undefined) return target && !target.cell && !isBlocked(target.row, target.col);
   return target && !target.cell?.driver && target.cell !== drag.cell && !isBlocked(target.row, target.col);
 }
 
@@ -2119,6 +2109,7 @@ function previewDropRate(target) {
   const from = drag.cell;
   const merging = canMerge(from, target.cell);
   if (!merging && !canDropOn(target)) return null;
+  if (drag.tray !== undefined) return previewTrayDropRate(target, merging);
   const { row, col } = drag;
   const onto = target.cell;
   const fromRusted = from.rusted;
@@ -2141,6 +2132,19 @@ function previewDropRate(target) {
     onto.level -= 1;
     onto.rusted = ontoRusted;
   }
+  markCombos();
+  return rate;
+}
+
+// The same for a gear from the tray, which has no cell of its own to put back.
+function previewTrayDropRate(target, merging) {
+  const onto = target.cell;
+  if (merging) onto.level += 1;
+  else grid[target.row][target.col] = drag.cell;
+  markCombos();
+  const rate = machineRate();
+  if (merging) onto.level -= 1;
+  else grid[target.row][target.col] = null;
   markCombos();
   return rate;
 }
@@ -2333,12 +2337,16 @@ function onPointerDown(e) {
 
 function onPointerMove(e) {
   if (!drag) return;
-  Object.assign(drag, boardPoint(e), { overScrap: gameState === "playing" && pointerOverScrapZone(e) });
+  Object.assign(drag, boardPoint(e), { overScrap: drag.tray === undefined && gameState === "playing" && pointerOverScrapZone(e) });
   updateDragPreview(e);
 }
 
 function onPointerUp(e) {
   if (!drag) return;
+  if (drag.tray !== undefined) {
+    dropTrayGear(e);
+    return;
+  }
   if (gameState === "playing" && pointerOverScrapZone(e)) {
     scrapGear(drag.row, drag.col);
     drag = null;
@@ -2361,7 +2369,74 @@ function onPointerUp(e) {
   drag = null;
 }
 
+function onTrayPointerDown(e) {
+  ensureAudio();
+  if (drag || (gameState !== "playing" && gameState !== "building")) return;
+  const slot = e.target.closest(".tray-slot");
+  const tray = slot ? Number(slot.dataset.index) : -1;
+  const item = gearTray[tray];
+  if (!item || item.arriving) return;
+  e.preventDefault();
+  // On the tray rather than the slot, which is rebuilt while it's being dragged.
+  e.currentTarget.setPointerCapture(e.pointerId);
+  const cell = freshCell(item.type);
+  cell.level = item.level;
+  drag = { tray, cell, row: -1, col: -1, pressX: e.clientX, pressY: e.clientY, ...boardPoint(e) };
+}
+
+// Anywhere it can't go, it just stays in the tray. A tap places it for the
+// player, the same spot a new gear has always gone.
+function dropTrayGear(e) {
+  const { tray, cell, pressX, pressY } = drag;
+  const target = cellAt(boardPoint(e));
+  if (target && canMerge(cell, target.cell)) {
+    gearTray.splice(tray, 1);
+    levelUpGear(target.row, target.col);
+  } else if (canDropOn(target)) {
+    placeTrayGear(tray, target.row, target.col);
+  } else if (Math.hypot(e.clientX - pressX, e.clientY - pressY) < TAP_SLOP) {
+    const spot = bestEmptyCell();
+    if (spot) placeTrayGear(tray, spot.row, spot.col);
+  }
+  drag = null;
+}
+
+function placeTrayGear(index, row, col) {
+  const [item] = gearTray.splice(index, 1);
+  grid[row][col] = freshCell(item.type);
+  grid[row][col].level = item.level;
+  grid[row][col].flash = 1;
+  playClankSound();
+}
+
+let lastTrayKey = "";
+function renderGearTray() {
+  const held = drag?.tray ?? null;
+  const key = JSON.stringify([gearTray, held]);
+  if (key === lastTrayKey) return;
+  lastTrayKey = key;
+  document.getElementById("gear-tray").replaceChildren(...Array.from({ length: TRAY_SLOTS }, (_, i) => {
+    const slot = document.createElement("div");
+    slot.className = "tray-slot";
+    slot.dataset.index = i;
+    const item = gearTray[i];
+    if (item) {
+      slot.classList.add("full");
+      slot.classList.toggle("held", held === i);
+      slot.classList.toggle("arriving", Boolean(item.arriving));
+      slot.append(gearIcon(item.type, false, item.level));
+    }
+    return slot;
+  }));
+}
+
 function wireBoardInput() {
+  const tray = document.getElementById("gear-tray");
+  tray.addEventListener("pointerdown", onTrayPointerDown);
+  tray.addEventListener("pointermove", onPointerMove);
+  tray.addEventListener("pointerup", onPointerUp);
+  tray.addEventListener("pointercancel", () => { drag = null; });
+  tray.addEventListener("contextmenu", (e) => e.preventDefault());
   boardCanvas.addEventListener("pointerdown", onPointerDown);
   boardCanvas.addEventListener("pointermove", onPointerMove);
   boardCanvas.addEventListener("pointerup", onPointerUp);
@@ -3152,6 +3227,7 @@ function runSnapshot() {
     nextPlan: nextWavePlan,
     daily: currentDaily,
     rules: runRules,
+    tray: gearTray.map(({ type, level }) => ({ type, level })),
     wavePace: wavePace?.id ?? null,
     lastClear,
     comboCounts,
@@ -3242,6 +3318,8 @@ function restoreRun(data) {
   // Saves from before harder levels and the daily challenge don't have these.
   currentDaily = data.daily ?? null;
   runRules = (data.rules ?? []).filter((rule) => RULES[rule]);
+  // Saves from before the tray don't have one.
+  gearTray = (data.tray ?? []).filter((item) => GEAR_TYPES[item?.type] && item.level >= 1 && item.level <= MAX_GEAR_LEVEL).slice(0, TRAY_SLOTS);
   worldLevel = n.worldLevel ?? 0;
   runCoinScale = n.runCoinScale ?? 1;
   runBonusCoins = n.runBonusCoins ?? 0;
@@ -4001,12 +4079,12 @@ function drawBoard() {
   if (drag) {
     drawMergeHints(ctx);
     const target = cellAt(drag);
-    if (canDropOn(target)) {
+    if (canDropOn(target) || (target && canMerge(drag.cell, target.cell))) {
       ctx.lineWidth = 3;
       ctx.strokeStyle = canMerge(drag.cell, target.cell) ? "#8bd65a" : "#ffcc33";
       ctx.strokeRect(target.col * cellSize + 3, target.row * cellSize + 3, cellSize - 6, cellSize - 6);
     }
-    drawGearCell(ctx, drag.x, drag.y, cellSize * 1.12, drag.cell);
+    if (drag.tray === undefined) drawGearCell(ctx, drag.x, drag.y, cellSize * 1.12, drag.cell);
   }
 }
 
@@ -4836,7 +4914,7 @@ function spawnToothSparks(row, col) {
   }
 }
 
-// A cell's centre on the effects canvas, which #loot-drop shares.
+// A cell's centre on the effects canvas.
 function cellCenter(row, col) {
   return { x: boardOrigin.x + (col + 0.5) * cellSize, y: boardOrigin.y + (row + 0.5) * cellSize };
 }
@@ -4937,66 +5015,54 @@ function planGearDrop() {
   return GEAR_DROP_EARLIEST + runRandom(`gearDrop${wave}`)() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
 }
 
-// Falls onto a free cell when a hit lands on the enemy. A full board just waits
-// for the next hit, and so does a drop while one is still waiting to be tapped.
+// Flies to the tray when a hit lands on the enemy. A full tray just waits for
+// the next hit, so a gear is never lost for want of room.
 function maybeDropGear() {
-  if (gameState !== "playing" || lootDrop) return;
-  const cell = randomEmptyCell();
-  if (!cell) return;
-  let gearLevel = 0;
+  if (gameState !== "playing" || gearTray.length >= TRAY_SLOTS) return;
+  let level = 0;
   if (boss) {
     if (boss.gearDropped || boss.hp > boss.maxHp * BOSS_DROP_HEALTH) return;
     boss.gearDropped = true;
-    gearLevel = BOSS_DROP_LEVEL;
+    level = BOSS_DROP_LEVEL;
   } else {
     if (gearDropAt === NO_GEAR_DROP || waveTime < gearDropAt) return;
     gearDropAt = NO_GEAR_DROP;
-    gearLevel = 1;
+    level = 1;
   }
-  showLootDrop({ ...cell, age: 0, gearLevel });
+  const item = { type: newGearType(), level, arriving: true };
+  gearTray.push(item);
+  renderGearTray();
+  flyGearToTray(item, gearTray.length - 1);
 }
 
-function showLootDrop(drop) {
-  lootDrop = drop;
-  positionLootDrop();
-  document.getElementById("loot-drop-icon").replaceChildren(gearIcon(newGearType()));
-  document.getElementById("loot-drop-amount").textContent = drop.gearLevel > 1 ? `Level ${drop.gearLevel}!` : "Free!";
-  document.getElementById("loot-drop").classList.remove("hidden");
-}
-
-function positionLootDrop() {
-  if (!lootDrop) return;
-  const { x, y } = cellCenter(lootDrop.row, lootDrop.col);
-  const el = document.getElementById("loot-drop");
-  el.style.left = `${x}px`;
-  el.style.top = `${y}px`;
-}
-
-function collectLootDrop() {
-  if (!lootDrop) return;
-  const { row, col, gearLevel } = lootDrop;
-  placeGearAt(row, col, newGearType()).level = gearLevel;
-  showWaveBanner("Free gear!");
-  const { x, y } = cellCenter(row, col);
-  for (let i = 0; i < 6; i++) {
-    spawnParticle({
-      x,
-      y,
-      vx: randomBetween(-70, 70),
-      vy: randomBetween(-150, -50),
-      gravity: 220,
-      life: randomBetween(0.25, 0.45),
-      size: randomBetween(1.5, 3),
-      color: "#ffcc33",
-    });
+function flyGearToTray(item, index) {
+  const land = () => {
+    item.arriving = false;
+    playLootSound();
+  };
+  if (save.lessMotion || REDUCED_MOTION) {
+    land();
+    return;
   }
-  playLootSound();
-  clearLootDrop();
-}
-
-function clearLootDrop() {
-  lootDrop = null;
-  document.getElementById("loot-drop")?.classList.add("hidden");
+  const frame = document.getElementById("app-frame").getBoundingClientRect();
+  const slot = document.querySelector(`.tray-slot[data-index="${index}"]`).getBoundingClientRect();
+  const from = frontLineFx();
+  const dx = slot.left + slot.width / 2 - frame.left - from.x;
+  const dy = slot.top + slot.height / 2 - frame.top - from.y;
+  const flyer = gearIcon(item.type, false, item.level);
+  flyer.classList.add("gear-flyer");
+  flyer.style.left = `${from.x}px`;
+  flyer.style.top = `${from.y}px`;
+  document.getElementById("app-frame").append(flyer);
+  const flight = flyer.animate([
+    { transform: "translate(-50%, -50%) scale(0.5)" },
+    { transform: `translate(calc(-50% + ${dx * 0.25}px), calc(-50% - 30px)) scale(1.2)`, offset: 0.3 },
+    { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1)` },
+  ], { duration: 650, easing: "ease-in" });
+  flight.onfinish = flight.oncancel = () => {
+    flyer.remove();
+    land();
+  };
 }
 
 function spawnConfetti() {
@@ -5043,18 +5109,6 @@ function updateFx(dt) {
   fallers = fallers.filter((f) => f.age < 1);
   for (const bolt of bolts) bolt.age += dt;
   bolts = bolts.filter((bolt) => bolt.age < 0.25);
-  if (lootDrop) {
-    lootDrop.age += dt;
-    // Also cleared the moment play isn't active (a wave ending, a pause,
-    // game over) — simpler and safer than chasing every place gameState
-    // changes, and it would otherwise outlive the screen it was shown over.
-    if (lootDrop.age >= GEAR_DROP_LIFETIME || gameState !== "playing") clearLootDrop();
-    else if (grid[lootDrop.row][lootDrop.col] || isBlocked(lootDrop.row, lootDrop.col)) {
-      // Something took its cell, like a gear dragged there: it moves rather than being lost.
-      const cell = randomEmptyCell();
-      if (cell) { Object.assign(lootDrop, cell); positionLootDrop(); } else clearLootDrop();
-    }
-  }
   shove.player = Math.max(0, shove.player - dt * 5);
   shove.enemy = Math.max(0, shove.enemy - dt * 5);
   if (fallenBoss) {
@@ -5073,6 +5127,7 @@ function drawFx() {
   if (!fxCtx) return;
   const ctx = fxCtx;
   ctx.clearRect(0, 0, fxCssW, fxCssH);
+  if (drag?.tray !== undefined) drawGearCell(ctx, boardOrigin.x + drag.x, boardOrigin.y + drag.y, cellSize * 1.12, drag.cell);
 
   for (const p of particles) {
     ctx.save();
@@ -5552,7 +5607,6 @@ function layoutFxCanvas() {
   boardOrigin = { x: board.left - frame.left, y: board.top - frame.top };
   laneRect = { x: lane.left - frame.left, y: lane.top - frame.top, w: lane.width, h: lane.height };
   fxCtx = fitCanvasDPR(fxCanvas, fxCssW, fxCssH);
-  positionLootDrop();
 }
 
 function handleResize() {
@@ -5650,7 +5704,7 @@ function startNewRun() {
   fallenBoss = null;
   strikeCooldown = 0;
   screenShake = 0;
-  clearLootDrop();
+  gearTray = [];
   gearDropAt = NO_GEAR_DROP;
   wave = 1;
   waveTime = 0;
@@ -5701,6 +5755,7 @@ function loop(now) {
   }
   updateMusic();
   updateScrapZone();
+  renderGearTray();
   updateFx(dt);
   drawBoard();
   drawBattle();
@@ -5760,10 +5815,11 @@ function artIcon(draw) {
   return canvas;
 }
 
-function gearIcon(type, rusted = false) {
+function gearIcon(type, rusted = false, level = 1) {
   return artIcon((ctx) => {
     const cell = freshCell(type);
     cell.rusted = rusted;
+    cell.level = level;
     drawGearCell(ctx, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE / 2, GUIDE_ICON_SIZE - 4, cell);
   });
 }
@@ -5836,7 +5892,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
-      ["Free gear", "The only way to get more gears. Monsters drop them onto the board, and every boss drops a level 2 gear at half health. Tap one before it disappears.", gearIcon("soldier")],
+      ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [
@@ -5970,7 +6026,6 @@ function init() {
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
   document.getElementById("train-btn").addEventListener("click", trainArmy);
-  document.getElementById("loot-drop").addEventListener("click", () => { ensureAudio(); collectLootDrop(); });
   document.getElementById("mute-btn").addEventListener("click", () => setMuted(!save.muted));
   document.getElementById("speed-btn").addEventListener("click", toggleSpeed);
   document.getElementById("music-btn").addEventListener("click", toggleMusic);
