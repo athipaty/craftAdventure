@@ -33,6 +33,7 @@ const ROWS = 7;
 const BASE_POWER = 3;
 const WIN_RATIO = 0.7; // playerPower share of the total needed to take the wave
 const LOSE_RATIO = 0.3; // playerPower share at/below which the enemy overruns you
+const TRAIN_KEEP_SHARE = 0.4; // training can't take the player's share of the line below this
 const GEAR_BASE_COST = 3; // soldiers a gear is worth with an empty board
 const GEAR_COST_GROWTH = 1.15; // what a gear is worth when scrapped grows with each one on the board
 const DRIVER_ROW = Math.floor(ROWS / 2);
@@ -1664,11 +1665,12 @@ function placeGear(type) {
   return grid[row][col];
 }
 
-// Soldiers are the price, so training weakens the army. A purchase that would
-// lose the game on the spot is refused rather than ending the run. Returns how
-// many more soldiers the player needs for this one, or 0 when they can afford it.
+// Soldiers are the price, so training weakens the army. It must leave a real
+// margin above the line: stopping just short of it lost the run a moment later,
+// right after a button that looked ready. Returns how many more soldiers the player
+// needs for this one, or 0 when they can afford it.
 function soldiersShortFor(soldiers) {
-  const armyToKeep = (enemyPower * LOSE_RATIO) / (1 - LOSE_RATIO);
+  const armyToKeep = (enemyPower * TRAIN_KEEP_SHARE) / (1 - TRAIN_KEEP_SHARE);
   const short = soldiers * armyStrength() + armyToKeep - playerPower;
   return short < 0 ? 0 : Math.floor(short / armyStrength()) + 1;
 }
