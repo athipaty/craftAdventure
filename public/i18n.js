@@ -23,7 +23,8 @@ const TH_WORDS = {
   "soldiers do less": "ทหารทำดาเมจน้อยลง", "freezes the main gear": "แช่แข็งเฟืองหลัก", "burns gear progress": "เผาความคืบหน้าเฟือง", "rust attacks": "สนิมโจมตี",
   "your soldiers count double": "ทหารนับเป็นสองเท่า", "a row is blocked": "แถวหนึ่งถูกปิด", "calls reinforcements": "เรียกกำลังเสริม", "drains gear progress": "ดูดความคืบหน้าเฟือง",
   "melts your gears": "หลอมเฟือง", "short and fierce": "สั้นแต่ดุเดือด", "long, pays 5 coins": "ยาวนาน ได้ 5 เหรียญ",
-  "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง ลากไปวางบนกระดานหรือแตะก็ได้",
+  "Main gear speed": "ความเร็วเฟืองหลัก", "Starting army": "กองทัพตอนเริ่มเทียบศัตรู", "Next wave's army": "กองทัพเวฟหน้าเทียบศัตรู", "Overdrive recharge": "เวลาชาร์จโอเวอร์ไดรฟ์", "Lightning power": "พลังสายฟ้า", "Scrap refund": "เงินคืนจากการแยกเฟือง", "Gears hit by rust": "เฟืองที่โดนสนิม", "Coins from this run": "เหรียญจากรอบนี้", "Training cost": "ค่าฝึก", "Soldiers against brutes": "ทหารเมื่อสู้กับพวกเกราะหนา", "Freeze time": "เวลาแข็งตัว", "Gears burned": "เฟืองที่ถูกเผา", "Hit kept per gear": "แรงที่เหลือต่อเฟือง", "Damage to bosses": "ความเสียหายต่อบอส", "Bomb gear blast": "แรงระเบิดเฟืองระเบิด", "Big gear soldiers": "ทหารจากเฟืองใหญ่", "Booster strength": "พลังเฟืองบูสต์", "Rust fixed per blast": "สนิมที่แก้ได้ต่อการระเบิด", "Lightning in Overdrive": "เวลาชาร์จสายฟ้าตอนโอเวอร์ไดรฟ์", "Full Rally charge": "พลังชาร์จเต็ม", "Line combo payout": "ผลคอมโบแถว", "Soldiers per merge": "ทหารต่อการรวม", "Lightning fills gears": "สายฟ้าเติมเฟือง", "Second chances": "โอกาสแก้ตัว", "Army rank": "ยศกองทัพ", "Soldiers per second": "ทหารต่อวินาที", "Gears on board": "เฟืองบนกระดาน", "On": "เปิด", "Off": "ปิด",
+  "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง บางตัวเป็นเฟืองพิเศษ ลากไปวางบนกระดานหรือแตะก็ได้",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
 
@@ -163,6 +164,8 @@ function thaiList(text) {
 }
 
 const TH_PATTERNS = [
+  [/^(\d+(?:\.\d+)?)s$/, (m) => `${m[1]} วิ`],
+  [/^(\d+(?:\.\d+)?)\/s$/, (m) => `${m[1]}/วิ`],
   [/^Combos! With merged/i, () => "คอมโบ! เฟืองที่รวมแล้วหรือเฟืองพิเศษ: 3 ตัวเรียงแถวส่งทหารเพิ่ม 25%, 4 ตัวเป็นสี่เหลี่ยมเติมเร็วขึ้น 25% และบูสเตอร์ที่มีเฟืองครบ 4 ด้านแรงขึ้น 2 เท่า"],
   [/^Achievement: (.+)! \+(\d+)$/i, (m) => `ความสำเร็จ: ${T(m[1])}! +${m[2]}`],
   [/^Daily quest done! \+(\d+) coins$/i, (m) => `เควสรายวันสำเร็จ! +${m[1]} เหรียญ`],
