@@ -17,6 +17,8 @@ async function check(name, fn) {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ["clipboard-read", "clipboard-write"], acceptDownloads: true });
   const page = await ctx.newPage();
+  // These tests aren't about routes, which would otherwise come up at random after a reward.
+  page.on("domcontentloaded", () => page.evaluate(() => { pathChoiceDue = () => false; }).catch(() => {}));
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("404") && !m.text().includes("ERR_INTERNET_DISCONNECTED")) { const where = m.location().url; if (!where.endsWith("favicon.ico")) errors.push(m.text() + " @ " + where); } });

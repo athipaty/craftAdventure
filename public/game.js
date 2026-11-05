@@ -133,6 +133,18 @@ const GEAR_DROP_LATEST = 8;
 const AURA_SIZE = 1.42; // of a cell, so it shows around the gear
 const AURA_BASE_ALPHA = 0.55;
 const AURA_ALPHA_PER_BOOST = 0.3;
+// What a boss's chests can hold. weight: how often it comes up.
+const CHEST_PRIZES = [
+  { id: "coins", weight: 50, coins: 15 },
+  { id: "moreCoins", weight: 25, coins: 30 },
+  { id: "gear", weight: 15, level: 2 },
+  { id: "bigGear", weight: 7, level: 3, rare: true },
+  { id: "jackpot", weight: 3, coins: 75, rare: true },
+];
+const CHEST_COUNT = 3;
+const CHEST_FULL_TRAY_COINS = 20; // paid for a gear when the tray has no room
+const CHEST_OPEN_MS = 450; // the chosen chest shakes before it opens
+const CHEST_REVEAL_MS = 450; // then the others open, to show what was missed
 // A route to choose for the next wave: the risk is paid during it, the reward
 // when it's won, unless it says otherwise.
 const PATH_FIRST_WAVE = 3;
@@ -167,7 +179,7 @@ const CROWD_SCALE = 0.62;
 const CROWD_SPRITE_SIZE = 64;
 const RUN_SAVE_VERSION = 1; // saves from another version are ignored
 const RUN_SAVE_SECONDS = 5; // how often a run is saved while playing
-const RUN_SAVE_STATES = ["playing", "building", "choosing", "path", "tip", "paused", "worldclear"];
+const RUN_SAVE_STATES = ["playing", "building", "choosing", "chest", "path", "tip", "paused", "worldclear"];
 const COINS_PER_WAVE = 2;
 const COINS_PER_BOSS = 10;
 const COIN_PURSE_PER_LEVEL = 0.1; // extra run coins per level
@@ -202,6 +214,7 @@ const ACHIEVEMENTS = [
   { id: "world2", name: "Sun proof", text: "Clear Sun Desert", stat: "worlds", target: 2, coins: 60 },
   { id: "world3", name: "Cold blooded", text: "Clear Frozen Peaks", stat: "worlds", target: 3, coins: 100 },
   { id: "world4", name: "Gear Fight champion", text: "Clear Lava Core", stat: "worlds", target: 4, coins: 200 },
+  { id: "chests10", name: "Treasure hunter", text: "Open 10 boss chests", stat: "chests", target: 10, coins: 40 },
   { id: "goblins10", name: "Gotcha!", text: "Catch 10 treasure goblins", stat: "goblins", target: 10, coins: 40 },
   { id: "counter10", name: "Quick draw", text: "Counter 10 boss attacks", stat: "counters", target: 10, coins: 40 },
   { id: "counter50", name: "Untouchable", text: "Counter 50 boss attacks", stat: "counters", target: 50, coins: 120 },
@@ -777,6 +790,9 @@ let hitNumbers = []; // { side, amount, color, age } at most one per side, besid
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
 let gearTray = []; // { type, level, arriving }: dropped gears below the board, waiting to be placed
+let chestPrizes = null; // ids from CHEST_PRIZES while the chests are open
+let chestPicked = null; // the index chosen, or null until then
+let chestTimer = null;
 let lastPathWave = 0; // the wave the last route was chosen for
 let offeredPaths = null; // ids from PATHS while a choice is open
 let nextPath = null; // the route chosen for the next wave
@@ -2471,6 +2487,7 @@ function wireBoardInput() {
   const goblin = document.getElementById("treasure-goblin");
   goblin.addEventListener("pointerdown", (e) => { e.preventDefault(); ensureAudio(); catchTreasureGoblin(); });
   goblin.addEventListener("click", catchTreasureGoblin);
+  document.getElementById("chest-continue-btn").addEventListener("click", leaveChests);
   const tray = document.getElementById("gear-tray");
   tray.addEventListener("pointerdown", onTrayPointerDown);
   tray.addEventListener("pointermove", onPointerMove);
@@ -2626,6 +2643,7 @@ function winWave() {
   if (!currentEvent) save.worldBest[WORLDS[currentWorld].id] = Math.max(Number(save.worldBest[WORLDS[currentWorld].id]) || 0, wave);
   checkDailyGoal();
   if (clearedWorld) clearWorld();
+  else if (bossBeaten) showChests(pickChestPrizes());
   else offerRewards(bossBeaten ? "Boss defeated!" : eliteWon ? "Elite beaten!" : `Wave ${wave - 1} won!`, bossBeaten || eliteWon);
 }
 
@@ -2745,6 +2763,159 @@ function pickRewards(lucky, exclude = []) {
   const firstGear = shuffled.find((r) => r.gear);
   const rest = shuffled.filter((r) => r !== firstGear);
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
+}
+
+// Decided now, so reloading can't change what's inside. The same for everyone in
+// a daily challenge.
+function pickChestPrizes() {
+  const random = runRandom(`chest${wave}`);
+  const total = CHEST_PRIZES.reduce((sum, prize) => sum + prize.weight, 0);
+  return Array.from({ length: CHEST_COUNT }, () => {
+    let roll = random() * total;
+    return CHEST_PRIZES.find((prize) => (roll -= prize.weight) < 0).id;
+  });
+}
+
+function chestPrize(id) {
+  return CHEST_PRIZES.find((prize) => prize.id === id);
+}
+
+function chestPrizeLabel(id) {
+  const prize = chestPrize(id);
+  return prize.coins ? `+${prize.coins} coins` : `Level ${prize.level} gear`;
+}
+
+function drawChest(ctx, open, rare) {
+  const size = GUIDE_ICON_SIZE;
+  const wood = rare ? "#a8324a" : "#9a5f2c";
+  const dark = rare ? "#5c1426" : "#5a3414";
+  const band = "#ffcc33";
+  const left = size * 0.12;
+  const width = size * 0.76;
+  const bodyTop = size * 0.5;
+  const bodyHeight = size * 0.34;
+  if (open) {
+    const glow = ctx.createRadialGradient(size / 2, bodyTop, 1, size / 2, bodyTop, size * 0.42);
+    glow.addColorStop(0, "rgba(255, 236, 150, 0.95)");
+    glow.addColorStop(1, "rgba(255, 220, 110, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, size, size);
+    // The lid, thrown back.
+    ctx.beginPath();
+    ctx.rect(left, bodyTop - size * 0.3, width, size * 0.14);
+    inked(ctx, dark);
+  }
+  ctx.beginPath();
+  ctx.rect(left, bodyTop, width, bodyHeight);
+  inked(ctx, wood);
+  if (!open) {
+    ctx.beginPath();
+    ctx.moveTo(left, bodyTop);
+    ctx.quadraticCurveTo(size / 2, bodyTop - size * 0.34, left + width, bodyTop);
+    ctx.closePath();
+    inked(ctx, wood);
+  }
+  for (const x of [left + width * 0.14, left + width * 0.86]) {
+    ctx.fillStyle = band;
+    ctx.fillRect(x - size * 0.025, open ? bodyTop : bodyTop - size * 0.13, size * 0.05, open ? bodyHeight : bodyHeight + size * 0.13);
+  }
+  if (!open) {
+    ctx.beginPath();
+    ctx.rect(size / 2 - size * 0.07, bodyTop - size * 0.05, size * 0.14, size * 0.14);
+    inked(ctx, band);
+  }
+}
+
+function chestIcon(open, rare) {
+  return artIcon((ctx) => drawChest(ctx, open, rare));
+}
+
+function showChests(prizes, picked = null, delay = VICTORY_MS) {
+  gameState = "chest";
+  drag = null;
+  chestPrizes = prizes;
+  chestPicked = picked;
+  rewardOpenedAt = performance.now() + delay;
+  renderChests(picked !== null);
+  clearTimeout(chestTimer);
+  chestTimer = setTimeout(() => {
+    if (gameState === "chest") document.getElementById("chest-screen").classList.remove("hidden");
+  }, delay);
+  saveRun();
+}
+
+function renderChests(revealed) {
+  document.getElementById("chest-title").textContent = chestPicked === null ? "Pick a chest!" : "Boss treasure!";
+  document.getElementById("chest-continue-btn").classList.toggle("hidden", !revealed);
+  const list = document.getElementById("chest-options");
+  list.replaceChildren();
+  chestPrizes.forEach((id, i) => {
+    const button = document.createElement("button");
+    const prize = chestPrize(id);
+    button.className = "chest-card";
+    button.dataset.index = i;
+    const chosen = chestPicked === i;
+    const open = revealed;
+    button.classList.toggle("open", open);
+    button.classList.toggle("chosen", open && chosen);
+    button.classList.toggle("missed", open && !chosen);
+    button.classList.toggle("rare", open && Boolean(prize.rare));
+    button.disabled = chestPicked !== null;
+    button.setAttribute("aria-label", open ? chestPrizeLabel(id) : `Open chest ${i + 1}`);
+    const label = document.createElement("span");
+    label.textContent = open ? chestPrizeLabel(id) : "?";
+    button.append(chestIcon(open, open && Boolean(prize.rare)), label);
+    button.addEventListener("click", () => {
+      if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) pickChest(i);
+    });
+    list.append(button);
+  });
+}
+
+// Paid at once and saved, so closing the game mid-animation can't lose or repeat it.
+function pickChest(index) {
+  if (gameState !== "chest" || chestPicked !== null || !chestPrizes?.[index]) return;
+  chestPicked = index;
+  const prize = chestPrize(chestPrizes[index]);
+  const card = document.querySelector(`.chest-card[data-index="${index}"]`);
+  if (prize.level) {
+    if (gearTray.length < TRAY_SLOTS) {
+      const frame = document.getElementById("app-frame").getBoundingClientRect();
+      const box = card?.getBoundingClientRect();
+      sendGearToTray(newGearType(), prize.level, box ? { x: box.left + box.width / 2 - frame.left, y: box.top + box.height / 2 - frame.top } : { x: frame.width / 2, y: frame.height / 2 });
+    } else {
+      runBonusCoins += CHEST_FULL_TRAY_COINS;
+      showToast(`Tray full: +${CHEST_FULL_TRAY_COINS} coins`);
+    }
+  } else {
+    runBonusCoins += prize.coins;
+  }
+  recordStat("chests");
+  saveRun();
+  for (const other of document.querySelectorAll(".chest-card")) other.disabled = true;
+  card?.classList.add("shaking");
+  const quick = save.lessMotion || REDUCED_MOTION;
+  clearTimeout(chestTimer);
+  chestTimer = setTimeout(() => {
+    if (gameState !== "chest") return;
+    playLootSound();
+    if (prize.rare) spawnConfetti();
+    renderChests(true);
+  }, quick ? 0 : CHEST_OPEN_MS);
+  playClankSound();
+}
+
+function leaveChests() {
+  if (gameState !== "chest" || chestPicked === null) return;
+  clearChests();
+  offerRewards("Boss defeated!", true);
+}
+
+function clearChests() {
+  clearTimeout(chestTimer);
+  chestPrizes = null;
+  chestPicked = null;
+  document.getElementById("chest-screen")?.classList.add("hidden");
 }
 
 function offerRewards(title, lucky = false) {
@@ -3557,6 +3728,7 @@ function runSnapshot() {
     marchers,
     parts: runParts,
     offered: offeredRewards,
+    chests: { prizes: chestPrizes, picked: chestPicked },
     paths: { offered: offeredPaths, next: nextPath?.id ?? null, active: activePath?.id ?? null },
     nextPlan: nextWavePlan,
     daily: currentDaily,
@@ -3614,6 +3786,7 @@ function isValidRunSave(data) {
   if (data.boss && !bossKind(data.boss.kind)) return false;
   if (data.enemyType !== null && !ENEMY_TYPES[data.enemyType]) return false;
   if (data.waveEvent !== null && !WAVE_EVENTS.some((e) => e.id === data.waveEvent)) return false;
+  if (data.state === "chest" && !(Array.isArray(data.chests?.prizes) && data.chests.prizes.length === CHEST_COUNT && data.chests.prizes.every((id) => chestPrize(id)))) return false;
   if (data.state === "path" && !(Array.isArray(data.paths?.offered) && data.paths.offered.length && data.paths.offered.every((id) => PATHS[id]))) return false;
   if (data.state === "choosing" && !data.offered?.ids?.every((id) => REWARDS.some((r) => r.id === id))) return false;
   if (data.state === "worldclear" && !data.lastClear) return false;
@@ -3708,7 +3881,8 @@ function continueRun() {
   updateTrainButton();
   updateStrikeButton();
   updateFeatureButtons();
-  if (data.state === "path") showPaths(data.paths.offered);
+  if (data.state === "chest") showChests(data.chests.prizes, data.chests.picked ?? null, 0);
+  else if (data.state === "path") showPaths(data.paths.offered);
   else if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
@@ -5816,7 +5990,7 @@ function playMusicStep(song, step, at, stepSeconds) {
 }
 
 function updateMusic() {
-  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing" || gameState === "path";
+  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing" || gameState === "path" || gameState === "chest";
   if (!audioCtx || audioCtx.state !== "running" || !playing || save.muted || !save.music || document.hidden) {
     musicTime = 0;
     return;
@@ -6163,6 +6337,7 @@ function startNewRun() {
   offeredRewards = null;
   nextWavePlan = null;
   clearPaths();
+  clearChests();
   rerollsLeft = REROLLS_PER_RUN;
   // A daily run tried again after midnight becomes the new day's challenge.
   if (currentDaily && currentDaily.day !== todayKey()) {
@@ -6401,6 +6576,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
       ["Treasure goblin", "Sometimes runs past carrying coins or a gear. Tap it before it escapes.", enemyIcon("runner")],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
