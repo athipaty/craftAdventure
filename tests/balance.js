@@ -1,4 +1,4 @@
-// Two bots: "simple" buys and strikes. "smart" also merges and holds lightning to counter.
+// Two bots: "simple" collects drops and strikes. "smart" also merges and holds lightning to counter.
 const { chromium } = require("playwright");
 const http = require("http"), fs = require("fs"), path = require("path");
 const root = path.join(__dirname, "..", "public");
@@ -28,8 +28,8 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
       if (gameState === "choosing") { const o = offeredRewards.ids.map((id) => REWARDS.find((r) => r.id === id)); clearTimeout(rewardTimer); document.getElementById("reward-screen").classList.add("hidden"); chooseReward(o[Math.floor(Math.random() * o.length)]); continue; }
       if (gameState === "building") { beginWave(); continue; }
       if (gameState !== "playing") break;
-      if (canTrain() && Math.random() < 0.02) trainArmy(); else if (canBuyGear() && !buyIsRisky()) buyGear();
-      if (lootDrop?.gearLevel) collectLootDrop();
+      if (canTrain() && Math.random() < 0.02) trainArmy();
+      if (lootDrop) { Object.assign(lootDrop, bestEmptyCell()); collectLootDrop(); }
       if (overdriveReady()) activateOverdrive();
       if (smart) {
         if (ticks % 10 === 0) merge();

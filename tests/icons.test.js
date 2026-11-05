@@ -92,7 +92,7 @@ async function check(name, fn) {
       assert.deepEqual(out, []);
     });
   }
-  await page.evaluate(() => { document.getElementById("reward-screen").classList.add("hidden"); clearTimeout(rewardTimer); offeredRewards = null; gameState = "playing"; armyRank = 1; gearsBought = 8; playerPower = 1000; enemyPower = 1000; strikeCooldown = 1.5; });
+  await page.evaluate(() => { document.getElementById("reward-screen").classList.add("hidden"); clearTimeout(rewardTimer); offeredRewards = null; gameState = "playing"; armyRank = 1; playerPower = 1000; enemyPower = 1000; strikeCooldown = 1.5; });
   for (const [name, w, h] of [["phone", 390, 844], ["small", 320, 568], ["landscape", 844, 390]]) {
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(220);
@@ -100,7 +100,7 @@ async function check(name, fn) {
     await page.waitForTimeout(80);
     await page.screenshot({ path: path.join(scratch, `shot8-buttons-${name}.png`) });
     await check(`ability buttons with icons still fit: ${name}`, async () => {
-      const bad = await page.evaluate(() => ["buy-gear-btn", "train-btn", "strike-btn", "overdrive-btn", "rally-btn"].filter((id) => { const el = document.getElementById(id); return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1; }));
+      const bad = await page.evaluate(() => ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"].filter((id) => { const el = document.getElementById(id); return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1; }));
       assert.deepEqual(bad, []);
     });
   }

@@ -135,9 +135,8 @@ async function check(name, fn) {
   console.log("\nButtons and popups");
   await reset();
   await page.click("#play-btn");
-  await check("Buy and Train explain what's missing", async () => {
-    await page.evaluate(() => { gameState = "paused"; playerPower = 1; enemyPower = 100; updateBuyButton(); updateTrainButton(); });
-    assert.match(await page.locator("#buy-gear-btn").textContent(), /^Buy gear: need \d+ more$/);
+  await check("Train explains what's missing", async () => {
+    await page.evaluate(() => { gameState = "paused"; playerPower = 1; enemyPower = 100; updateTrainButton(); });
     assert.match(await page.locator("#train-btn").textContent(), /^Train Knight: need \d+ more$/);
     await page.evaluate(() => { gameState = "playing"; playerPower = 1000; enemyPower = 1000; });
   });
@@ -148,10 +147,10 @@ async function check(name, fn) {
       const a = document.getElementById("announcement").getBoundingClientRect();
       const hud = document.getElementById("hud").getBoundingClientRect();
       const board = document.getElementById("board-canvas").getBoundingClientRect();
-      const buy = document.getElementById("buy-gear-btn").getBoundingClientRect();
-      return { overlapHud: a.top < hud.bottom, overlapBoard: a.top < board.bottom, overlapBuy: a.top < buy.bottom };
+      const train = document.getElementById("train-btn").getBoundingClientRect();
+      return { overlapHud: a.top < hud.bottom, overlapBoard: a.top < board.bottom, overlapTrain: a.top < train.bottom };
     });
-    assert.deepEqual(r, { overlapHud: false, overlapBoard: false, overlapBuy: false });
+    assert.deepEqual(r, { overlapHud: false, overlapBoard: false, overlapTrain: false });
   });
 
   console.log("\nVibration");
@@ -356,7 +355,7 @@ async function check(name, fn) {
     await page.screenshot({ path: path.join(scratch, `shot2-rewards-${name}.png`) });
     await check(`reward screen fits: ${name}`, async () => assert.deepEqual(await fits(), []));
   }
-  await page.evaluate(() => { document.getElementById("reward-screen").classList.add("hidden"); clearTimeout(rewardTimer); gameState = "playing"; boss = null; wave = 40; armyRank = 2; playerPower = 1e6; enemyPower = 5e6; save.speed = 2; updateSettingButtons(); gearsBought = 30; playerPower = 9e4; enemyPower = 9e4; });
+  await page.evaluate(() => { document.getElementById("reward-screen").classList.add("hidden"); clearTimeout(rewardTimer); gameState = "playing"; boss = null; wave = 40; armyRank = 2; playerPower = 1e6; enemyPower = 5e6; save.speed = 2; updateSettingButtons(); playerPower = 9e4; enemyPower = 9e4; });
   for (const [name, w, h] of sizes) {
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(250);

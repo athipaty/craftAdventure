@@ -36,20 +36,20 @@ async function check(name, fn) {
   await reset(() => { save.worldsCleared.forest = true; writeSave(); });
   await check("Hard appears after a clear; Expert only after Hard", async () => {
     await page.click("#play-btn");
-    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: gears cost 25% more"]);
+    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster"]);
     await page.evaluate(() => { save.worldLevels.forest = 2; openWorlds(); });
-    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: gears cost 25% more \u2713", "Expert: gears cost 25% more, rust attacks on every wave"]);
+    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster \u2713", "Expert: enemies grow 25% faster, rust attacks on every wave"]);
     await page.screenshot({ path: path.join(scratch, "shot3-worlds.png") });
   });
   await page.locator(".world-level-btn").first().click();
   await check("Hard applies its rules, scale and coins", async () => {
     const r = await page.evaluate(() => {
-      const cost = gearCost(); const scale = worldScale();
+      const scale = worldScale();
       wave = 11; bossesBeaten = 0; const coins = coinsForRun(); wave = 1;
-      return { level: worldLevel, rules: runRules, cost, scale, coins };
+      return { level: worldLevel, rules: runRules, scale, coins };
     });
-    assert.equal(r.level, 1); assert.deepEqual(r.rules, ["pricy"]);
-    assert.equal(r.cost, 4); assert.ok(Math.abs(r.scale - 1.59) < 1e-9); assert.equal(r.coins, 25);
+    assert.equal(r.level, 1); assert.deepEqual(r.rules, ["swarm"]);
+    assert.ok(Math.abs(r.scale - 1.59) < 1e-9); assert.equal(r.coins, 25);
   });
   await check("level survives a reload and pays its bigger prize once", async () => {
     await page.evaluate(() => saveRun());
@@ -57,7 +57,7 @@ async function check(name, fn) {
     assert.equal(await page.locator("#continue-btn").textContent(), "Continue: Green Forest (Hard), wave 1");
     await page.click("#continue-btn");
     const r = await page.evaluate(() => ({ level: worldLevel, rules: runRules, scale: runCoinScale }));
-    assert.deepEqual(r, { level: 1, rules: ["pricy"], scale: 1.25 });
+    assert.deepEqual(r, { level: 1, rules: ["swarm"], scale: 1.25 });
     await page.click("#resume-btn");
     const c0 = await page.evaluate(() => { save.worldLevels.forest = 1; return save.coins; });
     await page.evaluate(() => { wave = 15; boss = { kind: bossKind("warlord"), hp: 0, maxHp: 1, attackIn: 9, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; });

@@ -172,7 +172,7 @@ async function check(name, fn) {
     assert.deepEqual(await page.evaluate(() => [screenShake, hitStop, particles.length && 0]), [0, 0, 0]);
     for (const [w, h] of [[390, 844], [320, 568]]) {
       await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(150);
-      assert.deepEqual(await fitsCheck(["#buy-gear-btn", "#strike-btn", "#rally-btn", "#pause-btn"]), [], `big text ${w}`);
+      assert.deepEqual(await fitsCheck(["#train-btn", "#strike-btn", "#rally-btn", "#pause-btn"]), [], `big text ${w}`);
     }
     await page.screenshot({ path: path.join(scratch, "shot7-bigtext-small.png") });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -263,7 +263,7 @@ async function check(name, fn) {
     await page.evaluate(() => { gameState = "playing"; document.getElementById("gameover-screen").classList.add("hidden"); playerPower = 1000; enemyPower = 1000; });
     await page.waitForTimeout(150);
     await page.screenshot({ path: path.join(scratch, "shot7-th-small.png") });
-    const bad = await page.evaluate(() => ["buy-gear-btn", "train-btn", "strike-btn", "overdrive-btn", "rally-btn"].filter((id) => { const el = document.getElementById(id); return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1; }));
+    const bad = await page.evaluate(() => ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"].filter((id) => { const el = document.getElementById(id); return el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1; }));
     assert.deepEqual(bad, []);
     const changes = await page.evaluate(() => new Promise((done) => {
       let n = 0; const o = new MutationObserver((r) => { n += r.length; });

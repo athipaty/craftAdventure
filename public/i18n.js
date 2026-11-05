@@ -12,7 +12,7 @@ const TH_WORDS = {
   // Worlds, levels and rules
   "Green Forest": "ป่าเขียว", "Sun Desert": "ทะเลทรายสุริยะ", "Frozen Peaks": "ยอดเขาน้ำแข็ง", "Lava Core": "แกนลาวา",
   "Easy": "ง่าย", "Normal": "ปกติ", "Hard": "ยาก", "Expert": "เซียน",
-  "gears cost 25% more": "เฟืองแพงขึ้น 25%", "rust attacks on every wave": "สนิมโจมตีทุกเวฟ", "a boss every 4 waves": "มีบอสทุก 4 เวฟ",
+  "rust attacks on every wave": "สนิมโจมตีทุกเวฟ", "a boss every 4 waves": "มีบอสทุก 4 เวฟ",
   "Overdrive recharges slower": "โอเวอร์ไดรฟ์ชาร์จช้าลง", "enemies grow 25% faster": "ศัตรูเพิ่มเร็วขึ้น 25%",
 
   // Ranks and enemies
@@ -23,7 +23,7 @@ const TH_WORDS = {
   "soldiers do less": "ทหารทำดาเมจน้อยลง", "freezes the main gear": "แช่แข็งเฟืองหลัก", "burns gear progress": "เผาความคืบหน้าเฟือง", "rust attacks": "สนิมโจมตี",
   "your soldiers count double": "ทหารนับเป็นสองเท่า", "a row is blocked": "แถวหนึ่งถูกปิด", "calls reinforcements": "เรียกกำลังเสริม", "drains gear progress": "ดูดความคืบหน้าเฟือง",
   "melts your gears": "หลอมเฟือง", "short and fierce": "สั้นแต่ดุเดือด", "long, pays 5 coins": "ยาวนาน ได้ 5 เหรียญ",
-  "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "Free gear!": "เฟืองฟรี!", "A monster dropped a free gear! Tap it before it disappears.": "มอนสเตอร์ทำเฟืองฟรีหล่น! แตะเก็บก่อนที่จะหายไป", "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears.": "บางครั้งมอนสเตอร์จะทำหล่นที่แนวหน้า และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง แตะเก็บก่อนที่จะหายไป",
+  "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "Free gear!": "เฟืองฟรี!", "A monster dropped a gear! Tap it before it disappears. A gear only works when it's connected to the chain, so drag it there if it lands far away.": "มอนสเตอร์ทำเฟืองหล่น! แตะเก็บก่อนที่จะหายไป เฟืองจะทำงานเมื่อต่อกับโซ่เท่านั้น ถ้าตกไกลให้ลากไปต่อ", "The only way to get more gears. Monsters drop them onto the board, and every boss drops a level 2 gear at half health. Tap one before it disappears.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นบนกระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง แตะเก็บก่อนที่จะหายไป",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
 
@@ -47,8 +47,8 @@ const TH_WORDS = {
   "Tap to use": "แตะเพื่อใช้", "A new look": "ลุคใหม่", "In use": "กำลังใช้", "Use": "ใช้", "Max": "สูงสุด", "Epic": "มหากาพย์", "Rare": "หายาก",
 
   // Weekly challenges
-  "Bomb Week": "สัปดาห์ระเบิด", "Every gear you buy is a bomb gear": "เฟืองที่ซื้อทุกตัวเป็นเฟืองระเบิด", "Boss Rush": "บอสถล่ม", "A boss every 3 waves": "มีบอสทุก 3 เวฟ",
-  "Rust Season": "ฤดูสนิม", "Rust attacks on every wave": "สนิมโจมตีทุกเวฟ", "Bargain Week": "สัปดาห์ลดราคา", "Gears cost half, but enemies are stronger": "เฟืองลดครึ่งราคา แต่ศัตรูแกร่งขึ้น",
+  "Bomb Week": "สัปดาห์ระเบิด", "Every gear that drops is a bomb gear": "เฟืองที่หล่นทุกตัวเป็นเฟืองระเบิด", "Boss Rush": "บอสถล่ม", "A boss every 3 waves": "มีบอสทุก 3 เวฟ",
+  "Rust Season": "ฤดูสนิม", "Rust attacks on every wave": "สนิมโจมตีทุกเวฟ", 
   "Overdrive Week": "สัปดาห์โอเวอร์ไดรฟ์", "Overdrive recharges 3x faster, but enemies are stronger": "โอเวอร์ไดรฟ์ชาร์จเร็วขึ้น 3 เท่า แต่ศัตรูแกร่งขึ้น",
   "Daily challenge": "ภารกิจท้าทายรายวัน", "A new challenge comes next week.": "ภารกิจใหม่จะมาสัปดาห์หน้า", "You have cleared every world!": "คุณผ่านครบทุกโลกแล้ว!", "Endless mode!": "โหมดไม่สิ้นสุด!",
 
@@ -58,7 +58,7 @@ const TH_WORDS = {
   // Upgrades
   "Spare gears": "เฟืองสำรอง", "Start each run with 1 more gear": "เริ่มแต่ละรอบพร้อมเฟืองเพิ่ม 1 ตัว", "Start every wave with more soldiers": "เริ่มทุกเวฟด้วยทหารมากขึ้น", "Boss breaker": "นักล้มบอส",
   "Bosses have 10% less health and help": "บอสมีพลังชีวิตและกำลังเสริมลดลง 10%", "Oiled main gear": "เฟืองหลักหยอดน้ำมัน", "The one-tooth gear turns 5% faster": "เฟืองฟันเดียวหมุนเร็วขึ้น 5%",
-  "Long Overdrive": "โอเวอร์ไดรฟ์ยาวนาน", "Overdrive lasts 1 second longer": "โอเวอร์ไดรฟ์นานขึ้น 1 วินาที", "Trade deal": "ข้อตกลงการค้า", "New gears cost 5% less": "เฟืองใหม่ถูกลง 5%",
+  "Long Overdrive": "โอเวอร์ไดรฟ์ยาวนาน", "Overdrive lasts 1 second longer": "โอเวอร์ไดรฟ์นานขึ้น 1 วินาที", 
   "Bigger crate": "ลังใหญ่ขึ้น", "Choose from 4 rewards after each wave": "เลือกจาก 4 รางวัลหลังแต่ละเวฟ", "Coin purse": "ถุงเหรียญ", "Earn 10% more coins from each run": "ได้เหรียญเพิ่ม 10% จากแต่ละรอบ",
   "Thunder": "สายฟ้าฟาด", "Lightning strikes hit 25% harder": "สายฟ้าแรงขึ้น 25%", "Quick storm": "พายุเร็ว", "Lightning recharges 0.25 seconds faster": "สายฟ้าชาร์จเร็วขึ้น 0.25 วินาที",
   "Cooling fans": "พัดลมระบายความร้อน", "Overdrive recharges 3 seconds faster": "โอเวอร์ไดรฟ์ชาร์จเร็วขึ้น 3 วินาที", "Oil can": "กระป๋องน้ำมัน", "Rust attacks hit 5% fewer of your gears": "สนิมโจมตีเฟืองน้อยลง 5%",
@@ -67,7 +67,7 @@ const TH_WORDS = {
   // Rewards
   "Big gear": "เฟืองใหญ่", "Fills half as fast, then sends 5 soldiers": "เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 5 นาย", "Booster gear": "เฟืองบูสเตอร์", "Gears touching it get an extra 25% per hit": "เฟืองที่ติดกันได้เพิ่ม 25% ต่อการหมุน",
   "Bomb gear": "เฟืองระเบิด", "Fills half as fast, then blasts 2 enemies": "เติมช้าลงครึ่งหนึ่ง แล้วระเบิดศัตรู 2 ตัว", "Faster main gear": "เฟืองหลักเร็วขึ้น", "The one-tooth gear turns 10% faster": "เฟืองฟันเดียวหมุนเร็วขึ้น 10%",
-  "Veterans": "ทหารผ่านศึก", "Cheaper gears": "เฟืองถูกลง", "New gears cost 20% less": "เฟืองใหม่ถูกลง 20%", "Reinforcements": "กำลังเสริม", "Start the next wave with extra soldiers": "เริ่มเวฟถัดไปด้วยทหารเพิ่ม",
+  "Veterans": "ทหารผ่านศึก", "Reinforcements": "กำลังเสริม", "Start the next wave with extra soldiers": "เริ่มเวฟถัดไปด้วยทหารเพิ่ม",
   "Far gear": "เฟืองไกล", "Pays 25% more for each step away from the main gear": "ส่งทหารเพิ่ม 25% ต่อทุกก้าวที่ห่างจากเฟืองหลัก", "Lone gear": "เฟืองเดี่ยว", "Pays 50% more for each empty space beside it": "ส่งทหารเพิ่ม 50% ต่อทุกช่องว่างข้าง ๆ",
   "Cooling oil": "น้ำมันระบายความร้อน", "Overdrive recharges 20% faster": "โอเวอร์ไดรฟ์ชาร์จเร็วขึ้น 20%", "Static charge": "ประจุไฟฟ้า", "Lightning strikes hit 30% harder": "สายฟ้าแรงขึ้น 30%",
   "Scrap dealer": "พ่อค้าเศษเหล็ก", "Scrapping gives 30% more soldiers": "แยกเฟืองได้ทหารเพิ่ม 30%", "Thick oil": "น้ำมันข้น", "War chest": "หีบสงคราม", "Earn 25% more coins from this run": "ได้เหรียญเพิ่ม 25% จากรอบนี้",
@@ -87,16 +87,15 @@ const TH_WORDS = {
   "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.": "เวฟบอส! ทหารและระเบิดทำดาเมจบอสได้ ลดหลอดพลังชีวิตให้หมดเพื่อชนะ",
   "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.": "สนิม! เฟืองที่เป็นสนิมจะหยุดทำงานและขวางเฟืองข้างหลัง แตะเพื่อซ่อม",
   "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.": "เฟืองหลักหมุนเอง ทุกครั้งที่กระทบจะเติมเฟืองข้าง ๆ เมื่อถึง 100% เฟืองนั้นจะส่งทหารไปรบ",
-  "You can afford a gear. It joins the machine by itself, and every connected gear fills on each hit. Buying costs soldiers, so choose your moment.": "ซื้อเฟืองได้แล้ว เฟืองจะต่อเข้าเครื่องจักรเอง และเฟืองที่ต่อกันจะเติมทุกครั้งที่กระทบ การซื้อต้องใช้ทหาร จึงควรเลือกจังหวะให้ดี",
   "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!": "บอสจะเรืองแสงก่อนโจมตี เก็บสายฟ้าไว้ให้พร้อม แล้วกดตอนเรืองแสงเพื่อยกเลิกการโจมตี!",
-  "\"Need 12 more\" means your army must grow first. Buying costs soldiers, and the game won't let a purchase lose you the wave.": "\"ต้องการอีก 12\" หมายถึงกองทัพต้องใหญ่ขึ้นก่อน การซื้อต้องใช้ทหาร และเกมจะไม่ให้ซื้อจนทำให้แพ้เวฟ",
+  "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.": "\"ต้องการอีก 12\" หมายถึงกองทัพต้องใหญ่ขึ้นก่อน การฝึกต้องใช้ทหาร และเกมจะไม่ให้ฝึกจนทำให้แพ้เวฟ",
   "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.": "ทหารดันแนวรบ ดันฝั่งคุณให้ถึง 70% เพื่อชนะเวฟ ถ้าเหลือ 30% คุณแพ้",
   "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.": "โอเวอร์ไดรฟ์พร้อมแล้ว! กดเพื่อให้เฟืองหลักหมุนเร็วขึ้น 3 เท่าสักครู่ แล้วรอชาร์จใหม่",
   "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.": "ลากเฟืองเพื่อย้าย ลากไปที่แถบสีแดงที่ปรากฏเพื่อแยกเฟืองและรับทหารคืนบางส่วน",
   "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.": "แรงหมุนจะอ่อนลงตามแถว เฟืองที่อยู่ไกลจึงเติมช้าลง เฟืองบูสเตอร์ในแถวจะคืนแรงให้เต็ม",
   "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.": "ผู้พิทักษ์เหล็กตั้งโล่กันดาเมจทั้งหมด กด ทำลายโล่ 5 ครั้งเพื่อทำลาย",
   "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.": "รวมพลจะเก็บทหารที่มาถึงไว้ เมื่อปุ่มขึ้นว่า พุ่งชน! ให้กดเพื่อพุ่งชนแรงขึ้น 50% แต่ระหว่างรอแนวรบจะไม่ได้รับทหารเพิ่ม",
-  "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank. Train or buy a gear? That choice is yours.": "ฝึกกองทัพได้แล้ว! ทหารใหม่ทุกนายจะแกร่งขึ้น และราคาจะนับตามทหารยศใหม่ จะฝึกหรือซื้อเฟือง เลือกเองได้เลย",
+  "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank.": "ฝึกกองทัพได้แล้ว! ทหารใหม่ทุกนายจะแกร่งขึ้น และราคาจะนับตามทหารยศใหม่",
   "Press Lightning to strike the enemy! The button fills up as it recharges.": "กดสายฟ้าเพื่อโจมตีศัตรู! ปุ่มจะเติมเต็มเมื่อชาร์จใหม่",
   "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.": "ยักษ์เกราะ! ทหารทำดาเมจได้น้อยลง แต่สายฟ้าและระเบิดยังแรงเต็มที่",
   "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.": "โทรลล์น้ำแข็งทำให้เฟืองหลักช้าลงครึ่งหนึ่ง ใช้สายฟ้าละลายได้ทันที",
@@ -185,7 +184,6 @@ const TH_PATTERNS = [
   [/^Merge gears (\d+) times$/i, (m) => `รวมเฟือง ${m[1]} ครั้ง`],
   [/^Use (\d+) lightning strikes$/i, (m) => `ใช้สายฟ้า ${m[1]} ครั้ง`],
   [/^Blast (\d+) enemies with bombs$/i, (m) => `ระเบิดศัตรู ${m[1]} ตัว`],
-  [/^Buy (\d+) gears$/i, (m) => `ซื้อเฟือง ${m[1]} ตัว`],
   [/^Make (\d+) combos$/i, (m) => `ทำคอมโบ ${m[1]} ครั้ง`],
   [/^Make a level (\d+) gear$/i, (m) => `สร้างเฟืองเลเวล ${m[1]}`],
   [/^Train your army to (.+)$/i, (m) => `ฝึกกองทัพเป็น${T(m[1])}`],
@@ -194,9 +192,6 @@ const TH_PATTERNS = [
   [/^(.+) \(top rank\)$/i, (m) => `${T(m[1])} (ยศสูงสุด)`],
   [/^Train (.+): need (\d+) more$/i, (m) => `ฝึก${T(m[1])}: ต้องการอีก ${m[2]}`],
   [/^Train (.+): (\d+)$/i, (m) => `ฝึก${T(m[1])}: ${m[2]}`],
-  [/^Buy gear: (\d+) soldiers$/i, (m) => `ซื้อเฟือง: ทหาร ${m[1]} นาย`],
-  [/^Buy gear: need (\d+) more$/i, (m) => `ซื้อเฟือง: ต้องการอีก ${m[1]}`],
-  [/^Buy gear: (\d+) \(risky!\)$/i, (m) => `ซื้อเฟือง: ${m[1]} (เสี่ยง!)`],
   [/^Scrapped: \+(\d+)$/i, (m) => `แยกแล้ว: +${m[1]}`],
   [/^Drop here to scrap: \+(\d+)$/i, (m) => `วางที่นี่เพื่อแยก: +${m[1]}`],
   [/^Break shield: (\d+)$/i, (m) => `ทำลายโล่: ${m[1]}`],

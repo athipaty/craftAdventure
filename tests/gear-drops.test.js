@@ -1,4 +1,4 @@
-// Free gears dropped by monsters and bosses.
+// Gears only come from drops: monsters and bosses drop them onto the board.
 const { chromium } = require("playwright");
 const http = require("http"), fs = require("fs"), path = require("path"), assert = require("assert");
 const root = path.join(__dirname, "..", "public");
@@ -28,8 +28,8 @@ async function check(name, fn) {
 
   // Holds the fight still: only the code under test changes anything.
   const fresh = () => page.evaluate(() => {
-    gameState = "playing"; boss = null; clearLootDrop(); wave = 3; waveTime = 10; gearDropAt = 5; lastLootDropAt = runTime;
-    playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; gearsBought = 0;
+    gameState = "playing"; boss = null; clearLootDrop(); wave = 3; waveTime = 10; gearDropAt = 5;
+    playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; blockedCells.clear();
     grid.forEach((row, r) => row.forEach((cell, c) => { if (cell && !cell.driver) grid[r][c] = null; }));
   });
   const gears = () => page.evaluate(() => grid.flat().filter((c) => c && !c.driver).map((c) => c.level));
@@ -38,33 +38,33 @@ async function check(name, fn) {
   await check("a wave's gear drops on the first hit after it's due, and only once", async () => {
     await fresh();
     const r = await page.evaluate(() => {
-      waveTime = 4; maybeDropLoot(100, 100);
+      waveTime = 4; maybeDropGear();
       const early = Boolean(lootDrop);
-      waveTime = 5; maybeDropLoot(100, 100);
+      waveTime = 5; maybeDropGear();
       const due = lootDrop?.gearLevel;
       const spent = gearDropAt;
-      clearLootDrop(); lastLootDropAt = runTime; maybeDropLoot(100, 100);
+      clearLootDrop(); maybeDropGear();
       return { early, due, spent, again: Boolean(lootDrop) };
     });
     assert.deepEqual(r, { early: false, due: 1, spent: -1, again: false });
   });
-  await check("tapping it adds a gear for free, and doesn't raise the price", async () => {
+  await check("tapping it puts a gear on the cell it fell on, for free", async () => {
     await fresh();
-    await page.evaluate(() => { maybeDropLoot(195, 150); });
-    const before = await page.evaluate(() => ({ cost: gearCost(), power: playerPower }));
+    await page.evaluate(() => { maybeDropGear(); });
+    const before = await page.evaluate(() => ({ power: playerPower, row: lootDrop.row, col: lootDrop.col }));
     assert.equal(await page.locator("#loot-drop").isVisible(), true);
     assert.equal(await page.locator("#loot-drop-amount").textContent(), "Free!");
     await page.screenshot({ path: path.join(scratch, "gear-drop.png") });
     await page.evaluate(() => document.getElementById("loot-drop").click());
     assert.deepEqual(await gears(), [1]);
-    const after = await page.evaluate(() => ({ cost: gearCost(), bought: gearsBought, gone: lootDrop === null }));
-    assert.deepEqual(after, { cost: before.cost, bought: 0, gone: true });
+    const after = await page.evaluate(({ row, col }) => ({ power: playerPower, here: grid[row][col]?.level, gone: lootDrop === null }), before);
+    assert.deepEqual(after, { power: before.power, here: 1, gone: true });
     assert.equal(await page.locator("#loot-drop").isVisible(), false);
   });
   await check("missing it costs nothing: it goes away with no gear", async () => {
     await fresh();
     const r = await page.evaluate(() => {
-      maybeDropLoot(100, 100);
+      maybeDropGear();
       lootDrop.age = GEAR_DROP_LIFETIME - 0.01;
       updateFx(0.001); const stillThere = Boolean(lootDrop);
       updateFx(0.05);
@@ -73,52 +73,69 @@ async function check(name, fn) {
     assert.deepEqual(r, { stillThere: true, gone: true, power: 1000 });
     assert.deepEqual(await gears(), []);
   });
-  await check("a gear takes over from coins waiting to be tapped", async () => {
+  await check("it shows on its board cell, and a click there collects it", async () => {
+    await fresh();
+    await page.evaluate(() => maybeDropGear());
+    await page.waitForTimeout(450); // it falls into place first
+    const r = await page.evaluate(() => {
+      const board = boardCanvas.getBoundingClientRect();
+      const box = document.getElementById("loot-drop").getBoundingClientRect();
+      return { dx: Math.abs(box.left + box.width / 2 - (board.left + (lootDrop.col + 0.5) * cellSize)), dy: Math.abs(box.top + box.height / 2 - (board.top + (lootDrop.row + 0.5) * cellSize)), cell: cellSize };
+    });
+    assert.ok(r.dx < r.cell && r.dy < r.cell, JSON.stringify(r));
+  });
+  await check("a drop lands on a free cell anywhere, never a blocked one", async () => {
     await fresh();
     const r = await page.evaluate(() => {
-      showLootDrop({ x: 50, y: 50, age: 0, life: LOOT_DROP_LIFETIME, coins: 2 });
-      maybeDropLoot(100, 100);
-      return { level: lootDrop.gearLevel, coins: lootDrop.coins };
+      blockedCells.add("0,0");
+      const seen = new Set();
+      for (let i = 0; i < 2000; i++) { const c = randomEmptyCell(); seen.add(`${c.row},${c.col}`); }
+      const out = { taken: [...seen].some((k) => { const [a, b] = k.split(",").map(Number); return grid[a][b]; }), blocked: seen.has("0,0"), spots: seen.size, free: ROWS * COLS - 2 };
+      blockedCells.clear();
+      return out;
     });
-    assert.equal(r.level, 1); assert.equal(r.coins, undefined);
-    const coin = await page.evaluate(() => {
-      clearLootDrop();
-      showLootDrop({ x: 50, y: 50, age: 0, life: LOOT_DROP_LIFETIME, coins: 2 });
-      const before = runBonusCoins; collectLootDrop();
-      return { gained: runBonusCoins - before, text: document.getElementById("loot-drop-icon").textContent };
+    assert.deepEqual([r.taken, r.blocked, r.spots], [false, false, r.free]);
+  });
+  await check("a gear dragged onto its cell moves the drop instead of losing it", async () => {
+    await fresh();
+    const r = await page.evaluate(() => {
+      maybeDropGear();
+      const { row, col } = lootDrop;
+      grid[row][col] = freshCell("soldier");
+      updateFx(0.01);
+      return { still: Boolean(lootDrop), moved: lootDrop && !grid[lootDrop.row][lootDrop.col] };
     });
-    assert.equal(coin.gained, 2, "coins still work");
-    assert.deepEqual(await gears(), []);
+    assert.deepEqual(r, { still: true, moved: true });
   });
   await check("nothing drops on a full board, and one waiting goes away when it fills", async () => {
     await fresh();
     const r = await page.evaluate(() => {
       const fill = () => { while (bestEmptyCell()) placeGear("soldier"); };
-      maybeDropLoot(100, 100);
+      maybeDropGear();
       const dropped = Boolean(lootDrop);
       fill();
       updateFx(0.01);
       const cleared = lootDrop === null;
-      gearDropAt = 5; lastLootDropAt = runTime;
-      maybeDropLoot(100, 100);
+      gearDropAt = 5;
+      maybeDropGear();
       return { dropped, cleared, onFull: Boolean(lootDrop), stillDue: gearDropAt };
     });
     assert.deepEqual(r, { dropped: true, cleared: true, onFull: false, stillDue: 5 });
   });
-  await check("about a third of waves have one, none on wave 1 or boss waves, in the right window", async () => {
+  await check("every normal wave has one, boss waves wait for the boss, in the right window", async () => {
     await fresh();
     const r = await page.evaluate(() => {
       const plans = [];
       boss = null; wave = 5;
       for (let i = 0; i < 4000; i++) plans.push(planGearDrop());
       const got = plans.filter((p) => p !== NO_GEAR_DROP);
-      wave = 1; const first = planGearDrop();
+      wave = 1; const first = Array.from({ length: 300 }, planGearDrop).every((p) => p !== NO_GEAR_DROP);
       wave = 5; boss = { hp: 1, maxHp: 1 }; const onBoss = planGearDrop(); boss = null;
       return { share: got.length / plans.length, min: Math.min(...got), max: Math.max(...got), first, onBoss };
     });
-    assert.ok(r.share > 0.3 && r.share < 0.4, `share ${r.share}`);
-    assert.ok(r.min >= 4 && r.max <= 14, `${r.min}..${r.max}`);
-    assert.equal(r.first, -1); assert.equal(r.onBoss, -1);
+    assert.equal(r.share, 1);
+    assert.ok(r.min >= 3 && r.max <= 8, `${r.min}..${r.max}`);
+    assert.equal(r.first, true); assert.equal(r.onBoss, -1);
   });
   await check("a daily challenge drops the same for everyone", async () => {
     await fresh();
@@ -133,7 +150,7 @@ async function check(name, fn) {
   });
 
   console.log("\nFrom bosses");
-  const bossAt = (share) => page.evaluate((s) => { boss = { kind: BOSS_KINDS[0], hp: 100 * s, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; gearDropAt = NO_GEAR_DROP; lastLootDropAt = runTime; maybeDropLoot(100, 100); return lootDrop?.gearLevel ?? 0; }, share);
+  const bossAt = (share) => page.evaluate((s) => { boss = { kind: BOSS_KINDS[0], hp: 100 * s, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; gearDropAt = NO_GEAR_DROP; maybeDropGear(); return lootDrop?.gearLevel ?? 0; }, share);
   await check("a boss drops a level 2 gear at half health, and only one", async () => {
     await fresh();
     assert.equal(await bossAt(0.51), 0, "above half");
@@ -142,19 +159,50 @@ async function check(name, fn) {
     assert.equal(await page.locator("#loot-drop-amount").textContent(), "Level 2!");
     await page.evaluate(() => document.getElementById("loot-drop").click());
     assert.deepEqual(await gears(), [2]);
-    const again = await page.evaluate(() => { boss.hp = 10; lastLootDropAt = runTime; maybeDropLoot(100, 100); const got = Boolean(lootDrop); boss = null; return got; });
+    const again = await page.evaluate(() => { boss.hp = 10; maybeDropGear(); const got = Boolean(lootDrop); boss = null; return got; });
     assert.equal(again, false);
+  });
+
+  console.log("\nNo more buying");
+  await check("the Buy button and its upgrades are gone, and an old save with them still loads", async () => {
+    await fresh();
+    const gone = await page.evaluate(() => ({
+      button: document.getElementById("buy-gear-btn"),
+      reward: REWARDS.some((x) => x.id === "cheaperGears"),
+      upgrade: UPGRADES.some((x) => x.id === "discount"),
+      quest: QUEST_KINDS.some((x) => x.kind === "buys"),
+      event: WEEKLY_EVENTS.some((x) => x.id === "bargain"),
+      rule: "pricy" in RULES,
+    }));
+    assert.deepEqual(gone, { button: null, reward: false, upgrade: false, quest: false, event: false, rule: false });
+    const snap = await page.evaluate(() => JSON.parse(JSON.stringify(runSnapshot())));
+    Object.assign(snap.numbers, { gearsBought: 7, gearPriceScale: 0.8 });
+    snap.rules = ["pricy", "rusty"];
+    const r = await page.evaluate((d) => { const ok = isValidRunSave(d); restoreRun(d); return { ok, rules: runRules, text: rulesText(runRules) }; }, snap);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.rules, ["rusty"]);
+    assert.ok(!r.text.includes("undefined"), r.text);
+    await page.evaluate(() => { runRules = []; });
+  });
+  await check("an old daily quest to buy gears is dropped, not left impossible", async () => {
+    const r = await page.evaluate(() => isValidQuest({ kind: "buys", target: 8, reward: 10, progress: 0, done: false }));
+    assert.equal(r, false);
+  });
+  await check("scrapping pays more with a bigger machine", async () => {
+    await fresh();
+    const r = await page.evaluate(() => { const small = scrapRefund(); for (let i = 0; i < 12; i++) placeGear("soldier"); return { small, big: scrapRefund() }; });
+    assert.ok(r.big > r.small, JSON.stringify(r));
   });
 
   console.log("\nReloading");
   await check("reloading can't drop the same gear again", async () => {
     await fresh();
-    await page.evaluate(() => { maybeDropLoot(100, 100); clearLootDrop(); boss = { kind: BOSS_KINDS[0], hp: 40, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0, gearDropped: true }; });
+    await page.evaluate(() => { maybeDropGear(); clearLootDrop(); boss = { kind: BOSS_KINDS[0], hp: 40, maxHp: 100, attackIn: 99, hitFlash: 0, reinforcePerSec: 0, shield: 0, gearDropped: true }; });
     const snap = await page.evaluate(() => JSON.parse(JSON.stringify(runSnapshot())));
     assert.equal(snap.numbers.gearDropAt, -1);
     assert.equal(snap.boss.gearDropped, true);
     assert.equal(await page.evaluate((d) => isValidRunSave(d), snap), true);
-    const r = await page.evaluate((d) => { gearDropAt = 5; boss = null; restoreRun(d); lastLootDropAt = runTime; maybeDropLoot(100, 100); const out = { at: gearDropAt, dropped: boss.gearDropped, loot: Boolean(lootDrop) }; boss = null; return out; }, snap);
+    const r = await page.evaluate((d) => { gearDropAt = 5; boss = null; restoreRun(d); maybeDropGear(); const out = { at: gearDropAt, dropped: boss.gearDropped, loot: Boolean(lootDrop) }; boss = null; return out; }, snap);
     assert.deepEqual(r, { at: -1, dropped: true, loot: false });
   });
   await check("a due gear survives a reload, and older saves still load", async () => {
@@ -170,7 +218,7 @@ async function check(name, fn) {
   await check("playing a wave for real drops one, and a click collects it", async () => {
     await fresh();
     await page.evaluate(() => { gearDropAt = waveTime; playerPower = 1000; enemyPower = 1000; sendMarcher("player", 1); });
-    await page.locator("#loot-drop.gear").waitFor({ state: "visible", timeout: 6000 });
+    await page.locator("#loot-drop").waitFor({ state: "visible", timeout: 6000 });
     const box = await page.locator("#loot-drop").boundingBox();
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // it bobs, so it never holds still for locator.click
     assert.equal((await gears()).length >= 1, true);
@@ -188,7 +236,7 @@ async function check(name, fn) {
     assert.deepEqual([r.shows, r.hides, r.target], [true, false, "#loot-drop"]);
     await page.evaluate(() => { save.lang = "th"; writeSave(); });
     await page.goto(url);
-    const left = await page.evaluate((text) => ["Free gear", "Free gear!", "Free!", "Level 2!", text, "Monsters sometimes drop one at the front line, and every boss drops a level 2 gear at half health. Tap it before it disappears."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
+    const left = await page.evaluate((text) => ["Free gear", "Free gear!", "Free!", "Level 2!", text, "The only way to get more gears. Monsters drop them onto the board, and every boss drops a level 2 gear at half health. Tap one before it disappears."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
     assert.deepEqual(left, []);
   });
 
