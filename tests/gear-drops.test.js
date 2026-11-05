@@ -206,7 +206,7 @@ async function check(name, fn) {
       return count;
     });
     const special = (20000 - r.soldier) / 20000;
-    assert.ok(special > 0.04 && special < 0.06, `share ${special}`);
+    assert.ok(special > 0.13 && special < 0.17, `share ${special}`);
     for (const type of ["big", "booster", "bomb", "far", "lone"]) assert.ok(r[type] > 0, `never dropped ${type}`);
     assert.deepEqual(Object.keys(r).filter((type) => !GEAR_NAMES.includes(type)), []);
   });

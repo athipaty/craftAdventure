@@ -292,8 +292,9 @@ async function check(name, fn) {
   });
   await check("the world list shows stars and what's left", async () => {
     await page.click("#clear-worlds-btn");
-    const t = await page.locator(".world-card").nth(2).locator("span").textContent();
-    assert.match(t, /\u2605\u2606\u2606 Next: No Overdrive, 8 gears or fewer$/);
+    const card = page.locator(".world-card").nth(2);
+    assert.equal(await card.locator(".world-stars").textContent(), "\u2605\u2606\u2606");
+    assert.equal(await card.locator(".world-goal").textContent(), "Next star: No Overdrive");
     await page.screenshot({ path: path.join(scratch, "shot5-worlds.png") });
   });
 

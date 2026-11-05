@@ -24,6 +24,7 @@ const TH_WORDS = {
   "your soldiers count double": "ทหารนับเป็นสองเท่า", "a row is blocked": "แถวหนึ่งถูกปิด", "calls reinforcements": "เรียกกำลังเสริม", "drains gear progress": "ดูดความคืบหน้าเฟือง",
   "melts your gears": "หลอมเฟือง", "short and fierce": "สั้นแต่ดุเดือด", "long, pays 5 coins": "ยาวนาน ได้ 5 เหรียญ",
   "Main gear speed": "ความเร็วเฟืองหลัก", "Starting army": "กองทัพตอนเริ่มเทียบศัตรู", "Next wave's army": "กองทัพเวฟหน้าเทียบศัตรู", "Overdrive recharge": "เวลาชาร์จโอเวอร์ไดรฟ์", "Lightning power": "พลังสายฟ้า", "Scrap refund": "เงินคืนจากการแยกเฟือง", "Gears hit by rust": "เฟืองที่โดนสนิม", "Coins from this run": "เหรียญจากรอบนี้", "Training cost": "ค่าฝึก", "Soldiers against brutes": "ทหารเมื่อสู้กับพวกเกราะหนา", "Freeze time": "เวลาแข็งตัว", "Gears burned": "เฟืองที่ถูกเผา", "Hit kept per gear": "แรงที่เหลือต่อเฟือง", "Damage to bosses": "ความเสียหายต่อบอส", "Bomb gear blast": "แรงระเบิดเฟืองระเบิด", "Big gear soldiers": "ทหารจากเฟืองใหญ่", "Booster strength": "พลังเฟืองบูสต์", "Rust fixed per blast": "สนิมที่แก้ได้ต่อการระเบิด", "Lightning in Overdrive": "เวลาชาร์จสายฟ้าตอนโอเวอร์ไดรฟ์", "Full Rally charge": "พลังชาร์จเต็ม", "Line combo payout": "ผลคอมโบแถว", "Soldiers per merge": "ทหารต่อการรวม", "Lightning fills gears": "สายฟ้าเติมเฟือง", "Second chances": "โอกาสแก้ตัว", "Army rank": "ยศกองทัพ", "Soldiers per second": "ทหารต่อวินาที", "Gears on board": "เฟืองบนกระดาน", "On": "เปิด", "Off": "ปิด",
+  "Goblins have overrun the trees. But who is leading them?": "ก็อบลินบุกยึดป่า แต่ใครคือผู้นำของพวกมัน?", "Tracks vanish into the dunes. Something huge moves below the sand.": "รอยเท้าหายไปในเนินทราย มีบางอย่างตัวใหญ่เคลื่อนไหวอยู่ใต้ผืนทราย", "The mountains have turned white, and the cold is spreading.": "ภูเขากลายเป็นสีขาว และความหนาวกำลังแผ่ขยาย", "Something burns below the world. This is where it all began.": "มีบางอย่างลุกไหม้อยู่ใต้โลก ที่นี่คือจุดเริ่มต้นของทุกอย่าง", "New!": "ใหม่!",
   "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง บางตัวเป็นเฟืองพิเศษ ลากไปวางบนกระดานหรือแตะก็ได้",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
   "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
@@ -66,7 +67,7 @@ const TH_WORDS = {
   "Spare parts": "อะไหล่สำรอง", "Rewards can offer 1 more special gear": "รางวัลให้เฟืองพิเศษได้เพิ่ม 1 ตัว", "Drill sergeant": "ครูฝึก", "Training costs 10% less": "ค่าฝึกถูกลง 10%", "Upgrades": "อัปเกรด",
 
   // Rewards
-  "Big gear": "เฟืองใหญ่", "Fills half as fast, then sends 5 soldiers": "เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 5 นาย", "Booster gear": "เฟืองบูสเตอร์", "Gears touching it get an extra 25% per hit": "เฟืองที่ติดกันได้เพิ่ม 25% ต่อการหมุน",
+  "Big gear": "เฟืองใหญ่", "Fills half as fast, then sends 5 soldiers": "เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 5 นาย", "Booster gear": "เฟืองบูสเตอร์", "Gears touching it get an extra 25% per hit, and glow green": "เฟืองที่ติดกันได้เพิ่ม 25% ต่อการหมุน และเรืองแสงสีเขียว",
   "Bomb gear": "เฟืองระเบิด", "Fills half as fast, then blasts 2 enemies": "เติมช้าลงครึ่งหนึ่ง แล้วระเบิดศัตรู 2 ตัว", "Faster main gear": "เฟืองหลักเร็วขึ้น", "The one-tooth gear turns 10% faster": "เฟืองฟันเดียวหมุนเร็วขึ้น 10%",
   "Veterans": "ทหารผ่านศึก", "Reinforcements": "กำลังเสริม", "Start the next wave with extra soldiers": "เริ่มเวฟถัดไปด้วยทหารเพิ่ม",
   "Far gear": "เฟืองไกล", "Pays 25% more for each step away from the main gear": "ส่งทหารเพิ่ม 25% ต่อทุกก้าวที่ห่างจากเฟืองหลัก", "Lone gear": "เฟืองเดี่ยว", "Pays 50% more for each empty space beside it": "ส่งทหารเพิ่ม 50% ต่อทุกช่องว่างข้าง ๆ",
@@ -228,6 +229,11 @@ const TH_PATTERNS = [
   [/^(.+)\. Reach wave (\d+) for (\d+) coins$/i, (m) => `${T(m[1])} ถึงเวฟ ${m[2]} รับ ${m[3]} เหรียญ`],
   [/^Gear Fight! daily challenge (\S+): I reached wave (\d+)\. Can you beat it\? (.+)$/i, (m) => `Gear Fight! ภารกิจรายวัน ${m[1]}: ฉันไปถึงเวฟ ${m[2]} คุณทำได้ไหม? ${m[3]}`],
   [/^This week: (.+)$/i, (m) => `สัปดาห์นี้: ${T(m[1])}`],
+  [/^Next star: (.+)$/i, (m) => `ดาวถัดไป: ${T(m[1])}`],
+  [/^World (\d+)$/, (m) => `โลก ${m[1]}`],
+  [/^Prize: (\d+) coins$/i, (m) => `รางวัล: ${m[1]} เหรียญ`],
+  [/^Worlds cleared: (\d+)\/(\d+), stars: (\d+)\/(\d+)$/i, (m) => `ผ่านแล้ว: ${m[1]}/${m[2]} โลก, ดาว: ${m[3]}/${m[4]}`],
+  [/^Final boss on wave (\d+)(?:, best wave (\d+))?$/i, (m) => `บอสสุดท้ายเวฟ ${m[1]}${m[2] ? `, ดีที่สุดเวฟ ${m[2]}` : ""}`],
   [/^Locked: clear (.+)$/i, (m) => `ล็อกอยู่: ต้องผ่าน${T(m[1])}`],
   [/^Final boss on wave (\d+)(?:, best wave (\d+))?\. ([★☆]+)(?: Next: (.+))?$/i, (m) => `บอสสุดท้ายเวฟ ${m[1]}${m[2] ? ` เวฟสูงสุด ${m[2]}` : ""} ${m[3]}${m[4] ? ` ถัดไป: ${thaiList(m[4])}` : ""}`],
   [/^Start (.+) at wave (\d+)$/i, (m) => `เริ่ม${T(m[1])}ที่เวฟ ${m[2]}`],

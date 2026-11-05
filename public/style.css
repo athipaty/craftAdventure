@@ -545,40 +545,290 @@ button {
   touch-action: pan-y;
 }
 
+#worlds-progress {
+  margin: -6px 0 0;
+  color: #c9b896;
+  font-size: 0.8rem;
+}
+
+.world-events {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.world-extras {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A postcard of the world. The words sit on a dark side so they read on any scene. */
 .world-card {
+  position: relative;
   flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr auto;
   column-gap: 8px;
-  padding: 14px 14px;
-  border-radius: 12px;
-  border: 2px solid #22150b;
-  background: linear-gradient(180deg, var(--world-sky), var(--world-ground));
+  overflow: hidden;
+  padding: 14px;
+  border-radius: 14px;
+  border: 3px solid #22150b;
+  box-shadow: 0 4px 0 #120a04;
   color: #fff;
   text-align: left;
   text-shadow: 0 1px 2px #000, 0 0 3px #000;
 }
 
+.world-card:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #120a04;
+}
+
+.world-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(10, 6, 2, 0.82) 0%, rgba(10, 6, 2, 0.55) 55%, rgba(10, 6, 2, 0) 85%);
+}
+
+.world-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: bottom;
+}
+
+.world-card.locked .world-scene {
+  filter: brightness(0.4) saturate(0.7);
+}
+
+.world-card.next {
+  border-color: var(--accent);
+}
+
+/* The next world to beat calls for attention. Only opacity moves, which is cheap. */
+.world-card.next::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 11px;
+  box-shadow: inset 0 0 18px var(--accent);
+  pointer-events: none;
+  animation: world-call 1.6s ease-in-out infinite;
+}
+
+@keyframes world-call {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+.world-words {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding-right: 84px;
+}
+
+.world-number {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .world-card b {
-  font-size: 1.1rem;
+  font-size: 1.2rem;
+  line-height: 1.15;
 }
 
 .world-card span {
-  grid-column: 1;
   font-size: 0.8rem;
 }
 
-.world-card em {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
+.world-teaser {
+  font-style: italic;
+  line-height: 1.2;
+}
+
+.world-card .world-detail {
+  color: #e8dcc6;
+  font-size: 0.72rem;
+}
+
+.world-foes {
+  display: flex;
+  gap: 2px;
+  margin: 2px 0;
+}
+
+.world-art {
+  position: relative;
+  display: block;
+}
+
+.world-foes .art-icon {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+
+.world-art.unknown .art-icon {
+  filter: brightness(0) drop-shadow(0 0 2px rgba(255, 255, 255, 0.55));
+}
+
+.world-card .world-art.unknown::after {
+  content: "?";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.world-boss {
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  z-index: 2;
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.world-boss .art-icon {
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+
+.world-boss .world-art.unknown::after {
+  font-size: 1.6rem;
+}
+
+.world-boss small {
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.world-prize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  font-weight: 700;
+}
+
+.world-card .world-prize span {
+  font-size: 0.74rem;
+  color: var(--accent);
+}
+
+.world-card .world-prize .world-stars {
+  font-size: 1rem;
+}
+
+.world-stars i {
   font-style: normal;
-  font-size: 1.4rem;
+}
+
+.world-stars i.empty {
+  opacity: 0.55;
+}
+
+.world-card .world-goal {
+  color: #e8dcc6;
+  font-size: 0.7rem;
+}
+
+.world-card em {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+  font-style: normal;
+  font-size: 1.1rem;
   font-weight: 800;
 }
 
+.world-card.next em {
+  color: var(--accent);
+}
+
 .world-card:disabled {
-  filter: grayscale(0.85) brightness(0.55);
+  color: #d8c9b0;
+}
+
+/* The challenge cards have no picture or boss to make room for. */
+.world-card.weekly {
+  padding: 10px;
+}
+
+.world-card.weekly::before {
+  display: none;
+}
+
+.world-card.weekly b {
+  position: relative;
+  font-size: 0.95rem;
+  grid-column: 1 / -1;
+}
+
+.world-card.weekly span {
+  position: relative;
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.world-card.weekly em {
+  font-size: 1rem;
+  top: 4px;
+  right: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-card.next::after {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Short phones: more of the list on the screen at once. */
+@media (max-width: 360px) {
+  .world-words {
+    padding-right: 70px;
+  }
+
+  .world-boss {
+    width: 66px;
+  }
+
+  .world-boss .art-icon {
+    width: 58px;
+    height: 58px;
+  }
+
+  .world-teaser {
+    font-size: 0.74rem;
+  }
 }
 
 /* ---------- Tips ---------- */
