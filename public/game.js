@@ -130,6 +130,7 @@ const BUZZ_GAP_MS = 150; // vibration at most this often
 // enough that a quick wave doesn't end first.
 const GEAR_DROP_EARLIEST = 3; // seconds into the wave
 const GEAR_DROP_LATEST = 8;
+const SPECIAL_DROP_CHANCE = 0.05; // about one a run; the rest are soldier gears
 const TRAY_SLOTS = 5; // gears waiting below the board; a drop waits its turn when it's full
 const TAP_SLOP = 10; // pixels a press can move and still count as a tap
 const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
@@ -1661,9 +1662,12 @@ function bossReinforcePerSec(enemyStart) {
   return enemyStart * BOSS_PRESSURE * bossWeakening();
 }
 
+function rustShare() {
+  return Math.max(MIN_RUST_SHARE, BOSS_RUST_SHARE - upgradeLevel("rustGuard") * RUST_GUARD_PER_LEVEL - partCount("thickOil") * PART_RUST_SHARE);
+}
+
 function rustPerAttack(workingGears) {
-  const share = Math.max(MIN_RUST_SHARE, BOSS_RUST_SHARE - upgradeLevel("rustGuard") * RUST_GUARD_PER_LEVEL - partCount("thickOil") * PART_RUST_SHARE);
-  return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * share));
+  return Math.min(BOSS_RUST_MAX_PER_ATTACK, Math.ceil(workingGears * rustShare()));
 }
 
 // Every working gear the tooth can reach, so an attack always hurts the machine.
@@ -2663,9 +2667,14 @@ function specialGearCap() {
   return MAX_SPECIAL_GEARS + upgradeLevel("specials");
 }
 
+// Those waiting in the tray count too, or the cap could be passed by placing them.
+function specialGearCount() {
+  return grid.flat().filter((cell) => cell && !cell.driver && cell.type !== "soldier").length
+    + gearTray.filter((item) => item.type !== "soldier").length;
+}
+
 function canOfferSpecialGear() {
-  const specials = grid.flat().filter((cell) => cell && !cell.driver && cell.type !== "soldier").length;
-  return Boolean(bestEmptyCell()) && specials < specialGearCap();
+  return Boolean(bestEmptyCell()) && specialGearCount() < specialGearCap();
 }
 
 function rewardIsOpen(reward) {
@@ -2764,6 +2773,110 @@ function skipReward() {
   if (rewardTapReady()) chooseReward(null);
 }
 
+const showPercent = (value) => `${Math.round(value * 100)}%`;
+const showSeconds = (value) => `${Math.round(value * 10) / 10}s`;
+const showPlain = (value) => String(Math.round(value));
+const showOnOff = (value) => (value ? "On" : "Off");
+const showSpeed = (value) => `${value.toFixed(2)}/s`;
+
+function lightningInOverdrive() {
+  const keep = overdriveLeft;
+  overdriveLeft = 1;
+  const seconds = strikeRecharge();
+  overdriveLeft = keep;
+  return seconds;
+}
+
+function soldiersPerMerge() {
+  if (!partCount("forgeBonus")) return 0;
+  return Math.max(PART_FORGE_MIN_SOLDIERS, machineRate() * PART_FORGE_SECONDS);
+}
+
+// What each reward changes, read from the same numbers the game plays by.
+// `value` is worked out with one more of the reward held; `after` is for the
+// rewards that change something other than the count of parts.
+const REWARD_CHANGES = {
+  fasterGear: { label: "Main gear speed", show: showSpeed, value: () => driverTurnsPerSec, after: () => driverTurnsPerSec + DRIVER_SPEED_REWARD },
+  clockwork: { label: "Main gear speed", show: showSpeed, value: () => driverTurnsPerSec, after: () => driverTurnsPerSec + PART_CLOCKWORK },
+  veterans: { label: "Starting army", show: showPercent, value: () => waveLead - runLevel().lead, after: () => waveLead + VETERANS_REWARD - runLevel().lead },
+  reinforcements: { label: "Next wave's army", show: showPercent, value: () => waveLead + nextWaveBonus - runLevel().lead, after: () => waveLead + REINFORCEMENTS_REWARD - runLevel().lead },
+  cooling: { label: "Overdrive recharge", show: showSeconds, value: overdriveRecharge },
+  staticCharge: { label: "Lightning power", show: showPercent, value: () => 1 + partCount("staticCharge") * PART_STRIKE },
+  scrapDealer: { label: "Scrap refund", show: showPercent, value: () => (partCount("scrapDealer") ? PART_SCRAP_REFUND : 0.5) },
+  thickOil: { label: "Gears hit by rust", show: showPercent, value: rustShare },
+  warChest: { label: "Coins from this run", show: showPercent, value: () => 1 + partCount("warChest") * PART_COINS },
+  drillManual: { label: "Training cost", show: showPlain, value: trainCost },
+  piercing: { label: "Soldiers against brutes", show: showPercent, value: () => (partCount("piercing") ? 1 : BRUTE_SOLDIER_DAMAGE) },
+  antifreeze: { label: "Freeze time", show: showSeconds, value: () => FROST_SECONDS / (1 + partCount("antifreeze")) },
+  fireproof: { label: "Gears burned", show: showPlain, value: () => IMP_GEARS_BURNED - partCount("fireproof") },
+  longChain: { label: "Hit kept per gear", show: showPercent, value: () => CHAIN_FALLOFF + partCount("longChain") * PART_CHAIN_FALLOFF },
+  bossHunter: { label: "Damage to bosses", show: showPercent, value: () => 1 + partCount("bossHunter") * PART_BOSS_DAMAGE },
+  demolition: { label: "Bomb gear blast", show: showPercent, value: () => gearPartPayout("bomb") },
+  heavyLoad: { label: "Big gear soldiers", show: showPercent, value: () => gearPartPayout("big") },
+  turbo: { label: "Booster strength", show: showPercent, value: () => 1 + partCount("turbo") * PART_BOOST },
+  blastCleaner: { label: "Rust fixed per blast", show: showPlain, value: () => partCount("blastCleaner") },
+  stormEngine: { label: "Lightning in Overdrive", show: showSeconds, value: lightningInOverdrive },
+  warDrums: { label: "Full Rally charge", show: showPercent, value: rallyBonus },
+  patterns: { label: "Line combo payout", show: showPercent, value: comboLinePayout },
+  forgeBonus: { label: "Soldiers per merge", show: showPlain, value: soldiersPerMerge },
+  chargedStrike: { label: "Lightning fills gears", show: showOnOff, value: () => partCount("chargedStrike") },
+  secondWind: { label: "Second chances", show: showPlain, value: () => partCount("secondWind") },
+  promotion: { label: "Army rank", show: (rank) => ARMY_RANKS[rank].name, value: () => armyRank, after: () => armyRank + 1 },
+};
+
+// The machine's output with the new gear in the spot it would really go.
+function rateWithNewGear(type, level) {
+  const spot = bestEmptyCell();
+  if (!spot) return null;
+  const cell = freshCell(type);
+  cell.level = level;
+  grid[spot.row][spot.col] = cell;
+  markCombos();
+  const rate = machineRate();
+  grid[spot.row][spot.col] = null;
+  markCombos();
+  return rate;
+}
+
+// { label, from, to } for a reward's card. A new gear shows what it does for the
+// machine, or the gear count when it adds nothing yet, like a lone booster.
+function rewardChange(reward) {
+  if (reward.gear || reward.id === "forgedGear") {
+    const rate = machineRate();
+    const after = rateWithNewGear(reward.gear || newGearType(), reward.gear ? 1 : FORGED_GEAR_LEVEL);
+    if (after !== null && formatRate(after) !== formatRate(rate)) return { label: "Soldiers per second", from: formatRate(rate), to: formatRate(after) };
+    const gears = grid.flat().filter((cell) => cell && !cell.driver).length;
+    return { label: "Gears on board", from: String(gears), to: String(gears + 1) };
+  }
+  const spec = REWARD_CHANGES[reward.id];
+  if (!spec) return null;
+  const from = spec.value();
+  let to;
+  if (spec.after) {
+    to = spec.after();
+  } else {
+    const held = runParts[reward.id];
+    runParts[reward.id] = partCount(reward.id) + 1;
+    to = spec.value();
+    if (held === undefined) delete runParts[reward.id];
+    else runParts[reward.id] = held;
+  }
+  return { label: spec.label, from: spec.show(from), to: spec.show(to) };
+}
+
+function rewardChangeRow(change) {
+  const row = document.createElement("div");
+  row.className = "reward-change";
+  const part = (tag, className, text) => {
+    const el = document.createElement(tag);
+    el.className = className;
+    el.textContent = text;
+    return el;
+  };
+  row.append(part("span", "change-label", change.label), part("span", "change-from", change.from), part("span", "change-arrow", "\u2192"), part("b", "change-to", change.to));
+  return row;
+}
+
 function renderRewardOptions(rewards) {
   const list = document.getElementById("reward-options");
   list.replaceChildren();
@@ -2783,6 +2896,8 @@ function renderRewardOptions(rewards) {
     const words = document.createElement("div");
     words.className = "reward-words";
     words.append(name, text);
+    const change = rewardChange(reward);
+    if (change) words.append(rewardChangeRow(change));
     button.append(rewardIcon(reward), words);
     button.addEventListener("click", () => {
       if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) chooseReward(reward);
@@ -5015,6 +5130,17 @@ function planGearDrop() {
   return GEAR_DROP_EARLIEST + runRandom(`gearDrop${wave}`)() * (GEAR_DROP_LATEST - GEAR_DROP_EARLIEST);
 }
 
+// The same in a daily challenge for everyone. Bomb Week's gears are all bombs
+// already, and a machine at its cap of special gears gets a normal one.
+function droppedGearType() {
+  if (currentEvent?.id === "bombs" || specialGearCount() >= specialGearCap()) return newGearType();
+  const random = runRandom(`gearDropType${wave}`);
+  if (random() >= SPECIAL_DROP_CHANCE) return newGearType();
+  const types = ["big", "booster", "bomb"];
+  if (featureOn("newGears")) types.push("far", "lone");
+  return types[Math.floor(random() * types.length)];
+}
+
 // Flies to the tray when a hit lands on the enemy. A full tray just waits for
 // the next hit, so a gear is never lost for want of room.
 function maybeDropGear() {
@@ -5029,7 +5155,7 @@ function maybeDropGear() {
     gearDropAt = NO_GEAR_DROP;
     level = 1;
   }
-  const item = { type: newGearType(), level, arriving: true };
+  const item = { type: droppedGearType(), level, arriving: true };
   gearTray.push(item);
   renderGearTray();
   flyGearToTray(item, gearTray.length - 1);
@@ -5892,7 +6018,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
-      ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. Drag one onto the board, or tap it.", gearIcon("soldier")],
+      ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
     ["Abilities", [

@@ -710,6 +710,69 @@ button {
   letter-spacing: 0.04em;
 }
 
+.reward-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 5px;
+  margin-top: 2px;
+  font-size: 0.78rem;
+}
+
+.reward-change .change-label {
+  color: #c9b896;
+  margin-right: 2px;
+}
+
+.reward-change .change-from {
+  color: #d8c9b0;
+}
+
+.reward-change .change-arrow {
+  color: #c9b896;
+}
+
+/* Beats ".reward-option b", which colours and sizes the reward's name. */
+.reward-option .reward-change .change-to {
+  color: #8bd65a;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+/* Short phones: one line each, so all the cards and buttons still fit. */
+@media (orientation: portrait) and (max-height: 700px) {
+  .reward-change {
+    flex-wrap: nowrap;
+    margin-top: 0;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  .reward-change .change-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .reward-change .change-from,
+  .reward-change .change-arrow,
+  .reward-change .change-to {
+    flex-shrink: 0;
+  }
+
+  .reward-option .reward-change .change-to {
+    font-size: 0.74rem;
+  }
+
+  .reward-words {
+    gap: 0;
+  }
+
+  .reward-option {
+    line-height: 1.15;
+  }
+}
+
 .reward-option.rare {
   border-color: #4f9fe0;
   background: #1f2c3f;

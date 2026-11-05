@@ -32,6 +32,7 @@ async function check(name, fn) {
     playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; blockedCells.clear(); drag = null;
     grid.forEach((row, r) => row.forEach((cell, c) => { if (cell && !cell.driver) grid[r][c] = null; }));
   }, dropAt);
+  const GEAR_NAMES = ["soldier", "big", "booster", "bomb", "far", "lone"];
   const gears = () => page.evaluate(() => grid.flat().filter((c) => c && !c.driver).map((c) => c.level));
   const tray = () => page.evaluate(() => gearTray.map((g) => g.level));
   const stock = (...levels) => page.evaluate((ls) => { gearTray = ls.map((level) => ({ type: "soldier", level })); renderGearTray(); }, levels);
@@ -197,6 +198,66 @@ async function check(name, fn) {
     const again = await page.evaluate(() => { boss.hp = 10; maybeDropGear(); const n = gearTray.length; boss = null; return n; });
     assert.equal(again, 1);
   });
+  await check("a few drops are special gears, and the rest are soldier gears", async () => {
+    await fresh();
+    const r = await page.evaluate(() => {
+      const count = {};
+      for (let i = 0; i < 20000; i++) { const type = droppedGearType(); count[type] = (count[type] || 0) + 1; }
+      return count;
+    });
+    const special = (20000 - r.soldier) / 20000;
+    assert.ok(special > 0.04 && special < 0.06, `share ${special}`);
+    for (const type of ["big", "booster", "bomb", "far", "lone"]) assert.ok(r[type] > 0, `never dropped ${type}`);
+    assert.deepEqual(Object.keys(r).filter((type) => !GEAR_NAMES.includes(type)), []);
+  });
+  await check("a special drop goes into the tray and works from there", async () => {
+    await fresh(5);
+    const keep = await page.evaluate(() => { window.keepRandom = runRandom; runRandom = () => { const seq = [0, 0]; return () => seq.shift() ?? 0; }; maybeDropGear(); runRandom = window.keepRandom; return gearTray.map((g) => g.type); });
+    assert.deepEqual(keep, ["big"]);
+    await page.waitForFunction(() => !gearTray[0].arriving);
+    await dragTo(await slotAt(0), await cellAtPage(1, 1));
+    assert.equal(await page.evaluate(() => grid[1][1]?.type), "big");
+  });
+  await check("gears not unlocked yet don't drop", async () => {
+    await fresh();
+    const r = await page.evaluate(() => {
+      const waves = save.stats.waves;
+      save.stats.waves = 0;
+      const seen = new Set();
+      for (let i = 0; i < 20000; i++) seen.add(droppedGearType());
+      save.stats.waves = waves;
+      return [...seen];
+    });
+    assert.ok(!r.includes("far") && !r.includes("lone"), r.join());
+  });
+  await check("no special drops past the cap, counting the tray; Bomb Week stays all bombs", async () => {
+    await fresh();
+    const r = await page.evaluate(() => {
+      const many = (n) => { const seen = new Set(); for (let i = 0; i < n; i++) seen.add(droppedGearType()); return [...seen]; };
+      gearTray = Array.from({ length: specialGearCap() }, () => ({ type: "big", level: 1 }));
+      const capped = many(5000);
+      const offered = canOfferSpecialGear();
+      gearTray = [];
+      const keep = currentEvent;
+      currentEvent = WEEKLY_EVENTS.find((e) => e.id === "bombs");
+      const bombs = many(5000);
+      currentEvent = keep;
+      return { capped, offered, bombs };
+    });
+    assert.deepEqual(r, { capped: ["soldier"], offered: false, bombs: ["bomb"] });
+  });
+  await check("a daily challenge drops the same type for everyone", async () => {
+    await fresh();
+    const r = await page.evaluate(() => {
+      const keep = currentDaily;
+      currentDaily = { day: "2026-11-05" };
+      const types = [];
+      for (let w = 1; w <= 200; w++) { wave = w; const once = droppedGearType(); if (droppedGearType() !== once) types.push(w); }
+      currentDaily = keep; wave = 3;
+      return types;
+    });
+    assert.deepEqual(r, []);
+  });
   await check("a full tray keeps a boss's gear for later", async () => {
     await fresh();
     await stock(1, 1, 1, 1, 1);
@@ -312,7 +373,7 @@ async function check(name, fn) {
     assert.deepEqual([r.shows, r.hides, r.target], [true, false, "#gear-tray"]);
     await page.evaluate(() => { save.lang = "th"; writeSave(); });
     await page.goto(url);
-    const left = await page.evaluate((text) => ["Free gear", text, "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. Drag one onto the board, or tap it."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
+    const left = await page.evaluate((text) => ["Free gear", text, "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it."].filter((x) => /[A-Za-z]{3}/.test(t(x))), r.text);
     assert.deepEqual(left, []);
   });
 
