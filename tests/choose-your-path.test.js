@@ -69,8 +69,20 @@ async function check(name, fn) {
   });
 
   console.log("\nThe choice");
+  await check("before wave 8 there's no elite wave, but still a choice", async () => {
+    await fresh(7);
+    const r = await page.evaluate(() => Array.from({ length: 200 }, pickPaths));
+    assert.ok(r.every((ids) => !ids.includes("elite") && ids.length === 3 && ids[0] === "safe"), JSON.stringify(r[0]));
+    await fresh(8);
+    assert.ok(await page.evaluate(() => Array.from({ length: 200 }, pickPaths).flat().includes("elite")), "from wave 8");
+  });
+  await check("with a full tray early on, the safe road and one other are still offered", async () => {
+    await fresh(4);
+    const r = await page.evaluate(() => { gearTray = Array.from({ length: TRAY_SLOTS }, () => ({ type: "soldier", level: 1 })); const out = pickPaths(); gearTray = []; return out; });
+    assert.deepEqual(r, ["safe", "treasure"]);
+  });
   await check("always the safe road and two others, all different", async () => {
-    await fresh();
+    await fresh(9);
     const r = await page.evaluate(() => Array.from({ length: 300 }, pickPaths));
     assert.ok(r.every((ids) => ids.length === 3 && ids[0] === "safe" && new Set(ids).size === 3), "shape");
     const seen = new Set(r.flat());
