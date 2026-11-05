@@ -85,9 +85,10 @@ async function check(name, fn) {
         const chips = [...document.querySelectorAll(".status-chip")].map((c) => c.textContent);
         return { fits: box.scrollHeight <= box.clientHeight, chips, total: statusChips().length };
       });
+      const frozenIcon = await page.evaluate(() => STATUS_ICONS.frozen);
       assert.equal(r.fits, true, `${w}x${h} overflows`);
-      assert.match(r.chips[0], /^Frozen /, `${w}x${h} first label`);
-      assert.match(r.chips.at(-1), /^\+\d+ more$/, `${w}x${h} shows a count`);
+      assert.equal(r.chips[0], frozenIcon, `${w}x${h} first icon`);
+      assert.match(r.chips.at(-1), /^\+\d+$/, `${w}x${h} shows a count`);
       const hidden = Number(r.chips.at(-1).match(/\d+/)[0]);
       assert.equal(r.chips.length - 1 + hidden, r.total, `${w}x${h} count adds up`);
       console.log("       ", `${w}x${h}`, r.chips.length - 1, "shown,", hidden, "counted");
@@ -97,7 +98,8 @@ async function check(name, fn) {
   await check("newest rewards show first", async () => {
     await page.evaluate(() => { frozenFor = 0; activeDeal = null; wavePace = null; overdriveLeft = 0; rallying = false; runParts = { cooling: 1, warChest: 1 }; playerPower = 1000; enemyPower = 1000; });
     await page.waitForTimeout(120);
-    assert.deepEqual(await page.locator(".status-chip").allTextContents(), ["War chest", "Cooling oil"]);
+    const icons = await page.evaluate(() => [REWARD_ICONS.warChest, REWARD_ICONS.cooling]);
+    assert.deepEqual(await page.locator(".status-chip").allTextContents(), icons);
   });
   await check("no page errors", async () => assert.deepEqual(errors, []));
   await browser.close(); server.close();
