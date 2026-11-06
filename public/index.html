@@ -4,13 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Gear Fight!</title>
+  <meta name="description" content="Build a gear machine, send soldiers to fight, and beat the bosses. A free puzzle-battle game that plays offline." />
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#2b1a0f" />
   <link rel="icon" href="icons/icon-192.png" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 </head>
 <body>
   <div id="app-frame">
@@ -24,6 +25,7 @@
         <button id="title-quests-btn" class="workshop-btn">Quests &amp; awards</button>
         <button id="title-book-btn" class="workshop-btn"></button>
         <button id="title-more-btn" class="workshop-btn">More</button>
+        <button id="install-btn" class="workshop-btn hidden">Install the app</button>
       </div>
       <div id="player-level">
         <b id="player-level-name">Level 1 Apprentice</b>
@@ -103,6 +105,13 @@
         <button id="vibrate-btn" class="workshop-btn"></button>
       </div>
       <div id="pause-quests"></div>
+    </div>
+
+    <div id="install-screen" class="hidden">
+      <div id="install-card">
+        <p id="install-text">To install Gear Fight! on your iPhone or iPad, tap the Share button in Safari, then "Add to Home Screen".</p>
+        <button id="install-close-btn">Got it</button>
+      </div>
     </div>
 
     <div id="tip-screen" class="hidden">
