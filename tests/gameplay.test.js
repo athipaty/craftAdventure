@@ -139,7 +139,7 @@ async function check(name, fn) {
   await page.click("#play-btn");
   await check("Train explains what's missing", async () => {
     await page.evaluate(() => { gameState = "paused"; playerPower = 1; enemyPower = 100; updateTrainButton(); });
-    assert.match(await page.locator("#train-btn").textContent(), /^Train Knight: need \d+ more$/);
+    assert.equal(await page.locator("#train-btn").textContent(), "Train Knight");
     await page.evaluate(() => { gameState = "playing"; playerPower = 1000; enemyPower = 1000; });
   });
   await check("popups no longer overlap the top bar", async () => {

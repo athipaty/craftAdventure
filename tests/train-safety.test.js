@@ -76,10 +76,10 @@ async function check(name, fn) {
     await fresh(1000, 1000);
     const need = await onTheEdge(-50);
     await fresh(need, 1000);
-    assert.match(await page.locator("#train-btn").textContent(), /^Train Knight: need \d+ more$/);
+    assert.equal(await page.locator("#train-btn").textContent(), "Train Knight");
     assert.equal(await page.locator("#train-btn").isDisabled(), true);
     await fresh(await onTheEdge(5), 1000);
-    assert.equal(await page.locator("#train-btn").textContent(), "Train Knight: 30");
+    assert.equal(await page.locator("#train-btn").textContent(), "Train Knight!");
     assert.equal(await page.locator("#train-btn").isDisabled(), false);
   });
   await check("a real press pays the price and moves up a rank", async () => {

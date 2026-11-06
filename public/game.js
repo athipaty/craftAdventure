@@ -1563,8 +1563,7 @@ function trainArmy() {
 
 // Train only takes up room while there is a rank left to train to.
 function updateTrainVisibility() {
-  document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train"));
-  document.getElementById("main-actions").classList.toggle("hidden", !featureOn("train") || !nextRank());
+  document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train") || !nextRank());
 }
 
 function updateTrainButton() {
@@ -1572,11 +1571,15 @@ function updateTrainButton() {
   const button = document.getElementById("train-btn");
   const next = nextRank();
   let label = `${ARMY_RANKS[armyRank].plural} (top rank)`;
+  let charge = 1;
   if (next) {
+    // The button fills as the army grows toward the cost of the next rank.
     const short = soldiersShortFor(trainCost());
-    label = short > 0 ? `Train ${next.name}: need ${short} more` : `Train ${next.name}: ${trainCost()}`;
+    charge = Math.max(0, 1 - short / trainCost());
+    label = short > 0 ? `Train ${next.name}` : `Train ${next.name}!`;
   }
   setLabel(button, label);
+  button.style.setProperty("--charge", `${Math.round(charge * 100)}%`);
   button.disabled = !canTrain();
   setLabel(document.getElementById("rank-label"), ARMY_RANKS[armyRank].plural);
 }
@@ -5061,20 +5064,20 @@ function drawBoard() {
 }
 
 const SOLDIER_LOOKS = {
-  runner: { eyes: 2, tunic: "#d6b13a", trim: "#7a5716", skin: "#9ccc5a", horns: "#2f2410", blade: "#c3ccd5", size: 0.92 },
-  brute: { eyes: 2, armor: true, tusks: true, tunic: "#59606b", trim: "#2a2f36", skin: "#6f8f45", horns: "#c3ccd5", blade: "#3f4a55", size: 1.35 },
-  shaman: { eyes: 3, tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
-  frost: { eyes: 2, eye: "#e8fbff", spikes: 6, tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
-  imp: { eyes: 2, wings: true, tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
+  runner: { style: "rider", tunic: "#d6b13a", trim: "#7a5716", skin: "#9ccc5a", horns: "#2f2410", blade: "#c3ccd5", size: 0.92 },
+  brute: { style: "boar", tunic: "#59606b", trim: "#2a2f36", skin: "#6f8f45", horns: "#c3ccd5", blade: "#3f4a55", size: 1.35 },
+  shaman: { style: "shaman", tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
+  frost: { style: "yeti", tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
+  imp: { style: "imp", tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
   r0: { style: "recruit", tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
   r1: { style: "knight", tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
   r2: { style: "champion", tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
   r3: { style: "hero", tunic: "#fff0b8", trim: "#b98a1e", skin: "#f3d5b0", helmet: "#ffffff", blade: "#8fe7ff", plume: "#8fe7ff", cape: "#3a7ddb", glow: "#ffe28a", size: 1.4 },
   charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff", size: 1.1 },
-  e0: { eyes: 1, tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
-  e1: { eyes: 2, tusks: true, tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
-  e2: { eyes: 2, spikes: 5, tunic: "#4a5560", trim: "#262c33", skin: "#7a93a3", horns: "#d7dfe6", blade: "#59402a", size: 1.3 },
-  e3: { eyes: 3, wings: true, tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
+  e0: { style: "goblin", tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
+  e1: { style: "orc", tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
+  e2: { style: "troll", tunic: "#4a5560", trim: "#262c33", skin: "#7a93a3", horns: "#d7dfe6", blade: "#59402a", size: 1.3 },
+  e3: { style: "demon", tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
 };
 
 const OUTLINE = "#22150b";
@@ -5154,7 +5157,7 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
     ctx.shadowBlur = glowBlur(8);
   }
   if (colors.horns) {
-    drawMonster(ctx, colors, state, time, stride, swing, mood);
+    (MONSTER_STYLES[colors.style] || MONSTER_STYLES.goblin)(ctx, colors, state, time, stride, swing, mood);
     ctx.restore();
     return;
   }
@@ -5230,386 +5233,547 @@ function drawVisorEyes(ctx, spots, mood) {
   }
 }
 
-// Recruits: a farmhand called up to fight, in a cloth smock and an iron pot
-// hat, with a wooden spear and a plank shield. Their face shows.
-function drawRecruit(ctx, colors, state, time, stride, swing, mood) {
-  const headY = -19;
-  const wood = "#9a5f2c";
+// Polished metal: light on the left, the colour, then dark on the right.
+function metalShade(ctx, x0, x1, color) {
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  g.addColorStop(0, mixColor(color, "#ffffff", 0.55));
+  g.addColorStop(0.45, color);
+  g.addColorStop(1, mixColor(color, "#000000", 0.35));
+  return g;
+}
 
-  // Plank shield on the far arm, behind the body.
-  ctx.beginPath();
-  ctx.arc(-4.6, -10, 4.4, 0, Math.PI * 2);
-  inked(ctx, wood, 1.1);
-  ctx.strokeStyle = "#5a3414";
-  ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  for (const x of [-6.2, -4.6, -3]) {
-    ctx.moveTo(x, -13.8);
-    ctx.lineTo(x, -6.2);
-  }
-  ctx.stroke();
-  inkedCircle(ctx, -4.6, -10, 1.2, colors.helmet, 0.7);
-
-  // Leggings and plain shoes.
-  for (const side of [-1, 1]) {
-    const x = side * 2.2 + side * stride;
-    ctx.beginPath();
-    ctx.rect(x - 1.3, -6, 2.6, 4.5);
-    inked(ctx, mixColor(colors.trim, "#000000", 0.1), 1);
-    ctx.beginPath();
-    ctx.ellipse(x + 0.8, -1.3, 2.4, 1.5, 0, 0, Math.PI * 2);
-    inked(ctx, "#5a3414", 1);
-  }
-
-  // A cloth smock in the army's colour, a patch, and a rope belt.
-  ctx.beginPath();
-  ctx.moveTo(-4.4, -14.6);
-  ctx.quadraticCurveTo(-6.4, -8, -5.4, -4.2);
-  ctx.lineTo(5.4, -4.2);
-  ctx.quadraticCurveTo(6.4, -8, 4.4, -14.6);
-  ctx.closePath();
-  inked(ctx, colors.tunic);
-  ctx.beginPath();
-  ctx.rect(1.2, -12.6, 2.4, 2.4);
-  inked(ctx, colors.trim, 0.6);
-  ctx.strokeStyle = "#d9c08a";
-  ctx.lineWidth = 1.3;
-  ctx.beginPath();
-  ctx.moveTo(-5.7, -8);
-  ctx.lineTo(5.7, -8);
-  ctx.stroke();
-  inkedCircle(ctx, -1.6, -7.6, 0.9, "#d9c08a", 0.5);
-
-  // Round face, and an iron pot hat with a wide brim.
-  inkedCircle(ctx, 0, headY, 6.6, colors.skin);
-  drawCartoonEyes(ctx, 1.6, headY + 0.2, 1.9, false, mood);
-  drawSmallMouth(ctx, 2, headY + 3.8, mood);
-  if (mood === "scared") drawSweatDrop(ctx, -5.6, headY - 2);
-  ctx.beginPath();
-  ctx.arc(0, headY - 3.2, 5.8, Math.PI, Math.PI * 2);
-  ctx.closePath();
-  inked(ctx, colors.helmet);
-  ctx.beginPath();
-  ctx.ellipse(0, headY - 3.2, 9.2, 1.9, 0, 0, Math.PI * 2);
-  inked(ctx, colors.helmet);
-  ctx.beginPath();
-  ctx.arc(-2, headY - 5.4, 2, Math.PI * 1.1, Math.PI * 1.5);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
-  ctx.lineWidth = 0.9;
-  ctx.stroke();
-
-  // A wooden spear with an iron tip.
+// Eyes glowing through a visor: two bright points, squeezed on a wince,
+// arched when happy, wide when scared.
+function visorGlow(ctx, spots, color, mood) {
   ctx.save();
-  ctx.translate(4.2, -11);
-  ctx.rotate(swing + 0.6);
-  ctx.beginPath();
-  ctx.rect(2.2, -14, 1.4, 17);
-  inked(ctx, "#8a5a2c", 0.9);
-  ctx.beginPath();
-  ctx.moveTo(1.6, -13.6);
-  ctx.lineTo(2.9, -19);
-  ctx.lineTo(4.2, -13.6);
-  ctx.closePath();
-  inked(ctx, colors.blade, 0.9);
-  inkedCircle(ctx, 2.9, 0.6, 2, colors.skin, 1);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = glowBlur(4);
+  for (const [x, y] of spots) {
+    ctx.beginPath();
+    if (mood === "wince" || mood === "happy") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 0.8;
+      if (mood === "happy") {
+        ctx.moveTo(x - 0.9, y + 0.4);
+        ctx.lineTo(x, y - 0.5);
+        ctx.lineTo(x + 0.9, y + 0.4);
+      } else {
+        ctx.moveTo(x - 0.9, y);
+        ctx.lineTo(x + 0.9, y);
+      }
+      ctx.stroke();
+      continue;
+    }
+    const r = mood === "scared" ? 1.1 : 0.85;
+    ctx.ellipse(x, y, r * 1.2, r, 0, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
   ctx.restore();
 }
 
-// Champions: a big, heavy warrior in plate, with layered shoulders, a crested
-// helmet with a T-shaped opening, an armoured skirt and a two-handed war hammer.
-function drawChampion(ctx, colors, state, time, stride, swing, mood) {
-  const steel = colors.helmet;
-  const steelDark = mixColor(steel, "#000000", 0.4);
-  const gold = "#ffd23f";
-  const headY = -21;
+function flowingCape(ctx, color, top, length, spread, time, stride) {
+  const wave = Math.sin(time * 4) * 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-3.6, top);
+  ctx.quadraticCurveTo(-spread - Math.abs(stride) - wave, top + length * 0.45, -spread * 0.8 - Math.abs(stride) + wave, top + length);
+  ctx.lineTo(-spread * 0.45, top + length - 1.4);
+  ctx.lineTo(-1, top + length * 0.8);
+  ctx.closePath();
+  inked(ctx, color, 1.2);
+}
 
-  if (colors.cape) {
-    ctx.beginPath();
-    ctx.moveTo(-4.4, -17);
-    ctx.quadraticCurveTo(-13 - Math.abs(stride), -8, -10 - Math.abs(stride), -0.5);
-    ctx.lineTo(-1, -4);
-    ctx.closePath();
-    inked(ctx, colors.cape);
-  }
-
-  // Thick legs and heavy boots.
+function plateLegs(ctx, steel, boots, stride, width) {
   for (const side of [-1, 1]) {
-    const x = side * 2.6 + side * stride;
+    const hip = side * 1.9;
+    const foot = side * 3.1 + side * stride * 1.2;
+    limb(ctx, hip, -10, foot, -1.6, width, steel);
+    inkedCircle(ctx, (hip + foot) / 2, -5.6, width * 0.55, mixColor(steel, "#ffffff", 0.3), 0.7);
     ctx.beginPath();
-    ctx.rect(x - 1.8, -7, 3.6, 5);
-    inked(ctx, steelDark, 1);
-    ctx.beginPath();
-    ctx.roundRect(x - 2.4, -2.8, 5.8, 2.8, 1);
-    inked(ctx, colors.trim, 1);
+    ctx.moveTo(foot - 1.8, -2.4);
+    ctx.lineTo(foot + 2.2, -2.4);
+    ctx.quadraticCurveTo(foot + 3.8, -2, foot + 3.6, 0);
+    ctx.lineTo(foot - 1.8, 0);
+    ctx.closePath();
+    inked(ctx, boots, 0.9);
   }
+}
 
-  // A skirt of armoured strips in the army's colours.
-  [-4.6, -2.2, 0.2, 2.6].forEach((x, i) => {
-    ctx.beginPath();
-    ctx.rect(x, -8, 2.4, 4.8);
-    inked(ctx, i % 2 ? colors.trim : colors.tunic, 0.8);
-  });
-
-  // A big rounded breastplate with a ridge and gold edging.
+// Recruits: a young squire in a leather jerkin and a nose-guard helmet, a
+// scarf flying behind, with a short sword and a round wooden shield.
+function drawRecruit(ctx, colors, state, time, stride, swing, mood) {
+  const headY = -25;
+  const wave = Math.sin(time * 5) * 1.4;
   ctx.beginPath();
-  ctx.moveTo(-6.8, -17.4);
-  ctx.quadraticCurveTo(-7.8, -9.5, -5.2, -7.4);
-  ctx.lineTo(5.2, -7.4);
-  ctx.quadraticCurveTo(7.8, -9.5, 6.8, -17.4);
+  ctx.moveTo(-1, -21);
+  ctx.quadraticCurveTo(-7, -21 + wave, -11, -18 - wave);
+  ctx.lineTo(-10, -16.4);
+  ctx.quadraticCurveTo(-6, -18, -1, -18.6);
   ctx.closePath();
-  inked(ctx, steel);
-  ctx.strokeStyle = steelDark;
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(0.6, -16.8);
-  ctx.quadraticCurveTo(1.6, -12, 0.6, -8);
-  ctx.stroke();
-  ctx.strokeStyle = gold;
-  ctx.lineWidth = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(-6.4, -16.8);
-  ctx.lineTo(6.4, -16.8);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.rect(-5.6, -8.6, 11.2, 2);
-  inked(ctx, colors.trim, 0.8);
-  ctx.beginPath();
-  ctx.rect(-1, -9, 2.6, 2.8);
-  inked(ctx, gold, 0.7);
-
-  // Huge layered shoulder plates.
+  inked(ctx, colors.tunic, 0.9);
   for (const side of [-1, 1]) {
+    const foot = side * 3 + side * stride * 1.2;
+    limb(ctx, side * 1.7, -10, foot, -2, 2.3, colors.trim);
     ctx.beginPath();
-    ctx.ellipse(side * 6.6, -16.4, 4, 3.1, 0, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    inked(ctx, steel, 1);
-    ctx.beginPath();
-    ctx.ellipse(side * 6.9, -14.8, 3.5, 2.3, 0, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    inked(ctx, steel, 0.9);
-    ctx.strokeStyle = gold;
-    ctx.lineWidth = 0.7;
-    ctx.beginPath();
-    ctx.ellipse(side * 6.9, -14.8, 3.1, 1.9, 0, Math.PI * 1.1, Math.PI * 1.9);
-    ctx.stroke();
+    ctx.roundRect(foot - 1.8, -2.8, 4.8, 2.8, 1);
+    inked(ctx, "#6b4422", 0.9);
   }
-
-  // A crested helmet with a T-shaped opening.
-  ctx.beginPath();
-  ctx.moveTo(-6, headY + 5);
-  ctx.lineTo(-6.4, headY - 2);
-  ctx.quadraticCurveTo(-6.4, headY - 7.5, 0, headY - 7.5);
-  ctx.quadraticCurveTo(6.4, headY - 7.5, 6.4, headY - 2);
-  ctx.lineTo(6, headY + 5);
-  ctx.closePath();
-  inked(ctx, steel);
-  ctx.beginPath();
-  ctx.moveTo(-1, headY - 1.8);
-  ctx.lineTo(6.4, headY - 1.8);
-  ctx.lineTo(6.4, headY + 0.8);
-  ctx.lineTo(4.2, headY + 0.8);
-  ctx.lineTo(4.2, headY + 5);
-  ctx.lineTo(1.8, headY + 5);
-  ctx.lineTo(1.8, headY + 0.8);
-  ctx.lineTo(-1, headY + 0.8);
-  ctx.closePath();
-  inked(ctx, "#1c1410", 0.9);
-  drawVisorEyes(ctx, [[0.8, headY - 0.5], [4.8, headY - 0.5]], mood);
-  if (mood === "scared") drawSweatDrop(ctx, -7.4, headY - 3);
-  ctx.beginPath();
-  ctx.moveTo(-6.6, headY - 5.6);
-  ctx.quadraticCurveTo(-1, headY - 15, 6.6, headY - 7);
-  ctx.lineTo(5, headY - 6.6);
-  ctx.quadraticCurveTo(-0.4, headY - 10.6, -5.2, headY - 4.8);
-  ctx.closePath();
-  inked(ctx, colors.plume || colors.trim, 1);
-  ctx.strokeStyle = mixColor(colors.plume || colors.trim, "#000000", 0.3);
+  // Round wooden shield on the far arm.
+  inkedCircle(ctx, -4.4, -14, 4.2, "#9a5f2c", 1.1);
+  ctx.strokeStyle = "#5a3414";
   ctx.lineWidth = 0.6;
   ctx.beginPath();
-  for (const t of [0.2, 0.4, 0.6, 0.8]) {
-    const x = -6 + t * 12;
-    ctx.moveTo(x, headY - 6.4 - Math.sin(t * Math.PI) * 3);
-    ctx.lineTo(x + 0.6, headY - 8.6 - Math.sin(t * Math.PI) * 4);
+  for (const x of [-6, -4.4, -2.8]) {
+    ctx.moveTo(x, -17.8);
+    ctx.lineTo(x, -10.2);
   }
   ctx.stroke();
-
-  // A two-handed war hammer.
-  ctx.save();
-  ctx.translate(5.8, -13);
-  ctx.rotate(swing + 0.4);
   ctx.beginPath();
-  ctx.rect(2.2, -16, 1.7, 18.6);
-  inked(ctx, "#5a3414", 0.9);
+  ctx.arc(-4.4, -14, 4.2, 0, Math.PI * 2);
+  ctx.strokeStyle = colors.helmet;
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  inkedCircle(ctx, -4.4, -14, 1.2, colors.helmet, 0.6);
+  // Leather jerkin with a stripe of the army's colour, and a belt.
   ctx.beginPath();
-  ctx.roundRect(-1.6, -21.6, 9.4, 5.8, 1.2);
-  inked(ctx, steel, 1.1);
+  ctx.moveTo(-4.2, -20.4);
+  ctx.lineTo(4.4, -20.4);
+  ctx.lineTo(3.6, -9.6);
+  ctx.lineTo(-3.6, -9.6);
+  ctx.closePath();
+  inked(ctx, "#8a5a2c");
   ctx.beginPath();
-  ctx.rect(1.6, -21.6, 3, 5.8);
-  inked(ctx, gold, 0.8);
-  inkedCircle(ctx, 3, 0.8, 2.5, steel, 1);
-  ctx.restore();
+  ctx.rect(-1.2, -20, 2.6, 10);
+  ctx.fillStyle = colors.tunic;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(-4, -11.6, 8, 1.8);
+  inked(ctx, "#4a2c12", 0.7);
+  inkedCircle(ctx, 0.2, -10.7, 0.9, "#ffd23f", 0.5);
+  // The face, under a nose-guard helmet.
+  inkedCircle(ctx, 0.6, headY, 4.6, colors.skin, 1.2);
+  drawCartoonEyes(ctx, 2.2, headY + 0.4, 1.15, true, mood);
+  drawSmallMouth(ctx, 2.6, headY + 3.2, mood);
+  ctx.beginPath();
+  ctx.moveTo(-4.4, headY - 0.6);
+  ctx.quadraticCurveTo(-4, headY - 6.6, 0.8, headY - 7.4);
+  ctx.quadraticCurveTo(5.6, headY - 6.6, 5.6, headY - 1.2);
+  ctx.closePath();
+  ctx.fillStyle = metalShade(ctx, -4.4, 5.6, colors.helmet);
+  ctx.fill();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(3.6, headY - 1.6, 1.3, 3.6);
+  inked(ctx, colors.helmet, 0.7);
+  if (mood === "scared") drawSweatDrop(ctx, -4.6, headY - 1);
+  // A short sword, raised.
+  weaponArm(ctx, 4.2, -17, swing + 0.9, () => {
+    ctx.beginPath();
+    ctx.moveTo(2.4, -2);
+    ctx.lineTo(2.4, -11);
+    ctx.lineTo(3.3, -12.8);
+    ctx.lineTo(4.2, -11);
+    ctx.lineTo(4.2, -2);
+    ctx.closePath();
+    inked(ctx, colors.blade, 0.9);
+    ctx.beginPath();
+    ctx.rect(0.8, -2.6, 5, 1.3);
+    inked(ctx, "#6b4422", 0.7);
+    inkedCircle(ctx, 3.3, 0.2, 1.8, colors.skin, 0.9);
+  });
 }
 
-// Heroes: a legendary paladin with a winged helmet that shows the face, a
-// floating halo, a long flowing cape, a sun on the chest, a golden sun shield
-// and a glowing magic sword.
+// Knights: full shining plate, a great helm with a glowing visor slit, a tall
+// plume, a cape, a kite shield with the gear badge and a longsword.
+function drawKnight(ctx, colors, state, time, stride, swing, mood) {
+  const steel = colors.helmet;
+  const headY = -25.4;
+  flowingCape(ctx, colors.cape || mixColor(colors.tunic, "#000000", 0.3), -20.4, 17, 8, time, stride);
+  plateLegs(ctx, steel, colors.trim, stride, 2.6);
+  // Tabard over the plate, with the badge.
+  ctx.beginPath();
+  ctx.moveTo(-4.8, -21);
+  ctx.lineTo(4.8, -21);
+  ctx.lineTo(4, -10);
+  ctx.lineTo(-4, -10);
+  ctx.closePath();
+  ctx.fillStyle = metalShade(ctx, -4.8, 4.8, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-2.6, -19.6);
+  ctx.lineTo(2.8, -19.6);
+  ctx.lineTo(3, -7.6);
+  ctx.lineTo(0.2, -6.4);
+  ctx.lineTo(-2.8, -7.6);
+  ctx.closePath();
+  inked(ctx, colors.tunic, 1);
+  drawGearEmblem(ctx, 0.2, -15, 1.7, colors.blade);
+  ctx.beginPath();
+  ctx.rect(-4.2, -11.4, 8.4, 1.6);
+  inked(ctx, colors.trim, 0.7);
+  // Layered shoulder plates.
+  for (const [x, w] of [[-4.6, 3], [4.8, 3.2]]) {
+    ctx.beginPath();
+    ctx.ellipse(x, -20, w, 2.4, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = metalShade(ctx, x - w, x + w, steel);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+  }
+  // Great helm with a glowing visor slit, and a tall plume.
+  if (colors.plume) {
+    ctx.beginPath();
+    ctx.moveTo(-0.6, headY - 5.6);
+    ctx.quadraticCurveTo(-3, headY - 12.4, -9.4, headY - 8.6);
+    ctx.quadraticCurveTo(-5, headY - 8.6, -3.4, headY - 4.4);
+    ctx.closePath();
+    inked(ctx, colors.plume, 1);
+  }
+  ctx.beginPath();
+  ctx.roundRect(-4.2, headY - 5.6, 9.6, 10.6, [3.4, 3.4, 1.4, 1.4]);
+  ctx.fillStyle = metalShade(ctx, -4.2, 5.4, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(-1.6, headY - 1.2, 7, 1.9, 0.8);
+  ctx.fillStyle = "#101820";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(2.2, headY + 0.6, 1.1, 3);
+  ctx.fill();
+  visorGlow(ctx, [[0.8, headY - 0.25], [4, headY - 0.25]], "#8fe7ff", mood);
+  if (mood === "scared") drawSweatDrop(ctx, -5.4, headY - 2);
+  // Kite shield.
+  ctx.beginPath();
+  ctx.moveTo(-8.4, -18);
+  ctx.lineTo(-2, -18);
+  ctx.lineTo(-2, -12.6);
+  ctx.quadraticCurveTo(-2.4, -8.4, -5.2, -6.4);
+  ctx.quadraticCurveTo(-8, -8.4, -8.4, -12.6);
+  ctx.closePath();
+  inked(ctx, steel, 1.2);
+  ctx.beginPath();
+  ctx.moveTo(-7.4, -17);
+  ctx.lineTo(-3, -17);
+  ctx.lineTo(-3, -12.8);
+  ctx.quadraticCurveTo(-3.3, -9.6, -5.2, -8);
+  ctx.quadraticCurveTo(-7.1, -9.6, -7.4, -12.8);
+  ctx.closePath();
+  ctx.fillStyle = colors.tunic;
+  ctx.fill();
+  drawGearEmblem(ctx, -5.2, -13.2, 1.6, colors.blade);
+  // Longsword, raised.
+  weaponArm(ctx, 5.4, -17.6, swing + 0.85, () => {
+    ctx.beginPath();
+    ctx.moveTo(2.5, -2.6);
+    ctx.lineTo(2.5, -16);
+    ctx.lineTo(3.4, -18.4);
+    ctx.lineTo(4.3, -16);
+    ctx.lineTo(4.3, -2.6);
+    ctx.closePath();
+    ctx.fillStyle = metalShade(ctx, 2.5, 4.3, colors.blade);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(-0.2, -3.2, 7.2, 1.5);
+    inked(ctx, colors.trim, 0.8);
+    inkedCircle(ctx, 3.4, 2.3, 0.9, colors.trim, 0.7);
+    inkedCircle(ctx, 3.4, 0.2, 2, steel, 0.9);
+  });
+}
+
+// Champions: a gold-armoured warlord in a crested helmet with glowing eyes,
+// flared shoulder plates, a big red cape and a two-handed greatsword.
+function drawChampion(ctx, colors, state, time, stride, swing, mood) {
+  const steel = colors.helmet;
+  const dark = mixColor(steel, "#000000", 0.45);
+  const headY = -25.6;
+  flowingCape(ctx, colors.cape || "#b5261a", -21, 19, 10, time, stride);
+  plateLegs(ctx, dark, colors.trim, stride, 3);
+  // Skirt of armour plates.
+  [-4.4, -1.6, 1.2].forEach((x, i) => {
+    ctx.beginPath();
+    ctx.rect(x, -11.4, 2.8, 4.4);
+    inked(ctx, i % 2 ? colors.tunic : steel, 0.8);
+  });
+  // A broad sculpted breastplate.
+  ctx.beginPath();
+  ctx.moveTo(-6, -21.4);
+  ctx.lineTo(6.4, -21.4);
+  ctx.quadraticCurveTo(6, -13, 4.4, -10.8);
+  ctx.lineTo(-4.4, -10.8);
+  ctx.quadraticCurveTo(-6.2, -13, -6, -21.4);
+  ctx.closePath();
+  ctx.fillStyle = metalShade(ctx, -6, 6.4, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(-3.4, -17.4);
+  ctx.quadraticCurveTo(0.2, -15.8, 3.6, -17.4);
+  ctx.moveTo(0.2, -16.4);
+  ctx.lineTo(0.2, -11.6);
+  ctx.moveTo(-2.4, -13.6);
+  ctx.lineTo(2.8, -13.6);
+  ctx.stroke();
+  // Flared shoulder plates.
+  for (const [x, dir] of [[-5.4, -1], [5.6, 1]]) {
+    ctx.beginPath();
+    ctx.moveTo(x - 3.4, -20.2);
+    ctx.quadraticCurveTo(x, -25, x + 3.4, -20.2);
+    ctx.lineTo(x + dir * 4.6, -17.6);
+    ctx.lineTo(x - dir * 1.4, -18.6);
+    ctx.closePath();
+    ctx.fillStyle = metalShade(ctx, x - 4, x + 4, steel);
+    ctx.fill();
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+  }
+  // Crested helmet with a glowing T-shaped opening.
+  ctx.beginPath();
+  ctx.moveTo(-5.4, headY - 3.4);
+  ctx.quadraticCurveTo(-2, headY - 15, 6.6, headY - 9.6);
+  ctx.lineTo(5.4, headY - 5);
+  ctx.quadraticCurveTo(-1, headY - 10.6, -3.4, headY - 2.6);
+  ctx.closePath();
+  inked(ctx, colors.plume || "#d8432f", 1.1);
+  ctx.beginPath();
+  ctx.moveTo(-4.4, headY + 5.2);
+  ctx.lineTo(-4.6, headY - 2);
+  ctx.quadraticCurveTo(-4.4, headY - 6.4, 0.6, headY - 6.6);
+  ctx.quadraticCurveTo(5.6, headY - 6.4, 5.6, headY - 1.6);
+  ctx.lineTo(6, headY + 3.4);
+  ctx.lineTo(3.8, headY + 5.4);
+  ctx.closePath();
+  ctx.fillStyle = metalShade(ctx, -4.6, 6, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-0.6, headY - 1.6);
+  ctx.lineTo(5.8, headY - 1.6);
+  ctx.lineTo(5.8, headY + 0.4);
+  ctx.lineTo(3.4, headY + 0.4);
+  ctx.lineTo(3.4, headY + 4.4);
+  ctx.lineTo(1.8, headY + 4.4);
+  ctx.lineTo(1.8, headY + 0.4);
+  ctx.lineTo(-0.6, headY + 0.4);
+  ctx.closePath();
+  ctx.fillStyle = "#1a0d06";
+  ctx.fill();
+  visorGlow(ctx, [[0.8, headY - 0.6], [4.6, headY - 0.6]], "#ff9a3d", mood);
+  if (mood === "scared") drawSweatDrop(ctx, -6, headY - 1);
+  // Two-handed greatsword, held high.
+  weaponArm(ctx, 5, -16.6, swing + 0.65, () => {
+    ctx.beginPath();
+    ctx.moveTo(2.1, -3.6);
+    ctx.lineTo(2.1, -20);
+    ctx.lineTo(3.6, -23);
+    ctx.lineTo(5.1, -20);
+    ctx.lineTo(5.1, -3.6);
+    ctx.closePath();
+    ctx.fillStyle = metalShade(ctx, 2.1, 5.1, colors.blade);
+    ctx.fill();
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3.6, -4.4);
+    ctx.lineTo(3.6, -19.6);
+    ctx.strokeStyle = mixColor(colors.blade, "#000000", 0.25);
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-1.6, -3.4);
+    ctx.quadraticCurveTo(3.6, -5.6, 8.8, -3.4);
+    ctx.lineTo(8.8, -2.2);
+    ctx.lineTo(-1.6, -2.2);
+    ctx.closePath();
+    inked(ctx, "#ffd23f", 0.8);
+    ctx.beginPath();
+    ctx.rect(2.8, -2.2, 1.6, 4.4);
+    inked(ctx, "#5a3414", 0.6);
+    inkedCircle(ctx, 3.6, 3, 1.1, "#ffd23f", 0.6);
+    inkedCircle(ctx, 3.6, 0.4, 2.2, steel, 0.9);
+  });
+}
+
+// Heroes: a radiant paladin in white and gold, a winged helmet with a crown
+// and a glowing visor, a halo with light behind, a long cape, a sun shield and
+// a glowing blade.
 function drawHero(ctx, colors, state, time, stride, swing, mood) {
   const steel = colors.helmet;
   const gold = "#ffd23f";
-  const headY = -21;
-  const flutter = Math.sin(time * 4) * 1.2;
-
-  if (colors.cape) {
+  const headY = -25.6;
+  // Light behind, slowly turning, and a halo.
+  ctx.save();
+  ctx.translate(0.6, headY);
+  ctx.rotate(time * 0.5);
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#fff3a8";
+  for (let i = 0; i < 8; i++) {
+    ctx.rotate(Math.PI / 4);
     ctx.beginPath();
-    ctx.moveTo(-4.4, -18);
-    ctx.quadraticCurveTo(-15 - Math.abs(stride) - flutter, -9, -12 - Math.abs(stride) + flutter, 0.5);
-    ctx.lineTo(-6, -1);
-    ctx.lineTo(-0.5, -3.5);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-1.6, -13);
+    ctx.lineTo(1.6, -13);
     ctx.closePath();
-    inked(ctx, colors.cape);
+    ctx.fill();
   }
-
-  // A floating halo.
+  ctx.restore();
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(0, headY - 11.5 + Math.sin(time * 2.4) * 0.6, 5, 1.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.6, headY - 9.4 + Math.sin(time * 2.4) * 0.5, 4.6, 1.3, 0, 0, Math.PI * 2);
   ctx.strokeStyle = gold;
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.3;
   ctx.shadowColor = gold;
   ctx.shadowBlur = glowBlur(6);
   ctx.stroke();
   ctx.restore();
-
-  // Legs in white armour, gold boots.
-  for (const side of [-1, 1]) {
-    const x = side * 2.3 + side * stride;
-    ctx.beginPath();
-    ctx.rect(x - 1.5, -6.5, 3, 4.6);
-    inked(ctx, steel, 1);
-    ctx.beginPath();
-    ctx.moveTo(x - 2, -2.8);
-    ctx.lineTo(x + 2.4, -2.8);
-    ctx.quadraticCurveTo(x + 3.8, -2.4, x + 3.6, 0);
-    ctx.lineTo(x - 2, 0);
-    ctx.closePath();
-    inked(ctx, colors.trim, 1);
-  }
-
-  // A robe under the armour, in the army's colour.
+  flowingCape(ctx, colors.cape || "#3a7ddb", -21, 21, 11, time, stride);
+  plateLegs(ctx, steel, gold, stride, 2.7);
+  // White breastplate with a sun, gold belt.
   ctx.beginPath();
-  ctx.moveTo(-4.6, -8);
-  ctx.lineTo(4.6, -8);
-  ctx.lineTo(5.6, -3.2);
-  ctx.lineTo(-5.6, -3.2);
+  ctx.moveTo(-5.4, -21.4);
+  ctx.lineTo(5.6, -21.4);
+  ctx.lineTo(4.4, -10.4);
+  ctx.lineTo(-4.2, -10.4);
   ctx.closePath();
-  inked(ctx, colors.tunic, 1);
-
-  // Breastplate with a sun.
-  ctx.beginPath();
-  ctx.moveTo(-5.8, -17);
-  ctx.lineTo(5.8, -17);
-  ctx.lineTo(4.6, -7);
-  ctx.lineTo(-4.6, -7);
-  ctx.closePath();
-  inked(ctx, steel);
+  ctx.fillStyle = metalShade(ctx, -5.4, 5.6, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
   ctx.strokeStyle = gold;
   ctx.lineWidth = 0.7;
   ctx.beginPath();
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    ctx.moveTo(Math.cos(a) * 2.4, -12 + Math.sin(a) * 2.4);
-    ctx.lineTo(Math.cos(a) * 3.6, -12 + Math.sin(a) * 3.6);
+    ctx.moveTo(0.4 + Math.cos(a) * 1.9, -16 + Math.sin(a) * 1.9);
+    ctx.lineTo(0.4 + Math.cos(a) * 3, -16 + Math.sin(a) * 3);
   }
   ctx.stroke();
-  inkedCircle(ctx, 0, -12, 1.8, gold, 0.7);
+  inkedCircle(ctx, 0.4, -16, 1.5, gold, 0.6);
   ctx.beginPath();
-  ctx.rect(-5, -8.4, 10, 1.8);
-  inked(ctx, gold, 0.8);
-  for (const side of [-1, 1]) {
+  ctx.rect(-4.4, -11.8, 8.8, 1.7);
+  inked(ctx, gold, 0.7);
+  ctx.beginPath();
+  ctx.moveTo(-4, -10.2);
+  ctx.lineTo(4.2, -10.2);
+  ctx.lineTo(5, -6.4);
+  ctx.lineTo(-4.8, -6.4);
+  ctx.closePath();
+  inked(ctx, colors.tunic, 0.9);
+  // Winged shoulder plates.
+  for (const [x, dir] of [[-5, -1], [5.2, 1]]) {
     ctx.beginPath();
-    ctx.ellipse(side * 5.4, -16, 3, 2.3, 0, Math.PI, Math.PI * 2);
+    ctx.moveTo(x - 3, -20.4);
+    ctx.quadraticCurveTo(x, -24, x + 3, -20.4);
+    ctx.quadraticCurveTo(x + dir * 2, -18.6, x + dir * 4.4, -19.4);
+    ctx.quadraticCurveTo(x + dir * 2, -17.4, x - dir * 1, -18.4);
     ctx.closePath();
-    inked(ctx, steel, 1);
+    ctx.fillStyle = metalShade(ctx, x - 4, x + 4, steel);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
   }
-
-  // The face, under a winged helmet.
+  // Winged helmet with a crown and a glowing visor.
+  for (const [x, dir, big] of [[-3.8, -1, 1], [4.6, 1, 0.65]]) {
+    ctx.beginPath();
+    ctx.moveTo(x, headY - 2);
+    ctx.quadraticCurveTo(x + dir * 5 * big, headY - 9 * big, x + dir * 8 * big, headY - 6 * big);
+    ctx.quadraticCurveTo(x + dir * 5.4 * big, headY - 5 * big, x + dir * 6 * big, headY - 2.6 * big);
+    ctx.quadraticCurveTo(x + dir * 3 * big, headY - 2.4, x, headY + 0.6);
+    ctx.closePath();
+    inked(ctx, "#ffffff", 0.9);
+  }
   ctx.beginPath();
-  ctx.moveTo(-4, headY - 3.6);
-  ctx.quadraticCurveTo(-11, headY - 13, -14.5, headY - 7);
-  ctx.quadraticCurveTo(-11, headY - 7, -12.4, headY - 3.6);
-  ctx.quadraticCurveTo(-9, headY - 4, -9.6, headY - 0.8);
-  ctx.quadraticCurveTo(-6.4, headY - 2.4, -4, headY - 1);
-  ctx.closePath();
-  inked(ctx, "#ffffff", 1);
-  inkedCircle(ctx, 0, headY, 6.4, colors.skin);
-  drawCartoonEyes(ctx, 1.8, headY + 0.4, 1.8, false, mood);
-  drawSmallMouth(ctx, 2.2, headY + 4, mood);
-  if (mood === "scared") drawSweatDrop(ctx, -6, headY + 1);
-  ctx.beginPath();
-  ctx.arc(0, headY - 0.6, 6.9, Math.PI * 1.02, Math.PI * 1.98);
-  ctx.quadraticCurveTo(0, headY - 2.8, -6.9, headY - 0.4);
-  ctx.closePath();
-  inked(ctx, steel);
-  ctx.strokeStyle = gold;
-  ctx.lineWidth = 0.9;
-  ctx.beginPath();
-  ctx.arc(0, headY - 0.6, 5.6, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.roundRect(-4, headY - 5.2, 9.2, 10.2, [4, 4, 1.6, 1.6]);
+  ctx.fillStyle = metalShade(ctx, -4, 5.2, steel);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = OUTLINE;
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(4, headY - 4.6);
-  ctx.quadraticCurveTo(8.6, headY - 11, 10.6, headY - 7.6);
-  ctx.quadraticCurveTo(8.4, headY - 7, 8.8, headY - 4.6);
-  ctx.quadraticCurveTo(6.6, headY - 4.8, 5.2, headY - 2.6);
+  ctx.moveTo(-3.6, headY - 4.4);
+  for (const [x, y] of [[-2.4, -7.6], [-1, -4.8], [0.6, -8.4], [2.2, -4.8], [3.6, -7.6], [4.8, -4.4]]) ctx.lineTo(x, headY + y);
   ctx.closePath();
-  inked(ctx, "#ffffff", 0.9);
-
-  // A round golden shield with a sun.
-  inkedCircle(ctx, -5, -10.4, 4.8, gold, 1.2);
-  inkedCircle(ctx, -5, -10.4, 3.4, colors.tunic, 0.8);
+  inked(ctx, gold, 0.8);
+  ctx.beginPath();
+  ctx.moveTo(-1.4, headY - 1.4);
+  ctx.lineTo(5.2, headY - 1.4);
+  ctx.lineTo(5.2, headY + 0.4);
+  ctx.lineTo(2.6, headY + 0.4);
+  ctx.lineTo(2.6, headY + 3.8);
+  ctx.lineTo(1.4, headY + 3.8);
+  ctx.lineTo(1.4, headY + 0.4);
+  ctx.lineTo(-1.4, headY + 0.4);
+  ctx.closePath();
+  ctx.fillStyle = "#0e1a26";
+  ctx.fill();
+  visorGlow(ctx, [[0.2, headY - 0.5], [4, headY - 0.5]], "#aef6ff", mood);
+  if (mood === "scared") drawSweatDrop(ctx, -6, headY);
+  // Round sun shield.
+  inkedCircle(ctx, -5, -14, 4.6, gold, 1.2);
+  inkedCircle(ctx, -5, -14, 3.3, colors.tunic, 0.8);
   ctx.strokeStyle = gold;
-  ctx.lineWidth = 0.7;
+  ctx.lineWidth = 0.6;
   ctx.beginPath();
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    ctx.moveTo(-5 + Math.cos(a) * 1.2, -10.4 + Math.sin(a) * 1.2);
-    ctx.lineTo(-5 + Math.cos(a) * 2.8, -10.4 + Math.sin(a) * 2.8);
+    ctx.moveTo(-5 + Math.cos(a) * 1.1, -14 + Math.sin(a) * 1.1);
+    ctx.lineTo(-5 + Math.cos(a) * 2.7, -14 + Math.sin(a) * 2.7);
   }
   ctx.stroke();
-  inkedCircle(ctx, -5, -10.4, 1, gold, 0.5);
-
-  // A glowing magic sword with a winged crossguard.
-  ctx.save();
-  ctx.translate(5.2, -12.5);
-  ctx.rotate(swing + 0.9);
-  ctx.save();
-  ctx.shadowColor = colors.blade;
-  ctx.shadowBlur = glowBlur(7);
-  ctx.beginPath();
-  ctx.moveTo(2.2, -2);
-  ctx.lineTo(2.2, -15);
-  ctx.lineTo(3.4, -17.6);
-  ctx.lineTo(4.6, -15);
-  ctx.lineTo(4.6, -2);
-  ctx.closePath();
-  inked(ctx, colors.blade, 1);
-  ctx.restore();
-  ctx.beginPath();
-  ctx.moveTo(3.4, -3);
-  ctx.lineTo(3.4, -15);
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 0.7;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(3.4, -2);
-  ctx.quadraticCurveTo(0, -1, -0.6, -4);
-  ctx.quadraticCurveTo(1, -2.4, 3.4, -2.6);
-  ctx.quadraticCurveTo(5.8, -2.4, 7.4, -4);
-  ctx.quadraticCurveTo(6.8, -1, 3.4, -2);
-  ctx.closePath();
-  inked(ctx, gold, 0.8);
-  inkedCircle(ctx, 3.4, 2.4, 1, gold, 0.8);
-  inkedCircle(ctx, 3.4, 0.4, 2.2, steel, 1);
-  ctx.restore();
+  inkedCircle(ctx, -5, -14, 0.9, gold, 0.5);
+  // The glowing blade.
+  weaponArm(ctx, 5.2, -17.6, swing + 0.85, () => {
+    ctx.save();
+    ctx.shadowColor = colors.blade;
+    ctx.shadowBlur = glowBlur(8);
+    ctx.beginPath();
+    ctx.moveTo(2.2, -2.6);
+    ctx.lineTo(2.2, -17);
+    ctx.lineTo(3.4, -19.8);
+    ctx.lineTo(4.6, -17);
+    ctx.lineTo(4.6, -2.6);
+    ctx.closePath();
+    inked(ctx, colors.blade, 1);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(3.4, -3.4);
+    ctx.lineTo(3.4, -17);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3.4, -2.4);
+    ctx.quadraticCurveTo(0, -1.6, -0.8, -4.6);
+    ctx.quadraticCurveTo(1, -3, 3.4, -3.2);
+    ctx.quadraticCurveTo(5.8, -3, 7.6, -4.6);
+    ctx.quadraticCurveTo(6.8, -1.6, 3.4, -2.4);
+    ctx.closePath();
+    inked(ctx, gold, 0.8);
+    inkedCircle(ctx, 3.4, 2.4, 0.9, gold, 0.7);
+    inkedCircle(ctx, 3.4, 0.3, 2.1, steel, 0.9);
+  });
 }
 
 // Each rank is its own character, not the same knight in new colours.
@@ -5631,199 +5795,6 @@ function drawGearEmblem(ctx, x, y, r, fill) {
   ctx.fill();
 }
 
-// The player's soldiers: an upright little knight in a closed helmet, with a
-// tabard in the army's colour, a sword and a shield, nothing like the round
-// toothy monsters. Drawn facing right with its feet on y = 0.
-function drawKnight(ctx, colors, state, time, stride, swing, mood) {
-  const steel = colors.helmet;
-  const steelDark = mixColor(steel, "#000000", 0.4);
-  const headY = -21;
-
-  if (colors.cape) {
-    ctx.beginPath();
-    ctx.moveTo(-3.5, -16);
-    ctx.quadraticCurveTo(-11 - Math.abs(stride), -9, -8.5 - Math.abs(stride), -1.5);
-    ctx.lineTo(-1, -5);
-    ctx.closePath();
-    inked(ctx, colors.cape);
-  }
-
-  // Armoured legs and boots.
-  for (const side of [-1, 1]) {
-    const x = side * 2.3 + side * stride;
-    ctx.beginPath();
-    ctx.rect(x - 1.4, -6.5, 2.8, 4.5);
-    inked(ctx, steelDark, 1);
-    ctx.beginPath();
-    ctx.moveTo(x - 2, -2.8);
-    ctx.lineTo(x + 2.4, -2.8);
-    ctx.quadraticCurveTo(x + 3.8, -2.4, x + 3.6, 0);
-    ctx.lineTo(x - 2, 0);
-    ctx.closePath();
-    inked(ctx, colors.trim, 1);
-  }
-
-  // Broad steel chest, narrowing to the belt.
-  ctx.beginPath();
-  ctx.moveTo(-6.2, -16);
-  ctx.lineTo(6.2, -16);
-  ctx.lineTo(4.8, -5.5);
-  ctx.lineTo(-4.8, -5.5);
-  ctx.closePath();
-  inked(ctx, steel);
-
-  // Tabard in the army's colour, with the gear badge.
-  ctx.beginPath();
-  ctx.moveTo(-3.3, -15.6);
-  ctx.lineTo(3.3, -15.6);
-  ctx.lineTo(3.6, -3.6);
-  ctx.lineTo(0, -2.2);
-  ctx.lineTo(-3.6, -3.6);
-  ctx.closePath();
-  inked(ctx, colors.tunic, 1.1);
-  ctx.beginPath();
-  ctx.rect(-4.7, -7.6, 9.4, 1.8);
-  inked(ctx, colors.trim, 0.9);
-  drawGearEmblem(ctx, 0, -11.4, 2.1, colors.blade);
-
-  // Shoulder plates.
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(side * 5.6, -15, 3.1, 2.4, 0, Math.PI, Math.PI * 2);
-    ctx.closePath();
-    inked(ctx, steel, 1);
-  }
-
-  // Closed helmet with a visor slit.
-  ctx.beginPath();
-  ctx.moveTo(-5.8, headY + 5.5);
-  ctx.lineTo(-6.2, headY - 1);
-  ctx.quadraticCurveTo(-6.2, headY - 7, 0, headY - 7);
-  ctx.quadraticCurveTo(6.2, headY - 7, 6.2, headY - 1);
-  ctx.lineTo(5.8, headY + 5.5);
-  ctx.closePath();
-  inked(ctx, steel);
-  ctx.beginPath();
-  ctx.arc(-2.4, headY - 3.2, 2.4, Math.PI * 1.05, Math.PI * 1.55);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-  ctx.lineWidth = 1.1;
-  ctx.stroke();
-  // The ridge down the middle of the helmet.
-  ctx.beginPath();
-  ctx.moveTo(1.4, headY - 6.8);
-  ctx.quadraticCurveTo(2.6, headY - 4, 2.4, headY - 1.6);
-  ctx.strokeStyle = steelDark;
-  ctx.lineWidth = 0.8;
-  ctx.stroke();
-
-  const visorH = mood === "scared" ? 3.6 : 2.8;
-  ctx.beginPath();
-  ctx.roundRect(-3.4, headY - visorH / 2 + 0.4, 9.6, visorH, 1.3);
-  inked(ctx, "#1c1410", 0.9);
-  // Eyes shining through the slit.
-  for (const ex of [0.6, 3.8]) {
-    const ey = headY + 0.4;
-    if (mood === "wince" || mood === "happy") {
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      if (mood === "happy") {
-        ctx.moveTo(ex - 0.9, ey + 0.5);
-        ctx.lineTo(ex, ey - 0.5);
-        ctx.lineTo(ex + 0.9, ey + 0.5);
-      } else {
-        ctx.moveTo(ex - 0.8, ey - 0.6);
-        ctx.lineTo(ex + 0.6, ey);
-        ctx.lineTo(ex - 0.8, ey + 0.6);
-      }
-      ctx.stroke();
-      continue;
-    }
-    ctx.beginPath();
-    ctx.fillStyle = "#ffffff";
-    const r = mood === "scared" ? 1.2 : 0.9;
-    ctx.ellipse(ex, ey, r, r * 1.25, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (mood === "scared") {
-      ctx.beginPath();
-      ctx.fillStyle = OUTLINE;
-      ctx.arc(ex + 0.2, ey, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  // Breathing holes.
-  ctx.fillStyle = steelDark;
-  for (const [hx, hy] of [[2, 3], [3.6, 3], [5.1, 2.8], [2.8, 4.5], [4.4, 4.4]]) {
-    ctx.beginPath();
-    ctx.arc(hx, headY + hy, 0.45, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (mood === "scared") {
-    // A nervous sweat drop.
-    ctx.beginPath();
-    ctx.moveTo(-7, headY - 4);
-    ctx.quadraticCurveTo(-10, headY, -7, headY + 0.6);
-    ctx.quadraticCurveTo(-4.4, headY - 0.4, -7, headY - 4);
-    inked(ctx, "#a8e6ff", 0.7);
-  }
-
-  if (colors.plume) {
-    ctx.beginPath();
-    ctx.moveTo(-0.6, headY - 6.6);
-    ctx.quadraticCurveTo(-6, headY - 12.5, -10, headY - 5);
-    ctx.quadraticCurveTo(-5.4, headY - 8, 1.6, headY - 6.2);
-    ctx.closePath();
-    inked(ctx, colors.plume, 1.1);
-  } else {
-    inkedCircle(ctx, 0, headY - 7, 1.3, colors.trim, 0.9);
-  }
-
-  // A pointed shield, with the badge.
-  ctx.beginPath();
-  ctx.moveTo(-8.8, -14);
-  ctx.lineTo(-1.8, -14);
-  ctx.lineTo(-1.8, -8.6);
-  ctx.quadraticCurveTo(-2, -4.4, -5.3, -2.6);
-  ctx.quadraticCurveTo(-8.6, -4.4, -8.8, -8.6);
-  ctx.closePath();
-  inked(ctx, steel, 1.2);
-  ctx.beginPath();
-  ctx.moveTo(-7.8, -13);
-  ctx.lineTo(-2.8, -13);
-  ctx.lineTo(-2.8, -8.8);
-  ctx.quadraticCurveTo(-3, -5.4, -5.3, -4);
-  ctx.quadraticCurveTo(-7.6, -5.4, -7.8, -8.8);
-  ctx.closePath();
-  ctx.fillStyle = colors.tunic;
-  ctx.fill();
-  drawGearEmblem(ctx, -5.3, -9.4, 1.9, colors.blade);
-
-  // Sword arm: a long blade with a crossguard, held up and forward, clear of the visor.
-  ctx.save();
-  ctx.translate(5.4, -12);
-  ctx.rotate(swing + 0.9);
-  ctx.beginPath();
-  ctx.moveTo(2.4, -2);
-  ctx.lineTo(2.4, -14);
-  ctx.lineTo(3.4, -16.2);
-  ctx.lineTo(4.4, -14);
-  ctx.lineTo(4.4, -2);
-  ctx.closePath();
-  inked(ctx, colors.blade, 1);
-  ctx.beginPath();
-  ctx.moveTo(3.4, -3);
-  ctx.lineTo(3.4, -13.6);
-  ctx.strokeStyle = mixColor(colors.blade, "#000000", 0.25);
-  ctx.lineWidth = 0.6;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.rect(0.2, -2.8, 6.4, 1.7);
-  inked(ctx, colors.trim, 0.9);
-  inkedCircle(ctx, 3.4, 2.4, 1, colors.trim, 0.8);
-  inkedCircle(ctx, 3.4, 0.4, 2.2, steel, 1);
-  ctx.restore();
-}
-
 // Mixes two #rrggbb colours, `t` of the way from `a` to `b`.
 function mixColor(a, b, t) {
   const channel = (hex, i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
@@ -5831,155 +5802,16 @@ function mixColor(a, b, t) {
   return `#${parts.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
-// Monsters are built nothing like the knights, so the two sides are easy to
-// tell apart at a glance: a hunched blob with no neck or helmet, mostly mouth,
-// with glowing slit eyes, clawed arms, back spikes and a tail. Drawn facing
-// right with its feet on y = 0, in the same space as a soldier.
-function drawMonster(ctx, colors, state, time, stride, swing, mood) {
-  const bodyY = -13;
-  const rx = 9.5;
-  const ry = 11.5;
-  const onBody = (a, grow = 0) => [Math.cos(a) * (rx + grow), bodyY + Math.sin(a) * (ry + grow)];
-  const spike = (a, len, width = 0.2) => {
-    ctx.beginPath();
-    ctx.moveTo(...onBody(a - width, -1));
-    ctx.lineTo(...onBody(a, len));
-    ctx.lineTo(...onBody(a + width, -1));
-    ctx.closePath();
-    inked(ctx, colors.horns, 1);
-  };
-  const arm = (x, y, angle, fill) => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.beginPath();
-    ctx.moveTo(-2, 0);
-    ctx.quadraticCurveTo(-1.2, 5, -1.5, 9);
-    ctx.lineTo(1.7, 9);
-    ctx.quadraticCurveTo(2, 5, 2, 0);
-    ctx.closePath();
-    inked(ctx, fill);
-    for (const c of [-1.6, 0.2, 2]) {
-      ctx.beginPath();
-      ctx.moveTo(c - 0.8, 8.6);
-      ctx.lineTo(c + 0.5, 12.4);
-      ctx.lineTo(c + 1, 8.6);
-      ctx.closePath();
-      inked(ctx, colors.blade, 0.7);
-    }
-    ctx.restore();
-  };
-
-  // Tail, swishing faster on the move.
-  const wag = Math.sin(time * (state === "walk" || state === "flee" ? 12 : 3)) * 2;
-  ctx.beginPath();
-  ctx.moveTo(-6, -5);
-  ctx.quadraticCurveTo(-13, -3 + wag, -15, -11 + wag);
-  ctx.quadraticCurveTo(-11, -7, -5, -10);
-  ctx.closePath();
-  inked(ctx, colors.skin);
-  ctx.beginPath();
-  ctx.moveTo(-14, -9.5 + wag);
-  ctx.lineTo(-17.5, -15 + wag);
-  ctx.lineTo(-12.8, -12.5 + wag);
-  ctx.closePath();
-  inked(ctx, colors.horns, 1);
-
-  if (colors.wings) {
-    const flap = Math.sin(time * 9) * 0.25;
-    ctx.save();
-    ctx.translate(-3, -19);
-    ctx.rotate(-0.1 + flap);
-    ctx.beginPath();
-    ctx.moveTo(0, 2);
-    ctx.lineTo(-3, -12);
-    ctx.lineTo(-15, -10);
-    ctx.quadraticCurveTo(-11, -7, -11, -3);
-    ctx.quadraticCurveTo(-7.5, -4.5, -6, 0);
-    ctx.quadraticCurveTo(-3, -1, 0, 2);
-    ctx.closePath();
-    inked(ctx, mixColor(colors.skin, "#000000", 0.35));
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(-3, -12);
-    ctx.lineTo(-11, -3);
-    ctx.moveTo(-3, -12);
-    ctx.lineTo(-6, 0);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Stubby clawed feet.
-  for (const side of [-1, 1]) {
-    const x = side * 4 + side * stride;
-    for (const toe of [0, 1.6]) {
-      ctx.beginPath();
-      ctx.moveTo(x + 2 + toe, -1.4);
-      ctx.lineTo(x + 5.4 + toe * 0.6, 0.3);
-      ctx.lineTo(x + 2.6 + toe, 0.6);
-      ctx.closePath();
-      inked(ctx, colors.horns, 0.7);
-    }
-    ctx.beginPath();
-    ctx.ellipse(x + 0.6, -2.2, 3.6, 2.6, 0, 0, Math.PI * 2);
-    inked(ctx, colors.trim);
-  }
-
-  // Far arm, behind the body.
-  arm(-4, bodyY + 1, -swing * 0.5 + 0.3, mixColor(colors.skin, "#000000", 0.25));
-
-  // Spikes down the back, horns on top.
-  const spikeLen = colors.spikes || 4;
-  for (const a of [3.45, 3.9, 4.35]) spike(a, spikeLen);
-  spike(4.85, spikeLen + 1.5, 0.16);
-  spike(5.35, spikeLen + 0.5, 0.16);
-
-  // One big round body: no neck, no helmet.
-  ctx.beginPath();
-  ctx.ellipse(0, bodyY, rx, ry, 0, 0, Math.PI * 2);
-  inked(ctx, colors.skin);
-  ctx.beginPath();
-  ctx.ellipse(3, bodyY + 4, 5.4, 6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = mixColor(colors.skin, "#fff4d6", 0.45);
-  ctx.fill();
-  ctx.fillStyle = colors.tunic;
-  for (const [x, y, r] of [[-5, -18, 1.6], [-6.6, -12, 1.2], [-3, -22.5, 1]]) {
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (colors.armor) {
-    // A dented metal cap.
-    ctx.beginPath();
-    ctx.ellipse(0, bodyY, rx + 0.6, ry + 0.6, 0, Math.PI * 1.12, Math.PI * 1.88);
-    ctx.quadraticCurveTo(0, bodyY - 6, ...onBody(Math.PI * 1.12, 0.6));
-    ctx.closePath();
-    inked(ctx, colors.blade);
-    ctx.fillStyle = OUTLINE;
-    for (const x of [-4, 0, 4]) {
-      ctx.beginPath();
-      ctx.arc(x, bodyY - 8.6 - (x === 0 ? 1 : 0), 0.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Glowing slit eyes.
-  const eyeSpots = {
-    1: [[3.6, -17.6, 3.4]],
-    2: [[0.8, -17.8, 2.3], [5.8, -17.2, 2.3]],
-    3: [[0.6, -17, 2], [5.6, -16.6, 2], [3.2, -21, 1.6]],
-  }[colors.eyes || 2];
-  for (const [x, y, r] of eyeSpots) {
+// Eyes for the wave monsters: glowing with slit pupils, squeezed shut on a
+// wince, squinting with glee, or tiny pupils when scared.
+function monsterEyes(ctx, spots, color, mood) {
+  for (const [x, y, r] of spots) {
     if (mood === "wince" || mood === "happy") {
-      // Squeezed shut, or squinting with glee.
       ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = r * 0.5;
+      ctx.lineWidth = Math.max(0.7, r * 0.5);
       ctx.beginPath();
-      if (mood === "happy") {
-        ctx.arc(x, y + r * 0.3, r * 0.8, Math.PI * 1.1, Math.PI * 1.9);
-      } else {
+      if (mood === "happy") ctx.arc(x, y + r * 0.3, r * 0.8, Math.PI * 1.1, Math.PI * 1.9);
+      else {
         ctx.moveTo(x - r * 0.8, y - r * 0.5);
         ctx.lineTo(x + r * 0.6, y);
         ctx.lineTo(x - r * 0.8, y + r * 0.5);
@@ -5987,64 +5819,709 @@ function drawMonster(ctx, colors, state, time, stride, swing, mood) {
       ctx.stroke();
       continue;
     }
-    inkedCircle(ctx, x, y, r, colors.eye || "#ffe14a", 0.8);
+    inkedCircle(ctx, x, y, r, color, 0.6);
     ctx.beginPath();
     ctx.fillStyle = OUTLINE;
-    if (mood === "scared") ctx.arc(x + r * 0.2, y, r * 0.28, 0, Math.PI * 2);
-    else ctx.ellipse(x + r * 0.25, y, r * 0.28, r * 0.8, 0, 0, Math.PI * 2);
+    if (mood === "scared") ctx.arc(x + r * 0.2, y, r * 0.3, 0, Math.PI * 2);
+    else ctx.ellipse(x + r * 0.25, y, r * 0.3, r * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (mood !== "scared" && mood !== "wince" && mood !== "happy") {
-    // One heavy brow, frowning down toward the front.
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1.3;
-    ctx.beginPath();
-    ctx.moveTo(-1.6, -22.2);
-    ctx.lineTo(8, -19.6);
-    ctx.stroke();
-  }
-
-  // A huge mouth full of teeth.
-  const open = mood === "scared" ? 1.2 : mood === "happy" ? 4.5 : state === "fight" ? 2.2 + Math.abs(Math.sin(time * 11)) * 2 : 3;
-  const mouthL = mood === "scared" ? 3 : 0;
-  const mouthR = mood === "scared" ? 7.6 : 9.4;
-  ctx.beginPath();
-  ctx.moveTo(mouthL, -11.4);
-  ctx.quadraticCurveTo((mouthL + mouthR) / 2, -10.6, mouthR, -12);
-  ctx.quadraticCurveTo(mouthR - 2, -11 + open * 2, (mouthL + mouthR) / 2 - 1, -11 + open * 1.9);
-  ctx.quadraticCurveTo(mouthL, -11 + open * 1.4, mouthL, -11.4);
-  inked(ctx, "#3a0d06", 1);
-  if (mood !== "scared" && mood !== "wince") {
-    ctx.fillStyle = "#fffbea";
-    for (const x of [1.6, 3.9, 6.2, 8.2]) {
-      ctx.beginPath();
-      ctx.moveTo(x - 0.9, -11.3);
-      ctx.lineTo(x, -9.4);
-      ctx.lineTo(x + 0.9, -11.4);
-      ctx.fill();
-    }
-    for (const x of [2.6, 6.4]) {
-      ctx.beginPath();
-      ctx.moveTo(x - 0.8, -11 + open * 1.75);
-      ctx.lineTo(x, -11 + open * 1.75 - 1.8);
-      ctx.lineTo(x + 0.8, -11 + open * 1.75);
-      ctx.fill();
-    }
-  }
-  if (colors.tusks) {
-    for (const x of [0.4, 8.6]) {
-      ctx.beginPath();
-      ctx.moveTo(x - 1, -8.6);
-      ctx.quadraticCurveTo(x - 1.4, -13, x + 0.6, -15);
-      ctx.quadraticCurveTo(x + 0.6, -11, x + 1.2, -8.6);
-      ctx.closePath();
-      inked(ctx, "#fff4d6", 0.8);
-    }
-  }
-
-  // Near arm, swiping its claws forward in a fight.
-  arm(-3, bodyY + 3, swing * 0.9 + 0.1, colors.skin);
 }
+
+// A grin with two fangs, or a small "o" when scared.
+function fangMouth(ctx, x, y, w, mood) {
+  ctx.beginPath();
+  if (mood === "scared") {
+    ctx.ellipse(x, y + 0.6, 1, 1.4, 0, 0, Math.PI * 2);
+    inked(ctx, "#3a0d06", 0.6);
+    return;
+  }
+  const open = mood === "happy" ? 2.6 : mood === "wince" ? 0.8 : 1.8;
+  ctx.moveTo(x - w / 2, y);
+  ctx.quadraticCurveTo(x, y + open * 1.6, x + w / 2, y - 0.4);
+  ctx.closePath();
+  inked(ctx, "#3a0d06", 0.7);
+  ctx.fillStyle = "#fff7e0";
+  for (const fx of [x - w / 4, x + w / 4]) {
+    ctx.beginPath();
+    ctx.moveTo(fx - 0.7, y - 0.1);
+    ctx.lineTo(fx, y + 1.4);
+    ctx.lineTo(fx + 0.7, y - 0.2);
+    ctx.fill();
+  }
+}
+
+// A fuzzy outline, for fur.
+function tracePuff(ctx, cx, cy, rx, ry, bumps, depth) {
+  ctx.beginPath();
+  for (let i = 0; i < bumps * 2; i++) {
+    const a = (i / (bumps * 2)) * Math.PI * 2;
+    const k = i % 2 ? 1 : 1 - depth;
+    const x = cx + Math.cos(a) * rx * k;
+    const y = cy + Math.sin(a) * ry * k;
+    if (i) ctx.lineTo(x, y);
+    else ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function limb(ctx, x1, y1, x2, y2, width, fill) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = width + 1.6;
+  ctx.stroke();
+  ctx.strokeStyle = fill;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
+function weaponArm(ctx, x, y, angle, draw) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  draw();
+  ctx.restore();
+}
+
+// Each wave enemy is its own creature. All face right with their feet on
+// y = 0, about 30 units tall, like the knights.
+const MONSTER_STYLES = {
+  // Goblins: small and green, huge ears, a long nose, a rag and a nail club.
+  goblin(ctx, c, state, time, stride, swing, mood) {
+    const head = -17;
+    for (const side of [-1, 1]) {
+      limb(ctx, side * 1.8, -7, side * 2.4 + side * stride, -1.4, 1.8, c.skin);
+      ctx.beginPath();
+      ctx.ellipse(side * 2.4 + side * stride + 0.8, -1, 2.2, 1.2, 0, 0, Math.PI * 2);
+      inked(ctx, "#4a2c12", 0.8);
+    }
+    ctx.beginPath();
+    ctx.ellipse(0, -10.5, 4.4, 4.2, 0, 0, Math.PI * 2);
+    inked(ctx, c.skin);
+    ctx.beginPath();
+    ctx.moveTo(-4.8, -10);
+    ctx.lineTo(4.8, -10);
+    ctx.lineTo(5, -6);
+    ctx.lineTo(3, -4.4);
+    ctx.lineTo(1, -6);
+    ctx.lineTo(-1, -4.4);
+    ctx.lineTo(-3, -6);
+    ctx.lineTo(-5, -4.4);
+    ctx.closePath();
+    inked(ctx, c.tunic, 1.1);
+    ctx.beginPath();
+    ctx.moveTo(-4, head - 1);
+    ctx.lineTo(-14, head - 5);
+    ctx.lineTo(-4.4, head + 2.4);
+    ctx.closePath();
+    inked(ctx, c.skin, 1.1);
+    inkedCircle(ctx, 0, head, 6.6, c.skin);
+    ctx.beginPath();
+    ctx.moveTo(4.6, head - 1);
+    ctx.lineTo(10.6, head + 1.6);
+    ctx.lineTo(5, head + 2.6);
+    ctx.closePath();
+    inked(ctx, mixColor(c.skin, "#ffffff", 0.2), 1);
+    ctx.beginPath();
+    ctx.moveTo(3, head - 5);
+    ctx.lineTo(9, head - 10);
+    ctx.lineTo(5.6, head - 3.4);
+    ctx.closePath();
+    inked(ctx, c.skin, 1);
+    monsterEyes(ctx, [[0.6, head - 2, 1.8], [4, head - 2.4, 1.5]], "#ffe14d", mood);
+    fangMouth(ctx, 2.2, head + 3.4, 5, mood);
+    weaponArm(ctx, 3.6, -11, swing + 0.5, () => {
+      ctx.beginPath();
+      ctx.moveTo(1.6, 1);
+      ctx.lineTo(1.2, -7);
+      ctx.quadraticCurveTo(3.4, -13.4, 5.6, -7);
+      ctx.lineTo(3.6, 1);
+      ctx.closePath();
+      inked(ctx, c.blade, 1);
+      ctx.fillStyle = "#c3ccd5";
+      for (const [nx, ny] of [[2, -8], [4.6, -9], [3.4, -11]]) {
+        ctx.beginPath();
+        ctx.arc(nx, ny, 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      inkedCircle(ctx, 2.6, 1, 1.9, c.skin, 0.9);
+    });
+  },
+
+  // Goblin runners: a goblin riding a fast, long-legged bird.
+  rider(ctx, c, state, time, stride, swing, mood) {
+    const run = stride * 2.2;
+    for (const [side, phase] of [[-1, 1], [1, -1]]) {
+      const kneeX = side * 1.4 + phase * run * 0.5;
+      const footX = side * 1.8 + phase * run;
+      limb(ctx, side * 1.2, -10, kneeX + 1.6, -5.6, 1.4, "#e0902a");
+      limb(ctx, kneeX + 1.6, -5.6, footX, -0.6, 1.4, "#e0902a");
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(footX, -0.6);
+      ctx.lineTo(footX + 2.4, 0);
+      ctx.moveTo(footX, -0.6);
+      ctx.lineTo(footX - 1.4, 0);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-6, -14);
+    ctx.lineTo(-11, -18);
+    ctx.lineTo(-10, -13);
+    ctx.lineTo(-12, -11);
+    ctx.lineTo(-6, -11);
+    ctx.closePath();
+    inked(ctx, c.trim, 1);
+    ctx.beginPath();
+    ctx.ellipse(0, -12.5, 7, 4.8, 0, 0, Math.PI * 2);
+    inked(ctx, c.tunic);
+    ctx.beginPath();
+    ctx.moveTo(4.4, -14);
+    ctx.quadraticCurveTo(7, -17, 8.4, -20.4);
+    ctx.lineTo(10.4, -19.4);
+    ctx.quadraticCurveTo(9, -15, 6.6, -11.4);
+    ctx.closePath();
+    inked(ctx, c.tunic, 1.1);
+    inkedCircle(ctx, 9.8, -21.4, 2.8, c.tunic, 1.1);
+    ctx.beginPath();
+    ctx.moveTo(12, -22.4);
+    ctx.lineTo(15.6, -21);
+    ctx.lineTo(12, -19.8);
+    ctx.closePath();
+    inked(ctx, "#ff8a3d", 0.8);
+    monsterEyes(ctx, [[10.4, -22.2, 1]], "#ffffff", mood === "scared" ? "scared" : "neutral");
+    // The rider.
+    ctx.beginPath();
+    ctx.ellipse(-1, -18.6, 3, 3.6, 0, 0, Math.PI * 2);
+    inked(ctx, c.trim, 1);
+    ctx.beginPath();
+    ctx.moveTo(-2.6, -25);
+    ctx.lineTo(-9, -27.4);
+    ctx.lineTo(-2.6, -22.6);
+    ctx.closePath();
+    inked(ctx, c.skin, 0.9);
+    inkedCircle(ctx, -0.6, -24.2, 3.8, c.skin, 1.1);
+    monsterEyes(ctx, [[0.6, -25, 1.1], [2.8, -25.2, 1]], "#ffe14d", mood);
+    fangMouth(ctx, 1.4, -22.4, 3, mood);
+    ctx.strokeStyle = "#4a2c12";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(1, -18.4);
+    ctx.lineTo(9, -20.4);
+    ctx.stroke();
+    weaponArm(ctx, 0.6, -19, swing + 0.4, () => {
+      ctx.beginPath();
+      ctx.moveTo(0.8, -0.6);
+      ctx.lineTo(1.6, -7);
+      ctx.lineTo(2.6, -0.6);
+      ctx.closePath();
+      inked(ctx, c.blade, 0.8);
+      inkedCircle(ctx, 1.7, 0, 1.3, c.skin, 0.7);
+    });
+  },
+
+  // Orcs: broad and muscly, a jutting tusked jaw, a topknot and a cleaver.
+  orc(ctx, c, state, time, stride, swing, mood) {
+    for (const side of [-1, 1]) {
+      const x = side * 2.8 + side * stride;
+      ctx.beginPath();
+      ctx.rect(x - 1.9, -8, 3.8, 6);
+      inked(ctx, c.tunic, 1);
+      ctx.beginPath();
+      ctx.roundRect(x - 2.4, -2.6, 5.4, 2.6, 1);
+      inked(ctx, c.trim, 1);
+    }
+    ctx.beginPath();
+    ctx.moveTo(-7.4, -20);
+    ctx.lineTo(7.8, -20);
+    ctx.lineTo(4.8, -8);
+    ctx.lineTo(-4.8, -8);
+    ctx.closePath();
+    inked(ctx, c.skin);
+    ctx.strokeStyle = mixColor(c.skin, "#000000", 0.3);
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(-3, -16.6);
+    ctx.quadraticCurveTo(0, -15, 3, -16.6);
+    ctx.moveTo(0.4, -15.6);
+    ctx.lineTo(0.4, -10.4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-6.6, -19.6);
+    ctx.lineTo(-4.2, -19.6);
+    ctx.lineTo(4.4, -9);
+    ctx.lineTo(2, -9);
+    ctx.closePath();
+    inked(ctx, c.tunic, 0.8);
+    ctx.beginPath();
+    ctx.rect(-5.2, -9.4, 10.4, 2.4);
+    inked(ctx, c.tunic, 0.9);
+    // Spiked shoulder pad.
+    for (const sx of [-8, -5.4, -2.8]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 1.2, -21);
+      ctx.lineTo(sx, -25);
+      ctx.lineTo(sx + 1.2, -21);
+      ctx.closePath();
+      inked(ctx, c.horns, 0.8);
+    }
+    ctx.beginPath();
+    ctx.ellipse(-5.6, -20, 4.2, 2.8, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    inked(ctx, c.blade, 1);
+    // A small head with a big jaw.
+    ctx.beginPath();
+    ctx.roundRect(-2.6, -28, 9.4, 9.4, 3);
+    inked(ctx, c.skin);
+    ctx.beginPath();
+    ctx.roundRect(-1.4, -22.4, 9.4, 4.6, 2);
+    inked(ctx, c.skin, 1.1);
+    ctx.fillStyle = "#fff7e0";
+    for (const tx of [0.4, 5.6]) {
+      ctx.beginPath();
+      ctx.moveTo(tx, -22.4);
+      ctx.lineTo(tx + 0.8, -25.4);
+      ctx.lineTo(tx + 1.8, -22.4);
+      ctx.closePath();
+      inked(ctx, c.horns, 0.6);
+    }
+    monsterEyes(ctx, [[1.6, -25.4, 1.1], [4.8, -25.6, 1.1]], "#ff5a3d", mood);
+    if (mood !== "happy" && mood !== "scared") {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-0.4, -27.6);
+      ctx.lineTo(6.4, -26.6);
+      ctx.stroke();
+    }
+    inkedCircle(ctx, -0.6, -29.4, 1.8, "#1c1410", 0.8);
+    weaponArm(ctx, 6.4, -17, swing + 0.6, () => {
+      ctx.beginPath();
+      ctx.rect(1.4, -3, 1.8, 5);
+      inked(ctx, "#5a3414", 0.8);
+      ctx.beginPath();
+      ctx.moveTo(0.4, -3);
+      ctx.lineTo(0.4, -13);
+      ctx.lineTo(6.6, -14);
+      ctx.lineTo(6.4, -3);
+      ctx.closePath();
+      inked(ctx, c.blade, 1);
+      inkedCircle(ctx, 4.8, -11.8, 0.8, OUTLINE, 0.3);
+      inkedCircle(ctx, 2.3, 1.6, 2.1, c.skin, 0.9);
+    });
+  },
+
+  // Armoured brutes: a boar-headed brute in iron plate with a spiked flail.
+  boar(ctx, c, state, time, stride, swing, mood) {
+    for (const side of [-1, 1]) {
+      const x = side * 3 + side * stride;
+      ctx.beginPath();
+      ctx.rect(x - 2, -8, 4, 6);
+      inked(ctx, c.trim, 1);
+      ctx.beginPath();
+      ctx.roundRect(x - 2.6, -2.8, 5.6, 2.8, 1);
+      inked(ctx, c.tunic, 1);
+    }
+    ctx.beginPath();
+    ctx.roundRect(-7, -20, 14, 13, 3);
+    inked(ctx, c.tunic);
+    ctx.fillStyle = OUTLINE;
+    for (const [rx, ry] of [[-5, -18], [5, -18], [-5, -9.4], [5, -9.4]]) {
+      ctx.beginPath();
+      ctx.arc(rx, ry, 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = c.trim;
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-6.4, -14);
+    ctx.lineTo(6.4, -14);
+    ctx.stroke();
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(side * 6.8, -19.4, 3.6, 2.8, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      inked(ctx, c.tunic, 1);
+    }
+    // The boar's head: ears back, a snout, tusks, an iron cap.
+    ctx.beginPath();
+    ctx.moveTo(-2, -27);
+    ctx.lineTo(-7, -30);
+    ctx.lineTo(-3, -24);
+    ctx.closePath();
+    inked(ctx, c.skin, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(2, -24, 6, 5, 0, 0, Math.PI * 2);
+    inked(ctx, c.skin);
+    ctx.beginPath();
+    ctx.roundRect(6.4, -25.4, 4.6, 4.4, 1.6);
+    inked(ctx, mixColor(c.skin, "#f2a0a0", 0.5), 1);
+    ctx.fillStyle = OUTLINE;
+    for (const ny of [-24.2, -22.2]) {
+      ctx.beginPath();
+      ctx.ellipse(10, ny, 0.4, 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(6.6, -21.4);
+    ctx.quadraticCurveTo(9.6, -21, 10.4, -25.6);
+    ctx.quadraticCurveTo(8.6, -23, 6.6, -23);
+    ctx.closePath();
+    inked(ctx, c.horns, 0.7);
+    monsterEyes(ctx, [[3.4, -25.6, 1.1]], "#ff3b1f", mood);
+    ctx.beginPath();
+    ctx.arc(1.6, -25, 6.2, Math.PI * 1.05, Math.PI * 1.75);
+    ctx.lineTo(1.6, -25);
+    ctx.closePath();
+    inked(ctx, c.horns, 1);
+    if (mood === "scared") drawSweatDrop(ctx, -5, -27);
+    weaponArm(ctx, 6.6, -16, swing + 0.5, () => {
+      ctx.beginPath();
+      ctx.rect(1, -6, 1.8, 8);
+      inked(ctx, "#5a3414", 0.8);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([1, 1]);
+      ctx.beginPath();
+      ctx.moveTo(1.9, -6);
+      ctx.quadraticCurveTo(5, -9, 4, -12);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(4 + Math.cos(a - 0.4) * 2.6, -14.4 + Math.sin(a - 0.4) * 2.6);
+        ctx.lineTo(4 + Math.cos(a) * 4.4, -14.4 + Math.sin(a) * 4.4);
+        ctx.lineTo(4 + Math.cos(a + 0.4) * 2.6, -14.4 + Math.sin(a + 0.4) * 2.6);
+        ctx.closePath();
+        inked(ctx, c.horns, 0.6);
+      }
+      inkedCircle(ctx, 4, -14.4, 2.8, c.blade, 0.9);
+      inkedCircle(ctx, 1.9, 2, 2.2, c.tunic, 0.9);
+    });
+  },
+
+  // Trolls: huge, hunched and lumpy, with a tiny head and a tree-branch club.
+  troll(ctx, c, state, time, stride, swing, mood) {
+    for (const side of [-1, 1]) {
+      const x = side * 3.6 + side * stride;
+      ctx.beginPath();
+      ctx.roundRect(x - 2.4, -6, 4.8, 6, 1.8);
+      inked(ctx, c.skin, 1.1);
+    }
+    limb(ctx, -6, -16, -9, -4, 3.2, mixColor(c.skin, "#000000", 0.2));
+    ctx.beginPath();
+    ctx.moveTo(-9, -6);
+    ctx.quadraticCurveTo(-12, -20, -3, -24);
+    ctx.quadraticCurveTo(8, -26, 9, -15);
+    ctx.quadraticCurveTo(10, -6, 4, -4.4);
+    ctx.lineTo(-6, -4.4);
+    ctx.closePath();
+    inked(ctx, c.skin);
+    ctx.fillStyle = "#6f8f45";
+    for (const [mx, my, r] of [[-6, -18, 1.8], [-3, -22, 1.4], [-7.6, -11, 1.2]]) {
+      ctx.beginPath();
+      ctx.arc(mx, my, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = mixColor(c.skin, "#000000", 0.2);
+    for (const [wx, wy] of [[2, -18], [5, -11], [-2, -13]]) {
+      ctx.beginPath();
+      ctx.arc(wx, wy, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-6, -7);
+    ctx.lineTo(6, -7);
+    ctx.lineTo(5, -3);
+    ctx.lineTo(-5, -3);
+    ctx.closePath();
+    inked(ctx, c.tunic, 1);
+    inkedCircle(ctx, 7, -21, 4.2, c.skin, 1.2);
+    ctx.beginPath();
+    ctx.ellipse(11, -19.6, 2.6, 2, 0.3, 0, Math.PI * 2);
+    inked(ctx, mixColor(c.skin, "#ffffff", 0.25), 1);
+    monsterEyes(ctx, [[7.6, -22.6, 1], [10, -23, 0.9]], "#ffe14d", mood);
+    ctx.fillStyle = c.horns;
+    for (const tx of [6.6, 9]) {
+      ctx.beginPath();
+      ctx.moveTo(tx, -17.6);
+      ctx.lineTo(tx + 0.6, -19.4);
+      ctx.lineTo(tx + 1.2, -17.6);
+      ctx.fill();
+    }
+    weaponArm(ctx, 6, -15, swing + 0.2, () => {
+      ctx.beginPath();
+      ctx.moveTo(0.4, 1);
+      ctx.lineTo(-0.4, -10);
+      ctx.quadraticCurveTo(2.4, -17, 6, -11);
+      ctx.lineTo(3.4, 1);
+      ctx.closePath();
+      inked(ctx, c.blade, 1);
+      ctx.beginPath();
+      ctx.moveTo(4.6, -9);
+      ctx.lineTo(7.6, -10.4);
+      ctx.stroke();
+      inkedCircle(ctx, 1.9, 1.4, 2.4, c.skin, 1);
+    });
+  },
+
+  // Frost trolls: a shaggy white yeti with an icy face and an ice club.
+  yeti(ctx, c, state, time, stride, swing, mood) {
+    for (const side of [-1, 1]) {
+      const x = side * 3.4 + side * stride;
+      ctx.beginPath();
+      ctx.ellipse(x + 0.6, -1.6, 3.4, 1.8, 0, 0, Math.PI * 2);
+      inked(ctx, c.skin, 1);
+    }
+    tracePuff(ctx, 0, -12, 9, 10, 14, 0.12);
+    inked(ctx, "#f4fbff");
+    tracePuff(ctx, 1.5, -23, 6.4, 5.6, 10, 0.14);
+    inked(ctx, "#f4fbff");
+    ctx.beginPath();
+    ctx.ellipse(3.4, -21.4, 4, 3.6, 0, 0, Math.PI * 2);
+    inked(ctx, c.skin, 1);
+    monsterEyes(ctx, [[2.2, -22.6, 1.1], [5.2, -22.8, 1]], c.tunic, mood);
+    ctx.beginPath();
+    if (mood === "scared") {
+      ctx.ellipse(4, -19.4, 1, 1.2, 0, 0, Math.PI * 2);
+      inked(ctx, "#1d4560", 0.6);
+    } else {
+      ctx.roundRect(1.6, -20.4, 5, mood === "happy" ? 2.4 : 1.6, 0.6);
+      inked(ctx, "#1d4560", 0.7);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(2.2, -20.4, 3.8, 0.7);
+    }
+    weaponArm(ctx, 6.6, -15, swing + 0.4, () => {
+      ctx.beginPath();
+      ctx.rect(1.4, -4, 1.8, 6);
+      inked(ctx, c.tunic, 0.8);
+      ctx.beginPath();
+      ctx.moveTo(2.3, -4);
+      ctx.lineTo(-1.6, -9);
+      ctx.lineTo(0.6, -17);
+      ctx.lineTo(3.4, -13);
+      ctx.lineTo(5.6, -18);
+      ctx.lineTo(6.6, -9);
+      ctx.closePath();
+      inked(ctx, c.blade, 1);
+      tracePuff(ctx, 2.3, 1.4, 2.8, 2.6, 6, 0.2);
+      inked(ctx, "#f4fbff", 0.9);
+    });
+  },
+
+  // Rust shamans: a hooded robe, eyes glowing in the dark, and a staff topped
+  // with a spinning rusty gear.
+  shaman(ctx, c, state, time, stride, swing, mood) {
+    ctx.beginPath();
+    ctx.moveTo(-7, 0);
+    ctx.quadraticCurveTo(-6, -12, -4, -19);
+    ctx.lineTo(5, -19);
+    ctx.quadraticCurveTo(7, -10, 7.4, 0);
+    for (let x = 7.4; x > -7; x -= 2.4) ctx.lineTo(x - 1.2, x % 2 ? -1.6 : 0);
+    ctx.closePath();
+    inked(ctx, c.tunic);
+    ctx.beginPath();
+    ctx.moveTo(-5, -17);
+    ctx.quadraticCurveTo(-7, -26, 0, -29);
+    ctx.quadraticCurveTo(7, -30, 9, -24);
+    ctx.quadraticCurveTo(7, -19, 4.6, -16);
+    ctx.closePath();
+    inked(ctx, c.tunic);
+    ctx.beginPath();
+    ctx.ellipse(3.2, -21.6, 3.6, 3.8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#120a16";
+    ctx.fill();
+    ctx.save();
+    ctx.shadowColor = "#c6ff5a";
+    ctx.shadowBlur = glowBlur(4);
+    monsterEyes(ctx, [[2.2, -22.2, 0.9], [4.6, -22.4, 0.9]], "#c6ff5a", mood);
+    ctx.restore();
+    ctx.strokeStyle = c.trim;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-5.4, -10);
+    ctx.lineTo(6.6, -10);
+    ctx.stroke();
+    weaponArm(ctx, 5, -13, swing * 0.4 + 0.15, () => {
+      ctx.beginPath();
+      ctx.rect(1.2, -16, 1.6, 26);
+      inked(ctx, "#5a3414", 0.8);
+      ctx.save();
+      ctx.translate(2, -18.6);
+      ctx.rotate(time * 3);
+      traceToothedRim(ctx, 4, 2.8, 8);
+      inked(ctx, c.horns, 0.9);
+      inkedCircle(ctx, 0, 0, 1, "#3a2414", 0.4);
+      ctx.restore();
+      inkedCircle(ctx, 2, 1.4, 1.8, c.skin, 0.8);
+    });
+    ctx.fillStyle = c.horns;
+    for (let i = 0; i < 3; i++) {
+      const a = time * 2 + i * 2.1;
+      ctx.fillRect(-1 + Math.cos(a) * 8, -14 + Math.sin(a) * 5, 1.4, 1.4);
+    }
+  },
+
+  // Demons: big curved horns, bat wings, goat legs, a tail and a trident.
+  demon(ctx, c, state, time, stride, swing, mood) {
+    const flap = Math.sin(time * 6) * 0.2;
+    ctx.save();
+    ctx.translate(-2, -19);
+    ctx.rotate(-0.2 + flap);
+    ctx.beginPath();
+    ctx.moveTo(0, 2);
+    ctx.lineTo(-3, -11);
+    ctx.lineTo(-13, -9);
+    ctx.quadraticCurveTo(-10, -6, -10.4, -2.6);
+    ctx.quadraticCurveTo(-7, -3.6, -6.4, 0);
+    ctx.quadraticCurveTo(-3, -1, 0, 2);
+    ctx.closePath();
+    inked(ctx, c.tunic, 1.1);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(-3, -8);
+    ctx.quadraticCurveTo(-11, -6 + Math.sin(time * 3) * 2, -12, -14);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeStyle = c.skin;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-12, -16.6);
+    ctx.lineTo(-10.2, -13.2);
+    ctx.lineTo(-13.8, -13.6);
+    ctx.closePath();
+    inked(ctx, c.skin, 0.8);
+    for (const side of [-1, 1]) {
+      const x = side * 2.4 + side * stride;
+      ctx.beginPath();
+      ctx.moveTo(x - 1.6, -9);
+      ctx.quadraticCurveTo(x + 2.6, -6, x - 0.4, -3.6);
+      ctx.lineTo(x + 0.6, -1.4);
+      ctx.lineTo(x + 2.2, -1.4);
+      ctx.lineTo(x + 1.4, -4);
+      ctx.quadraticCurveTo(x + 4.4, -7, x + 1.6, -9);
+      ctx.closePath();
+      inked(ctx, mixColor(c.skin, "#000000", 0.25), 1);
+      ctx.beginPath();
+      ctx.rect(x + 0.2, -1.6, 2.4, 1.6);
+      inked(ctx, c.horns, 0.8);
+    }
+    ctx.beginPath();
+    ctx.moveTo(-5.6, -19);
+    ctx.lineTo(6, -19);
+    ctx.lineTo(3, -8);
+    ctx.lineTo(-3, -8);
+    ctx.closePath();
+    inked(ctx, c.skin);
+    ctx.beginPath();
+    ctx.rect(-3.4, -10, 6.8, 2.6);
+    inked(ctx, c.tunic, 0.8);
+    for (const [hx, dir] of [[-2.2, -1], [3.6, 1]]) {
+      ctx.beginPath();
+      ctx.moveTo(hx, -26);
+      ctx.quadraticCurveTo(hx + dir * 4, -30, hx + dir * 2, -33.4);
+      ctx.quadraticCurveTo(hx + dir * 2.4, -29.6, hx + dir * -1.4, -27.4);
+      ctx.closePath();
+      inked(ctx, c.horns, 0.9);
+    }
+    inkedCircle(ctx, 1, -23, 5.6, c.skin);
+    monsterEyes(ctx, [[0.2, -24, 1.3], [3.8, -24.2, 1.2]], "#ffe14d", mood);
+    fangMouth(ctx, 2.2, -20.4, 4.4, mood);
+    weaponArm(ctx, 5.4, -16, swing + 0.5, () => {
+      ctx.beginPath();
+      ctx.rect(1.4, -14, 1.6, 20);
+      inked(ctx, "#2a1020", 0.8);
+      ctx.save();
+      ctx.shadowColor = c.blade;
+      ctx.shadowBlur = glowBlur(5);
+      ctx.beginPath();
+      ctx.moveTo(-1.6, -13);
+      ctx.lineTo(-1.6, -17);
+      ctx.moveTo(2.2, -13);
+      ctx.lineTo(2.2, -19);
+      ctx.moveTo(6, -13);
+      ctx.lineTo(6, -17);
+      ctx.moveTo(-1.6, -13);
+      ctx.lineTo(6, -13);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.strokeStyle = c.blade;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.restore();
+      inkedCircle(ctx, 2.2, 1, 2, c.skin, 0.9);
+    });
+  },
+
+  // Fire imps: a little floating flame with a face, wings and a fireball.
+  imp(ctx, c, state, time, stride, swing, mood) {
+    const bob = Math.sin(time * 6) * 1.4;
+    ctx.save();
+    ctx.translate(0, -4 + bob);
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 5, 1.2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+    ctx.fill();
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 3, -12);
+      ctx.lineTo(side * 11, -17 + Math.sin(time * 14) * 2);
+      ctx.lineTo(side * 9, -10);
+      ctx.lineTo(side * 4, -9);
+      ctx.closePath();
+      inked(ctx, c.tunic, 0.9);
+    }
+    const lick = Math.sin(time * 11);
+    ctx.beginPath();
+    ctx.moveTo(-6, -6);
+    ctx.quadraticCurveTo(-7, -14, -3, -18 + lick);
+    ctx.quadraticCurveTo(-2, -14, 0, -15);
+    ctx.quadraticCurveTo(0, -21, 3, -24 - lick);
+    ctx.quadraticCurveTo(3.4, -18, 5, -17);
+    ctx.quadraticCurveTo(8, -12, 6, -5);
+    ctx.quadraticCurveTo(3, 1, 0, 1);
+    ctx.quadraticCurveTo(-4, 1, -6, -6);
+    ctx.closePath();
+    inked(ctx, c.skin);
+    ctx.beginPath();
+    ctx.moveTo(-3.6, -5);
+    ctx.quadraticCurveTo(-3.6, -10, 0, -13);
+    ctx.quadraticCurveTo(0.6, -9, 3, -10);
+    ctx.quadraticCurveTo(4.4, -5, 1, -1.6);
+    ctx.quadraticCurveTo(-2.6, -1.6, -3.6, -5);
+    ctx.closePath();
+    ctx.fillStyle = "#ffe14d";
+    ctx.fill();
+    for (const hx of [-2.6, 3]) {
+      ctx.beginPath();
+      ctx.moveTo(hx - 1, -14);
+      ctx.lineTo(hx, -17.6);
+      ctx.lineTo(hx + 1, -14);
+      ctx.closePath();
+      inked(ctx, c.horns, 0.7);
+    }
+    monsterEyes(ctx, [[-0.6, -9, 1.2], [2.6, -9.2, 1.1]], "#ffffff", mood);
+    fangMouth(ctx, 1, -5.6, 3.6, mood);
+    weaponArm(ctx, 5, -6, swing + 0.4, () => {
+      ctx.save();
+      ctx.shadowColor = c.blade;
+      ctx.shadowBlur = glowBlur(6);
+      inkedCircle(ctx, 1.4, -4, 2.6, c.blade, 0.8);
+      ctx.restore();
+      inkedCircle(ctx, 1.4, 0.4, 1.2, c.skin, 0.6);
+    });
+    ctx.restore();
+  },
+};
+
 
 function drawBombIcon(ctx, x, y) {
   ctx.save();
