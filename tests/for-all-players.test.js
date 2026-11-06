@@ -269,7 +269,7 @@ async function check(name, fn) {
     assert.deepEqual(bad, []);
     const changes = await page.evaluate(() => new Promise((done) => {
       let n = 0; const o = new MutationObserver((r) => { n += r.length; });
-      o.observe(document.getElementById("main-actions"), { subtree: true, childList: true, characterData: true });
+      o.observe(document.getElementById("action-row"), { subtree: true, childList: true, characterData: true });
       playerPower = 1000; enemyPower = 1000;
       setTimeout(() => { o.disconnect(); done(n); }, 500);
     }));

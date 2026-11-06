@@ -2383,109 +2383,29 @@ html.less-motion .chest-card.shaking {
   margin-bottom: 10px; /* off the screen edge once the hint line is gone */
 }
 
-/* A compact plate, not a big block: as wide as it needs, centred in the row. */
-#main-actions {
-  flex: 0 1 150px;
-  min-width: 0;
-  max-width: 160px;
-  flex-direction: row;
-  align-items: center;
-}
-
+/* Four round buttons in a row, like a game controller: Train and Rally on
+   the left, Overdrive, then the biggest, Lightning, under the right thumb. */
 #side-actions {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   flex-direction: row;
-  justify-content: center;
-  gap: 4px;
-  margin: 0 auto;
+  justify-content: space-evenly;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0;
 }
 
-/* ---------- Train: a plate bolted to the machine ---------- */
+#side-actions > #strike-btn {
+  --size: 62px;
+  width: 78px;
+}
 
 #train-btn {
   --top: #c39bff;
   --bottom: #6f3fc0;
   --edge: #3f2280;
   --glow: #c39bff;
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 54px;
-  max-height: 62px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px 12px 5px 8px;
-  border: 2px solid #1c0f06;
-  border-radius: 10px;
-  /* Four bolts, a soft shine across the top, then the enamel. */
-  background:
-    radial-gradient(circle at 7px 7px, #f4ecff 1px, #4a2c80 2.2px, transparent 2.8px),
-    radial-gradient(circle at calc(100% - 7px) 7px, #f4ecff 1px, #4a2c80 2.2px, transparent 2.8px),
-    radial-gradient(circle at 7px calc(100% - 7px), #f4ecff 1px, #4a2c80 2.2px, transparent 2.8px),
-    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #f4ecff 1px, #4a2c80 2.2px, transparent 2.8px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0.18)),
-    linear-gradient(180deg, var(--top), var(--bottom));
-  color: #fff;
-  font-weight: 900;
-  font-size: 0.85rem;
-  line-height: 1.1;
-  text-shadow: -1px -1px 0 #2a1405, 1px -1px 0 #2a1405, -1px 1px 0 #2a1405, 1px 1px 0 #2a1405, 0 2px 0 #2a1405;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), inset 0 -3px 0 rgba(0, 0, 0, 0.25), 0 3px 0 var(--edge), 0 5px 6px rgba(0, 0, 0, 0.45);
-  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
-}
-
-#train-btn::before {
-  content: "";
-  flex: 0 0 28px;
-  height: 28px;
-  border: 2px solid #1c0f06;
-  border-radius: 50%;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round'%3E%3Cpath d='M4 4l12 12M20 4L8 16M6 14l4 4M18 14l-4 4M5 19l2-2M19 19l-2-2' stroke='%232a1405' stroke-width='5'/%3E%3Cpath d='M4 4l12 12M20 4L8 16M6 14l4 4M18 14l-4 4M5 19l2-2M19 19l-2-2' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E") center / 70% no-repeat,
-    radial-gradient(circle at 35% 28%, #fff4c9, var(--top) 45%, var(--edge));
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-
-#train-btn::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 10px;
-  box-shadow: 0 0 12px 3px var(--glow);
-  opacity: 0;
-  will-change: opacity;
-  pointer-events: none;
-}
-
-#train-btn:not(:disabled)::after {
-  animation: button-pulse 1.3s ease-in-out infinite;
-}
-
-#train-btn:active:not(:disabled) {
-  transform: translateY(3px) scale(0.98);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.22), 0 0 0 var(--edge);
-}
-
-/* Not enough soldiers yet: dark iron, bolts still showing. */
-#train-btn:disabled {
-  --top: #5a4b3a;
-  --bottom: #33281d;
-  --edge: #120a04;
-  color: #d8c9b0;
-  background:
-    radial-gradient(circle at 7px 7px, #a89880 1px, #2a2017 2.2px, transparent 2.8px),
-    radial-gradient(circle at calc(100% - 7px) 7px, #a89880 1px, #2a2017 2.2px, transparent 2.8px),
-    radial-gradient(circle at 7px calc(100% - 7px), #a89880 1px, #2a2017 2.2px, transparent 2.8px),
-    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #a89880 1px, #2a2017 2.2px, transparent 2.8px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0.2)),
-    linear-gradient(180deg, var(--top), var(--bottom));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 3px 0 var(--edge), 0 5px 6px rgba(0, 0, 0, 0.4);
-}
-
-#train-btn:disabled::before {
-  filter: grayscale(0.75) brightness(0.8);
+  --fill: #c39bff;
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round'%3E%3Cpath d='M4 4l12 12M20 4L8 16M6 14l4 4M18 14l-4 4M5 19l2-2M19 19l-2-2' stroke='%232a1405' stroke-width='5'/%3E%3Cpath d='M4 4l12 12M20 4L8 16M6 14l4 4M18 14l-4 4M5 19l2-2M19 19l-2-2' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E");
 }
 
 /* ---------- Lightning, Overdrive, Rally: round power buttons ---------- */
@@ -2614,12 +2534,14 @@ html.less-motion .chest-card.shaking {
 /* Recharging, Overdrive running down, or a Rally building up: the button is
    dark, and fills with its colour from the bottom like a glass filling up,
    with a bright line on top, so the level is easy to see at a glance. */
+#train-btn:disabled,
 #strike-btn:not(.ready):not(.shield),
 #overdrive-btn:not(.ready),
 #rally-btn.holding:not(.full) {
   color: #d8c9b0;
 }
 
+#train-btn:disabled::before,
 #strike-btn:not(.ready):not(.shield)::before,
 #overdrive-btn:not(.ready)::before,
 #rally-btn.holding:not(.full)::before {
@@ -2631,6 +2553,7 @@ html.less-motion .chest-card.shaking {
 }
 
 /* The moment it's charged, the button pops. */
+#train-btn:not(:disabled)::before,
 #strike-btn.ready:not(:disabled)::before,
 #overdrive-btn.ready:not(:disabled)::before,
 #rally-btn.full::before {
@@ -2647,6 +2570,7 @@ html.less-motion .chest-card.shaking {
   cursor: default;
 }
 
+#train-btn:not(:disabled)::after,
 #strike-btn.ready:not(:disabled)::after,
 #strike-btn.shield:not(:disabled)::after,
 #overdrive-btn.ready:not(:disabled)::after,
@@ -2683,25 +2607,15 @@ html.less-motion #side-actions > button::after {
     gap: 5px;
   }
 
-  #train-btn {
-    gap: 4px;
-    padding: 4px 8px 5px 5px;
-    font-size: 0.74rem;
-  }
-
-  #train-btn::before {
-    flex-basis: 22px;
-    height: 22px;
-  }
-
-  #side-actions {
-    gap: 2px;
-  }
-
   #side-actions > button {
     --size: 44px;
     width: 58px;
     font-size: 0.66rem;
+  }
+
+  #side-actions > #strike-btn {
+    --size: 54px;
+    width: 66px;
   }
 
   /* Thai words are longer and don't break well. */
