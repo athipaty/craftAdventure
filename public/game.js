@@ -9431,6 +9431,27 @@ function rewardIcon(reward) {
   return reward.gear ? gearIcon(reward.gear) : emojiIcon(REWARD_ICONS[reward.id] || "\u2728");
 }
 
+const ELEMENT_TAGS = { fire: "Fire", ice: "Ice", storm: "Storm" };
+
+// A fusion in the guide: the recipe as pictures, then what it makes and does.
+function recipeRow(fusion) {
+  const row = document.createElement("div");
+  row.className = "guide-row guide-recipe-row";
+  const recipe = document.createElement("div");
+  recipe.className = "guide-recipe";
+  const sign = (text) => {
+    const el = document.createElement("span");
+    el.textContent = text;
+    return el;
+  };
+  recipe.append(gearIcon(fusion.parts[0]), sign("+"), gearIcon(fusion.parts[1]), sign("="), gearIcon(fusion.gear));
+  const spec = GEAR_TYPES[fusion.gear];
+  const tag = spec.super ? "Super" : ELEMENT_TAGS[spec.element] || "";
+  const words = guideRow(fusion.name, fusion.text, document.createElement("span"), tag).querySelector(".guide-words");
+  row.append(recipe, words);
+  return row;
+}
+
 function guideRow(name, text, icon, tag) {
   const row = document.createElement("div");
   row.className = "guide-row";
@@ -9467,16 +9488,19 @@ function guideSections() {
     ["Gears", [
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
-      ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward), ELEMENT_TAGS[GEAR_TYPES[reward.gear].element] || ""]),
       ["Elements", "Bomb gears are fire, Ice gears are ice and Spark gears are storm, and so are their fusions. Put two different ones side by side to make them react: fire + ice makes steam, fire + storm makes plasma, ice + storm makes a shatter.", emojiIcon("\u2668\uFE0F")],
-      ["Super fusion", "Fuse two fused gears of the same level for a golden super gear: Cannon + Comet makes a Meteor, Storm + Blizzard a Tempest, Hermit + Engine a Fortress, Dynamo + Storm a Reactor.", gearIcon("meteor")],
-      ["Gear fusion", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.", gearIcon("cannon")],
       ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
       ["Treasure goblin", TREASURE_GOBLIN_NOTE, treasureGoblinIcon()],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
+    ]],
+    ["Mixing gears", [
+      ["Merge", "Drag a gear onto the same kind of gear at the same level, and they become one gear a level higher. Each level pays about 2.5x as much.", gearIcon("soldier", false, 2)],
+      ["Fuse", "Drag a special gear onto a different special gear of the same level. If it shows a purple ring, they fuse into a new, stronger gear, and free a space. Fuse two fused gears for a golden super gear.", gearIcon("cannon")],
+      ...FUSIONS.map(recipeRow),
     ]],
     ["Abilities", [
       ["Lightning", "Hits the enemy for free. Press it during a boss's glow, after holding it ready, to cancel the attack. It also thaws freezes.", emojiIcon("\u26A1")],
@@ -9505,7 +9529,7 @@ function openGuide() {
   for (const [title, rows] of guideSections()) {
     const heading = document.createElement("h3");
     heading.textContent = title;
-    list.append(heading, ...rows.map((row) => guideRow(...row)));
+    list.append(heading, ...rows.map((row) => (row instanceof Node ? row : guideRow(...row))));
   }
   list.scrollTop = 0;
   document.getElementById("guide-screen").classList.remove("hidden");
