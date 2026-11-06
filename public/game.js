@@ -63,6 +63,7 @@ const SAVE_KEY = "gearfight_save";
 const RUN_SAVE_KEY = "gearfight_run";
 // Lifetime waves won before each feature appears, so a new player meets them one
 // at a time. Anyone past these numbers simply has them all.
+const HINT_WAVES = 10; // the how-to line under the buttons shows until this many waves are won
 const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10 };
 const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!" };
 const TIP_FEATURES = { rally: "rally", train: "train" };
@@ -447,6 +448,9 @@ const MIN_WAVE_SECONDS = 20; // a new wave starts big enough to take the player'
 const ENEMY_BASE_GROWTH = 0.08; // enemy army per second at the start of wave 1
 const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
 const ENEMY_DOUBLING_SECONDS = 30; // enemy growth doubles every this long within a wave
+// Enemy growth in the first waves, compared to the usual. Gentler, so a new
+// player with no upgrades can win them before learning Lightning and Overdrive.
+const EARLY_WAVE_GROWTH = [0.4, 0.4, 0.5, 0.75];
 const WAVE_START_LEAD = 1.25; // player's army vs the enemy's when a new wave begins
 const DRIVER_PALETTE = { light: "#dfe5ea", mid: "#8d99a6", dark: "#3f4a55", recess: "#6d7884", hub: "#c3ccd5" };
 
@@ -708,7 +712,8 @@ function isBossWave(forWave) {
 }
 
 function enemyGrowthPerSec(wave, waveTime) {
-  return ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
+  const early = EARLY_WAVE_GROWTH[wave - 1] ?? 1;
+  return early * ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
 }
 
 // =====================================================================
@@ -1160,6 +1165,7 @@ function featureOn(id) {
 }
 
 function updateFeatureButtons() {
+  document.getElementById("play-hint").classList.toggle("hidden", statValue("waves") >= HINT_WAVES);
   document.getElementById("rally-btn").classList.toggle("hidden", !featureOn("rally"));
   document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train"));
   document.getElementById("speed-btn").classList.toggle("hidden", !featureOn("speed"));
@@ -1934,7 +1940,7 @@ function updateStrikeButton() {
   if (shielded) label = `Break shield: ${boss.shield}`;
   else if (blocked) label = "No lightning";
   else if (canCounter) label = "Strike now!";
-  else if (!ready) label = `Lightning ${Math.ceil(strikeCooldown)}s`;
+  else if (!ready) label = "Lightning"; // the ring around the button shows the recharge
   setLabel(button, label);
   button.disabled = gameState !== "playing" || (!shielded && (blocked || !ready));
   button.classList.toggle("ready", !shielded && !blocked && ready);
@@ -2170,8 +2176,8 @@ function updateOverdrive(dt) {
 
 function updateOverdriveButton() {
   const button = document.getElementById("overdrive-btn");
-  const seconds = Math.ceil(overdriveLeft > 0 ? overdriveLeft : overdriveCooldown);
-  const label = overdriveReady() ? "Overdrive!" : `Overdrive ${seconds}s`;
+  // The ring around the button shows the recharge, or what's left while it runs.
+  const label = overdriveReady() || overdriveLeft > 0 ? "Overdrive!" : "Overdrive";
   setLabel(button, label);
   button.disabled = !overdriveReady() || gameState !== "playing";
   button.classList.toggle("ready", overdriveReady());
@@ -6523,6 +6529,21 @@ function announce(text) {
   if (!announcing) nextAnnouncement();
 }
 
+// In a run, over the gear tray, so it covers neither the board nor any button.
+// Elsewhere, at the bottom of the screen.
+function placeAnnouncement(el) {
+  const tray = document.getElementById("gear-tray");
+  const inRun = !document.getElementById("game-screen").classList.contains("hidden") && tray.offsetHeight > 0;
+  if (!inRun) {
+    el.style.left = el.style.bottom = "";
+    return;
+  }
+  const frame = document.getElementById("app-frame").getBoundingClientRect();
+  const box = tray.getBoundingClientRect();
+  el.style.left = `${box.left + box.width / 2 - frame.left}px`;
+  el.style.bottom = `${Math.max(0, frame.bottom - box.bottom + (box.height - el.offsetHeight) / 2)}px`;
+}
+
 function nextAnnouncement() {
   const el = document.getElementById("announcement");
   const text = announcements.shift();
@@ -6530,6 +6551,7 @@ function nextAnnouncement() {
   el.classList.toggle("hidden", !announcing);
   if (!announcing) return;
   el.textContent = text;
+  placeAnnouncement(el);
   el.style.animation = "none";
   void el.offsetWidth;
   el.style.animation = "";

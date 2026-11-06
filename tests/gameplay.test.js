@@ -149,10 +149,10 @@ async function check(name, fn) {
       const a = document.getElementById("announcement").getBoundingClientRect();
       const hud = document.getElementById("hud").getBoundingClientRect();
       const board = document.getElementById("board-canvas").getBoundingClientRect();
-      const train = document.getElementById("train-btn").getBoundingClientRect();
-      return { overlapHud: a.top < hud.bottom, overlapBoard: a.top < board.bottom, overlapTrain: a.top < train.bottom };
+      const buttons = document.getElementById("action-row").getBoundingClientRect();
+      return { overlapHud: a.top < hud.bottom, overlapBoard: a.top < board.bottom, overlapButtons: a.bottom > buttons.top };
     });
-    assert.deepEqual(r, { overlapHud: false, overlapBoard: false, overlapTrain: false });
+    assert.deepEqual(r, { overlapHud: false, overlapBoard: false, overlapButtons: false });
   });
 
   console.log("\nVibration");

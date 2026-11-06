@@ -40,7 +40,7 @@ async function check(name, fn) {
     await page.locator("#strike-btn").tap();
     assert.equal(await page.evaluate(() => statValue("strikes")), s0 + 1);
     await settle();
-    assert.match(await label(), /^Lightning \ds$/);
+    assert.equal(await label(), "Lightning");
     assert.equal(await page.locator("#strike-btn").isDisabled(), true);
   });
   await check("the recharge fills the button, then it's ready again", async () => {
@@ -82,7 +82,7 @@ async function check(name, fn) {
     assert.equal(await page.evaluate(() => statValue("strikes")), s0, "breaking a shield isn't a strike");
     await page.evaluate(() => { strikeCooldown = 1.5; });
     await settle();
-    assert.match(await label(), /^Lightning \ds$/);
+    assert.equal(await label(), "Lightning");
   });
   await check("it says when to counter, and pressing then cancels the attack", async () => {
     await page.evaluate(() => { boss = { kind: BOSS_KINDS[0], hp: 1e6, maxHp: 1e6, attackIn: 0.95, hitFlash: 0, reinforcePerSec: 0, shield: 0 }; strikeCooldown = 0; strikeHeld = 2; });
@@ -135,7 +135,8 @@ async function check(name, fn) {
         for (const id of ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"]) {
           const el = document.getElementById(id), q = el.getBoundingClientRect();
           if (q.left < frame.left - 1 || q.right > frame.right + 1 || q.bottom > frame.bottom + 1) bad.push(`${id} off screen`);
-          if (q.height < 36 || q.width < 72) bad.push(`${id} too small ${q.width}x${q.height}`);
+          // At least 44px each way, the usual smallest comfortable tap target.
+          if (q.height < 44 || q.width < 44) bad.push(`${id} too small ${q.width}x${q.height}`);
           if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) bad.push(`${id} text overflows`);
         }
         return { bad, cell: Math.round(cellSize), labels: ["train-btn", "strike-btn", "overdrive-btn", "rally-btn"].map((id) => document.getElementById(id).textContent) };
