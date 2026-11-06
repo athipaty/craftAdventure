@@ -2475,10 +2475,13 @@ html.less-motion .chest-card.shaking {
 /* Four round buttons in a row, like a game controller: Train and Rally on
    the left, Overdrive, then the biggest, Lightning, under the right thumb. */
 #side-actions {
+  /* Every circle sits in a slot as tall as the biggest, centred, so all the
+     circles line up through their middles and every label starts on one line. */
+  --band: 62px;
   flex: 1 1 auto;
   flex-direction: row;
   justify-content: space-evenly;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 2px;
   margin: 0;
 }
@@ -2532,6 +2535,7 @@ html.less-motion .chest-card.shaking {
   flex: 0 0 var(--size);
   width: var(--size);
   height: var(--size);
+  margin: calc((var(--band) - var(--size)) / 2) 0;
   box-sizing: border-box;
   border: 2px solid #1c0f06;
   border-radius: 50%;
@@ -2547,7 +2551,7 @@ html.less-motion .chest-card.shaking {
 #side-actions > button::after {
   content: "";
   position: absolute;
-  top: 0;
+  top: calc((var(--band) - var(--size)) / 2);
   left: 50%;
   width: var(--size);
   height: var(--size);
@@ -2694,6 +2698,10 @@ html.less-motion #side-actions > button::after {
 @media (max-width: 360px) {
   #action-row {
     gap: 5px;
+  }
+
+  #side-actions {
+    --band: 54px;
   }
 
   #side-actions > button {
