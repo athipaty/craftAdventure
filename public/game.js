@@ -682,7 +682,9 @@ const WAVE_EVENTS = [
 const TIPS = [
   ...WORLDS.map((world, i) => ({ id: `story:${world.id}`, urgent: true, text: WORLD_STORIES[world.id].intro, when: () => !currentEvent && !currentDaily && currentWorld === i })),
   { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
-  { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss },
+  { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss, card: () => bossCard() },
+  // Every later boss gets its own introduction the first time it comes.
+  ...[...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, urgent: true, text: kind.final ? "This world's last boss. Beat it to clear the world!" : "A new boss! Watch what it does, and keep Lightning ready for its glow.", when: () => Boolean(save.tips.boss) && boss?.kind.id === kind.id, card: () => bossCard() })),
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
   { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
   { id: "fusion", text: "These two gears can fuse! Drag one onto the other and look for the purple ring to make a new, stronger gear.", when: () => boardCanFuse() },
@@ -699,10 +701,13 @@ const TIPS = [
   { id: "rally", text: "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank.", target: "#train-btn", when: () => canTrain() },
   { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => waveTime > 8 },
-  { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute" },
-  { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost" },
-  { id: "imp", urgent: true, text: "Fire imps burn the progress out of your gears. Win fast, before they burn it all.", when: () => enemyType?.id === "imp" },
-  { id: "shaman", urgent: true, text: "Rust shamans keep rusting your gears. Tap rusted gears to fix them.", when: () => enemyType?.id === "shaman" },
+  { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute", card: () => enemyTypeCard("brute") },
+  { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost", card: () => enemyTypeCard("frost") },
+  { id: "imp", urgent: true, text: "Fire imps burn the progress out of your gears. Win fast, before they burn it all.", when: () => enemyType?.id === "imp", card: () => enemyTypeCard("imp") },
+  { id: "shaman", urgent: true, text: "Rust shamans keep rusting your gears. Tap rusted gears to fix them.", when: () => enemyType?.id === "shaman", card: () => enemyTypeCard("shaman") },
+  { id: "runner", urgent: true, text: "Goblin runners bring extra enemies, so win quickly.", when: () => enemyType?.id === "runner", card: () => enemyTypeCard("runner") },
+  // Each tougher kind of enemy, the first wave it fights.
+  ...ENEMY_RANKS.slice(1).map((rank) => ({ id: `rank:${rank.look}`, urgent: true, text: `${rank.plural} are tougher: each one counts for ${rank.strength} goblins. Train your army to keep up!`, when: () => !boss && waveTime > 0.2 && enemyRank().look === rank.look, card: () => ({ label: "New enemy!", name: rank.plural, hint: "", icon: enemyIcon(rank.look) }) })),
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -4589,6 +4594,27 @@ function resumeGame() {
   document.getElementById("pause-screen").classList.add("hidden");
 }
 
+function bossCard() {
+  return { label: "New boss!", name: boss.kind.name, hint: NEXT_WAVE_HINTS[boss.kind.id] || "", icon: bossIcon(boss.kind) };
+}
+
+function enemyTypeCard(id) {
+  return { label: "New enemy!", name: ENEMY_TYPES[id].name, hint: NEXT_WAVE_HINTS[id] || "", icon: enemyIcon(ENEMY_TYPES[id].look) };
+}
+
+// A tip with a card shows who it's about: a big picture, a name and what it does.
+function showTipCard(tip) {
+  const card = tip.card?.();
+  document.getElementById("tip-intro").classList.toggle("hidden", !card);
+  if (!card) return;
+  document.getElementById("tip-intro-art").replaceChildren(card.icon);
+  document.getElementById("tip-intro-label").textContent = card.label;
+  document.getElementById("tip-intro-name").textContent = card.name;
+  const hint = document.getElementById("tip-intro-hint");
+  hint.textContent = card.hint;
+  hint.classList.toggle("hidden", !card.hint);
+}
+
 function maybeShowTip() {
   if (gameState !== "playing") return;
   const since = runTime - lastTipAt;
@@ -4602,6 +4628,7 @@ function maybeShowTip() {
   openTip = tip;
   tipOpenedAt = performance.now();
   document.getElementById("tip-text").textContent = tip.text;
+  showTipCard(tip);
   document.getElementById("tip-screen").classList.remove("hidden");
   if (tip.target) document.querySelector(tip.target).classList.add("tip-target");
 }
@@ -4615,6 +4642,7 @@ function hideTip() {
 function closeTip() {
   if (!openTip || performance.now() - tipOpenedAt < REWARD_CLICK_DELAY_MS) return;
   save.tips[openTip.id] = true;
+  if (openTip.id === "boss" && boss) save.tips[`boss:${boss.kind.id}`] = true;
   writeSave();
   hideTip();
   gameState = "playing";
@@ -7485,6 +7513,28 @@ function drawLaneText(ctx, text, x, y) {
   ctx.fillText(text, x, y);
 }
 
+// Where the wave is won and lost: notches on the bar at 70% and 30%, labelled,
+// so it is clear how far the line has to go either way.
+function drawBarMarks(ctx, x0, x1, barY, barH) {
+  ctx.save();
+  ctx.font = "900 9px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  for (const [share, label, color] of [[WIN_RATIO, "WIN", "#ffe14d"], [LOSE_RATIO, "LOSE", "#ff8a7a"]]) {
+    const x = x0 + (x1 - x0) * share;
+    ctx.fillStyle = "#1c130a";
+    ctx.fillRect(x - 2.5, barY - 4, 5, barH + 8);
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 1.25, barY - 3, 2.5, barH + 6);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#1c130a";
+    ctx.strokeText(label, x, barY - 5);
+    ctx.fillText(label, x, barY - 5);
+  }
+  ctx.restore();
+}
+
 function drawBattle() {
   if (!battleCtx || battleCssW <= 0) return;
   const ctx = battleCtx;
@@ -7505,6 +7555,7 @@ function drawBattle() {
   roundRectFill(ctx, x0, barY, x1 - x0, barH, barH / 2, "#1c130a");
   roundRectFill(ctx, x0, barY, markerX - x0, barH, barH / 2, "#3a7ddb");
   roundRectFill(ctx, markerX, barY, x1 - markerX, barH, barH / 2, save.colorBlind ? "#f0a020" : "#d8432f");
+  drawBarMarks(ctx, x0, x1, barY, barH);
 
   ctx.beginPath();
   ctx.fillStyle = "#ffcc33";
