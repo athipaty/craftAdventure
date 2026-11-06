@@ -44,7 +44,7 @@ async function check(name, fn) {
   });
   await check("taking each reward for real lands on the card's number", async () => {
     await setUp();
-    const parts = await page.evaluate(() => REWARDS.filter((x) => !x.gear && x.id !== "forgedGear").map((x) => x.id));
+    const parts = await page.evaluate(() => REWARDS.filter((x) => !x.gear && !x.upgrade && x.id !== "forgedGear").map((x) => x.id));
     for (const id of parts) {
       await setUp();
       const r = await page.evaluate((rid) => {
@@ -57,6 +57,22 @@ async function check(name, fn) {
       }, id);
       assert.equal(r.now, r.promised, id);
     }
+  });
+  await check("a gear upgrade's card matches the machine once it's taken", async () => {
+    await setUp();
+    const r = await page.evaluate(() => {
+      const spots = [[DRIVER_ROW, DRIVER_COL + 1], [DRIVER_ROW, DRIVER_COL - 1], [DRIVER_ROW - 1, DRIVER_COL], [DRIVER_ROW + 1, DRIVER_COL], [DRIVER_ROW, DRIVER_COL + 2], [DRIVER_ROW, DRIVER_COL - 2]];
+      const types = ["big", "bomb", "cannon", "booster", "far", "lone"];
+      spots.forEach(([row, col], i) => { grid[row][col] = freshCell(types[i]); grid[row][col].level = i === 1 ? 1 : 2; });
+      const reward = REWARDS.find((x) => x.upgrade);
+      const open = rewardIsOpen(reward);
+      const before = rewardChange(reward);
+      reward.apply();
+      return { open, promised: before?.to, now: formatRate(machineRate()), bomb: grid[DRIVER_ROW][DRIVER_COL - 1].level };
+    });
+    assert.equal(r.open, true, "offered at the limit");
+    assert.equal(r.now, r.promised);
+    assert.equal(r.bomb, 2, "the lowest level gear went up");
   });
   await check("a new gear's card matches the machine once it's placed", async () => {
     const ids = await page.evaluate(() => REWARDS.filter((x) => x.gear || x.id === "forgedGear").map((x) => x.id));

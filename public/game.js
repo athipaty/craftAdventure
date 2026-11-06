@@ -73,7 +73,7 @@ const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
 // and bosses use their real art instead.
 const REWARD_ICONS = {
-  fasterGear: "\u23E9", veterans: "\u{1F396}\uFE0F", reinforcements: "\u{1F6A9}",
+  fasterGear: "\u23E9", gearUpgrade: "\u2B06\uFE0F", veterans: "\u{1F396}\uFE0F", reinforcements: "\u{1F6A9}",
   cooling: "\u{1F9CA}", staticCharge: "\u26A1", scrapDealer: "\u267B\uFE0F", thickOil: "\u{1F6E2}\uFE0F", warChest: "\u{1F4B0}",
   drillManual: "\u{1F4D8}", piercing: "\u{1F531}", antifreeze: "\u2744\uFE0F", fireproof: "\u{1F9EF}", longChain: "\u{1F517}",
   bossHunter: "\u{1F3AF}", demolition: "\u{1F4A3}", heavyLoad: "\u{1F3CB}\uFE0F", turbo: "\u{1F680}", blastCleaner: "\u{1F9F9}",
@@ -697,6 +697,7 @@ const REWARDS = [
   { id: "loneGear", name: "Lone gear", text: "Pays 50% more for each empty space beside it", gear: "lone" },
   { id: "sparkGear", name: "Spark gear", text: "Each time it fills, your next Lightning hits 25% harder, up to 3x", gear: "spark", feature: "powerGears" },
   { id: "oilGear", name: "Oil gear", text: "Sends 1 soldier. Never rusts, and the gears touching it can't rust either", gear: "oil", feature: "powerGears" },
+  { id: "gearUpgrade", name: "Gear upgrade", text: "At the special gear limit, levels up one of your special gears instead", oneOff: true, upgrade: true, apply: () => upgradeSpecialGear() },
   { id: "iceGear", name: "Ice gear", text: "Each time it fills, the enemy grows at half speed for 2 seconds", gear: "ice", feature: "powerGears" },
   { id: "cooling", name: "Cooling oil", text: "Overdrive recharges 20% faster", max: 2 },
   { id: "staticCharge", name: "Static charge", text: "Lightning strikes hit 30% harder", max: 3 },
@@ -767,6 +768,7 @@ const TIPS = [
   { id: "ice", text: "Ice gear! Each time it fills, the enemy grows at half speed for a few seconds.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].chill) },
   { id: "elements", text: "Elements! Fire, ice and storm gears react when two different ones touch. Fire + ice makes steam (the enemy stops growing), fire + storm makes plasma (an extra blast), ice + storm makes a shatter (a free lightning hit).", when: () => grid.some((row, r) => row.some((cell, c) => reactionBetween(cell, grid[r][c + 1]) || reactionBetween(cell, grid[r + 1]?.[c]))) },
   { id: "superFusion", urgent: true, text: "Super fusion! Two of your fused gears can fuse again into a golden super gear. Drag one onto the other when they're the same level.", when: () => { const gears = grid.flat().filter((cell) => cell && !cell.driver && FUSIONS.some((f) => f.gear === cell.type)); return gears.some((a) => gears.some((b) => GEAR_TYPES[fusionOf(a, b)?.gear]?.super)); } },
+  { id: "gearCap", text: "You've reached the special gear limit, so rewards now offer gear upgrades instead of new gears. Fusing two special gears into one also frees a slot for a new one.", when: () => specialGearCount() >= specialGearCap() },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -3104,7 +3106,44 @@ function canOfferSpecialGear() {
   return Boolean(bestEmptyCell()) && specialGearCount() < specialGearCap();
 }
 
+// The special gear a Gear upgrade levels up: the lowest level one, preferring
+// super, then fused gears. Null when none can go higher.
+function gearUpgradeTarget() {
+  const rank = (type) => (GEAR_TYPES[type].super ? 0 : FUSIONS.some((f) => f.gear === type) ? 1 : 2);
+  let best = null;
+  grid.forEach((row, r) => row.forEach((cell, c) => {
+    if (!cell || cell.driver || cell.type === "soldier" || cell.level >= MAX_GEAR_LEVEL) return;
+    if (!best || cell.level < best.cell.level || (cell.level === best.cell.level && rank(cell.type) < rank(best.cell.type))) best = { row: r, col: c, cell };
+  }));
+  return best;
+}
+
+function gearName(type) {
+  return REWARDS.find((reward) => reward.gear === type)?.name || FUSIONS.find((fusion) => fusion.gear === type)?.name || "Normal gear";
+}
+
+function upgradeSpecialGear() {
+  const target = gearUpgradeTarget();
+  if (!target) return;
+  target.cell.level += 1;
+  target.cell.rusted = false;
+  target.cell.flash = 1;
+  questEvent("topLevel", target.cell.level);
+  spawnRustBurst(target.row, target.col, "#ffcc33", "#fff3c4");
+  showToast(`${gearName(target.cell.type)}: level ${target.cell.level}!`);
+  playClankSound();
+}
+
+// What a reward card shows. A Gear upgrade names the gear it will level up.
+function rewardDisplay(reward) {
+  if (!reward.upgrade) return { name: reward.name, text: reward.text };
+  const target = gearUpgradeTarget();
+  if (!target) return { name: reward.name, text: reward.text };
+  return { name: `Upgrade: ${gearName(target.cell.type)}`, text: `Level ${target.cell.level} → ${target.cell.level + 1}` };
+}
+
 function rewardIsOpen(reward) {
+  if (reward.upgrade) return specialGearCount() >= specialGearCap() && Boolean(gearUpgradeTarget());
   if (reward.rarity && !featureOn("rare")) return false;
   if ((reward.id === "farGear" || reward.id === "loneGear") && !featureOn("newGears")) return false;
   if (reward.feature && !featureOn(reward.feature)) return false;
@@ -3126,7 +3165,7 @@ function pickRewards(lucky, exclude = []) {
   const fresh = all.filter((r) => !exclude.includes(r.id));
   const open = fresh.length >= 3 ? fresh : all;
   const shuffled = open.map((r) => [Math.pow(random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
-  const firstGear = shuffled.find((r) => r.gear);
+  const firstGear = shuffled.find((r) => r.gear || r.upgrade);
   const rest = shuffled.filter((r) => r !== firstGear);
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
 }
@@ -3653,6 +3692,16 @@ function rateWithNewGear(type, level) {
 // { label, from, to } for a reward's card. A new gear shows what it does for the
 // machine, or the gear count when it adds nothing yet, like a lone booster.
 function rewardChange(reward) {
+  if (reward.upgrade) {
+    const target = gearUpgradeTarget();
+    if (!target) return null;
+    const rate = machineRate();
+    target.cell.level += 1;
+    const after = machineRate();
+    target.cell.level -= 1;
+    if (formatRate(after) !== formatRate(rate)) return { label: "Soldiers per second", from: formatRate(rate), to: formatRate(after) };
+    return null;
+  }
   if (reward.gear || reward.id === "forgedGear") {
     const rate = machineRate();
     const after = rateWithNewGear(reward.gear || newGearType(), reward.gear ? 1 : FORGED_GEAR_LEVEL);
@@ -3696,15 +3745,16 @@ function renderRewardOptions(rewards) {
     const button = document.createElement("button");
     const rarity = rewardRarity(reward);
     button.className = `reward-option ${rarity}`;
+    const shown = rewardDisplay(reward);
     const name = document.createElement("b");
-    name.textContent = reward.name;
+    name.textContent = shown.name;
     if (rarity !== "common") {
       const label = document.createElement("small");
       label.textContent = rarity === "epic" ? "Epic" : "Rare";
       name.append(" ", label);
     }
     const text = document.createElement("span");
-    text.textContent = reward.text;
+    text.textContent = shown.text;
     const words = document.createElement("div");
     words.className = "reward-words";
     words.append(name, text);
@@ -9309,6 +9359,8 @@ function emojiIcon(emoji) {
 
 // A reward's picture: its gear if it gives one, otherwise its own icon.
 function rewardIcon(reward) {
+  const target = reward.upgrade && gameState === "choosing" ? gearUpgradeTarget() : null;
+  if (target) return gearIcon(target.cell.type, false, target.cell.level + 1);
   return reward.gear ? gearIcon(reward.gear) : emojiIcon(REWARD_ICONS[reward.id] || "\u2728");
 }
 
