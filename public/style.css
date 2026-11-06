@@ -357,12 +357,26 @@ button {
   pointer-events: none;
 }
 
-#treasure-goblin-sack {
+/* A bouncing hint over a new player's first treasure goblins. */
+#treasure-goblin-tap {
   position: absolute;
-  right: 2px;
-  top: 8px;
-  font-size: 1.35rem;
+  left: 50%;
+  top: -14px;
+  padding: 1px 7px;
+  border: 2px solid #1c0f06;
+  border-radius: 999px;
+  background: #ffe14d;
+  color: #2a1405;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: goblin-tap 0.6s ease-in-out infinite alternate;
   pointer-events: none;
+}
+
+@keyframes goblin-tap {
+  to { transform: translateX(-50%) translateY(-4px) scale(1.08); }
 }
 
 #chest-screen {
@@ -2349,11 +2363,13 @@ html.less-motion .chest-card.shaking {
   margin-bottom: 10px; /* off the screen edge once the hint line is gone */
 }
 
+/* A compact plate, not a big block: as wide as it needs, centred in the row. */
 #main-actions {
-  flex: 1 1 0;
+  flex: 0 1 150px;
   min-width: 0;
-  max-width: none;
+  max-width: 160px;
   flex-direction: row;
+  align-items: center;
 }
 
 #side-actions {
@@ -2374,6 +2390,8 @@ html.less-motion .chest-card.shaking {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  min-height: 54px;
+  max-height: 62px;
   display: flex;
   align-items: center;
   justify-content: center;

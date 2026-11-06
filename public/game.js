@@ -1172,7 +1172,7 @@ function featureOn(id) {
 function updateFeatureButtons() {
   document.getElementById("play-hint").classList.toggle("hidden", statValue("waves") >= HINT_WAVES);
   document.getElementById("rally-btn").classList.toggle("hidden", !featureOn("rally"));
-  document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train"));
+  updateTrainVisibility();
   document.getElementById("speed-btn").classList.toggle("hidden", !featureOn("speed"));
 }
 
@@ -1561,7 +1561,14 @@ function trainArmy() {
   playWinSound();
 }
 
+// Train only takes up room while there is a rank left to train to.
+function updateTrainVisibility() {
+  document.getElementById("train-btn").classList.toggle("hidden", !featureOn("train"));
+  document.getElementById("main-actions").classList.toggle("hidden", !featureOn("train") || !nextRank());
+}
+
 function updateTrainButton() {
+  updateTrainVisibility();
   const button = document.getElementById("train-btn");
   const next = nextRank();
   let label = `${ARMY_RANKS[armyRank].plural} (top rank)`;
@@ -1992,7 +1999,7 @@ function strikeEnemy() {
   hitStop = HIT_STOP_SECONDS;
   screenShake = Math.max(screenShake, 3);
   spawnFaller("enemy");
-  spawnHitNumber("enemy", (amount * (1 - WIN_RATIO)) / WIN_RATIO / enemyRank().strength, "#ffe14d");
+  spawnHitNumber("enemy", (amount * (1 - WIN_RATIO)) / WIN_RATIO, "#ffe14d");
   for (let i = 0; i < 10; i++) {
     spawnParticle({
       x,
@@ -5050,10 +5057,10 @@ const SOLDIER_LOOKS = {
   shaman: { eyes: 3, tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
   frost: { eyes: 2, eye: "#e8fbff", spikes: 6, tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
   imp: { eyes: 2, wings: true, tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
-  r0: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
-  r1: { tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
-  r2: { tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
-  r3: { tunic: "#fff0b8", trim: "#b98a1e", skin: "#f3d5b0", helmet: "#ffffff", blade: "#8fe7ff", plume: "#8fe7ff", cape: "#3a7ddb", glow: "#ffe28a", size: 1.4 },
+  r0: { style: "recruit", tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
+  r1: { style: "knight", tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
+  r2: { style: "champion", tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
+  r3: { style: "hero", tunic: "#fff0b8", trim: "#b98a1e", skin: "#f3d5b0", helmet: "#ffffff", blade: "#8fe7ff", plume: "#8fe7ff", cape: "#3a7ddb", glow: "#ffe28a", size: 1.4 },
   charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff", size: 1.1 },
   e0: { eyes: 1, tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
   e1: { eyes: 2, tusks: true, tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
@@ -5142,9 +5149,462 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
     ctx.restore();
     return;
   }
-  drawKnight(ctx, colors, state, time, stride, swing, mood);
+  (KNIGHT_STYLES[colors.style] || drawKnight)(ctx, colors, state, time, stride, swing, mood);
   ctx.restore();
 }
+
+// Small shared bits for the faces that show: a mouth for each mood, and a
+// nervous sweat drop.
+function drawSmallMouth(ctx, x, y, mood) {
+  ctx.beginPath();
+  if (mood === "happy") {
+    ctx.arc(x, y - 1, 2.2, 0, Math.PI);
+    ctx.closePath();
+    inked(ctx, "#a8322a", 0.8);
+  } else if (mood === "scared") {
+    ctx.ellipse(x, y, 1.2, 1.6, 0, 0, Math.PI * 2);
+    inked(ctx, "#3a0d06", 0.7);
+  } else if (mood === "wince") {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.9;
+    ctx.moveTo(x - 1.8, y);
+    ctx.lineTo(x - 0.6, y - 0.9);
+    ctx.lineTo(x + 0.6, y);
+    ctx.lineTo(x + 1.8, y - 0.9);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.9;
+    ctx.arc(x, y - 1, 1.7, 0.25, Math.PI - 0.25);
+    ctx.stroke();
+  }
+}
+
+function drawSweatDrop(ctx, x, y) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.quadraticCurveTo(x - 3, y + 4, x, y + 4.6);
+  ctx.quadraticCurveTo(x + 2.6, y + 3.6, x, y);
+  inked(ctx, "#a8e6ff", 0.7);
+}
+
+// Eyes seen through a helmet's opening, for each mood.
+function drawVisorEyes(ctx, spots, mood) {
+  for (const [ex, ey] of spots) {
+    if (mood === "wince" || mood === "happy") {
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      if (mood === "happy") {
+        ctx.moveTo(ex - 0.9, ey + 0.5);
+        ctx.lineTo(ex, ey - 0.5);
+        ctx.lineTo(ex + 0.9, ey + 0.5);
+      } else {
+        ctx.moveTo(ex - 0.8, ey - 0.6);
+        ctx.lineTo(ex + 0.6, ey);
+        ctx.lineTo(ex - 0.8, ey + 0.6);
+      }
+      ctx.stroke();
+      continue;
+    }
+    const r = mood === "scared" ? 1.2 : 0.9;
+    ctx.beginPath();
+    ctx.fillStyle = "#ffffff";
+    ctx.ellipse(ex, ey, r, r * 1.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (mood === "scared") {
+      ctx.beginPath();
+      ctx.fillStyle = OUTLINE;
+      ctx.arc(ex + 0.2, ey, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Recruits: a farmhand called up to fight, in a cloth smock and an iron pot
+// hat, with a wooden spear and a plank shield. Their face shows.
+function drawRecruit(ctx, colors, state, time, stride, swing, mood) {
+  const headY = -19;
+  const wood = "#9a5f2c";
+
+  // Plank shield on the far arm, behind the body.
+  ctx.beginPath();
+  ctx.arc(-4.6, -10, 4.4, 0, Math.PI * 2);
+  inked(ctx, wood, 1.1);
+  ctx.strokeStyle = "#5a3414";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  for (const x of [-6.2, -4.6, -3]) {
+    ctx.moveTo(x, -13.8);
+    ctx.lineTo(x, -6.2);
+  }
+  ctx.stroke();
+  inkedCircle(ctx, -4.6, -10, 1.2, colors.helmet, 0.7);
+
+  // Leggings and plain shoes.
+  for (const side of [-1, 1]) {
+    const x = side * 2.2 + side * stride;
+    ctx.beginPath();
+    ctx.rect(x - 1.3, -6, 2.6, 4.5);
+    inked(ctx, mixColor(colors.trim, "#000000", 0.1), 1);
+    ctx.beginPath();
+    ctx.ellipse(x + 0.8, -1.3, 2.4, 1.5, 0, 0, Math.PI * 2);
+    inked(ctx, "#5a3414", 1);
+  }
+
+  // A cloth smock in the army's colour, a patch, and a rope belt.
+  ctx.beginPath();
+  ctx.moveTo(-4.4, -14.6);
+  ctx.quadraticCurveTo(-6.4, -8, -5.4, -4.2);
+  ctx.lineTo(5.4, -4.2);
+  ctx.quadraticCurveTo(6.4, -8, 4.4, -14.6);
+  ctx.closePath();
+  inked(ctx, colors.tunic);
+  ctx.beginPath();
+  ctx.rect(1.2, -12.6, 2.4, 2.4);
+  inked(ctx, colors.trim, 0.6);
+  ctx.strokeStyle = "#d9c08a";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(-5.7, -8);
+  ctx.lineTo(5.7, -8);
+  ctx.stroke();
+  inkedCircle(ctx, -1.6, -7.6, 0.9, "#d9c08a", 0.5);
+
+  // Round face, and an iron pot hat with a wide brim.
+  inkedCircle(ctx, 0, headY, 6.6, colors.skin);
+  drawCartoonEyes(ctx, 1.6, headY + 0.2, 1.9, false, mood);
+  drawSmallMouth(ctx, 2, headY + 3.8, mood);
+  if (mood === "scared") drawSweatDrop(ctx, -5.6, headY - 2);
+  ctx.beginPath();
+  ctx.arc(0, headY - 3.2, 5.8, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  inked(ctx, colors.helmet);
+  ctx.beginPath();
+  ctx.ellipse(0, headY - 3.2, 9.2, 1.9, 0, 0, Math.PI * 2);
+  inked(ctx, colors.helmet);
+  ctx.beginPath();
+  ctx.arc(-2, headY - 5.4, 2, Math.PI * 1.1, Math.PI * 1.5);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+
+  // A wooden spear with an iron tip.
+  ctx.save();
+  ctx.translate(4.2, -11);
+  ctx.rotate(swing + 0.6);
+  ctx.beginPath();
+  ctx.rect(2.2, -14, 1.4, 17);
+  inked(ctx, "#8a5a2c", 0.9);
+  ctx.beginPath();
+  ctx.moveTo(1.6, -13.6);
+  ctx.lineTo(2.9, -19);
+  ctx.lineTo(4.2, -13.6);
+  ctx.closePath();
+  inked(ctx, colors.blade, 0.9);
+  inkedCircle(ctx, 2.9, 0.6, 2, colors.skin, 1);
+  ctx.restore();
+}
+
+// Champions: a big, heavy warrior in plate, with layered shoulders, a crested
+// helmet with a T-shaped opening, an armoured skirt and a two-handed war hammer.
+function drawChampion(ctx, colors, state, time, stride, swing, mood) {
+  const steel = colors.helmet;
+  const steelDark = mixColor(steel, "#000000", 0.4);
+  const gold = "#ffd23f";
+  const headY = -21;
+
+  if (colors.cape) {
+    ctx.beginPath();
+    ctx.moveTo(-4.4, -17);
+    ctx.quadraticCurveTo(-13 - Math.abs(stride), -8, -10 - Math.abs(stride), -0.5);
+    ctx.lineTo(-1, -4);
+    ctx.closePath();
+    inked(ctx, colors.cape);
+  }
+
+  // Thick legs and heavy boots.
+  for (const side of [-1, 1]) {
+    const x = side * 2.6 + side * stride;
+    ctx.beginPath();
+    ctx.rect(x - 1.8, -7, 3.6, 5);
+    inked(ctx, steelDark, 1);
+    ctx.beginPath();
+    ctx.roundRect(x - 2.4, -2.8, 5.8, 2.8, 1);
+    inked(ctx, colors.trim, 1);
+  }
+
+  // A skirt of armoured strips in the army's colours.
+  [-4.6, -2.2, 0.2, 2.6].forEach((x, i) => {
+    ctx.beginPath();
+    ctx.rect(x, -8, 2.4, 4.8);
+    inked(ctx, i % 2 ? colors.trim : colors.tunic, 0.8);
+  });
+
+  // A big rounded breastplate with a ridge and gold edging.
+  ctx.beginPath();
+  ctx.moveTo(-6.8, -17.4);
+  ctx.quadraticCurveTo(-7.8, -9.5, -5.2, -7.4);
+  ctx.lineTo(5.2, -7.4);
+  ctx.quadraticCurveTo(7.8, -9.5, 6.8, -17.4);
+  ctx.closePath();
+  inked(ctx, steel);
+  ctx.strokeStyle = steelDark;
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0.6, -16.8);
+  ctx.quadraticCurveTo(1.6, -12, 0.6, -8);
+  ctx.stroke();
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(-6.4, -16.8);
+  ctx.lineTo(6.4, -16.8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(-5.6, -8.6, 11.2, 2);
+  inked(ctx, colors.trim, 0.8);
+  ctx.beginPath();
+  ctx.rect(-1, -9, 2.6, 2.8);
+  inked(ctx, gold, 0.7);
+
+  // Huge layered shoulder plates.
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * 6.6, -16.4, 4, 3.1, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    inked(ctx, steel, 1);
+    ctx.beginPath();
+    ctx.ellipse(side * 6.9, -14.8, 3.5, 2.3, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    inked(ctx, steel, 0.9);
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.ellipse(side * 6.9, -14.8, 3.1, 1.9, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+  }
+
+  // A crested helmet with a T-shaped opening.
+  ctx.beginPath();
+  ctx.moveTo(-6, headY + 5);
+  ctx.lineTo(-6.4, headY - 2);
+  ctx.quadraticCurveTo(-6.4, headY - 7.5, 0, headY - 7.5);
+  ctx.quadraticCurveTo(6.4, headY - 7.5, 6.4, headY - 2);
+  ctx.lineTo(6, headY + 5);
+  ctx.closePath();
+  inked(ctx, steel);
+  ctx.beginPath();
+  ctx.moveTo(-1, headY - 1.8);
+  ctx.lineTo(6.4, headY - 1.8);
+  ctx.lineTo(6.4, headY + 0.8);
+  ctx.lineTo(4.2, headY + 0.8);
+  ctx.lineTo(4.2, headY + 5);
+  ctx.lineTo(1.8, headY + 5);
+  ctx.lineTo(1.8, headY + 0.8);
+  ctx.lineTo(-1, headY + 0.8);
+  ctx.closePath();
+  inked(ctx, "#1c1410", 0.9);
+  drawVisorEyes(ctx, [[0.8, headY - 0.5], [4.8, headY - 0.5]], mood);
+  if (mood === "scared") drawSweatDrop(ctx, -7.4, headY - 3);
+  ctx.beginPath();
+  ctx.moveTo(-6.6, headY - 5.6);
+  ctx.quadraticCurveTo(-1, headY - 15, 6.6, headY - 7);
+  ctx.lineTo(5, headY - 6.6);
+  ctx.quadraticCurveTo(-0.4, headY - 10.6, -5.2, headY - 4.8);
+  ctx.closePath();
+  inked(ctx, colors.plume || colors.trim, 1);
+  ctx.strokeStyle = mixColor(colors.plume || colors.trim, "#000000", 0.3);
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  for (const t of [0.2, 0.4, 0.6, 0.8]) {
+    const x = -6 + t * 12;
+    ctx.moveTo(x, headY - 6.4 - Math.sin(t * Math.PI) * 3);
+    ctx.lineTo(x + 0.6, headY - 8.6 - Math.sin(t * Math.PI) * 4);
+  }
+  ctx.stroke();
+
+  // A two-handed war hammer.
+  ctx.save();
+  ctx.translate(5.8, -13);
+  ctx.rotate(swing + 0.4);
+  ctx.beginPath();
+  ctx.rect(2.2, -16, 1.7, 18.6);
+  inked(ctx, "#5a3414", 0.9);
+  ctx.beginPath();
+  ctx.roundRect(-1.6, -21.6, 9.4, 5.8, 1.2);
+  inked(ctx, steel, 1.1);
+  ctx.beginPath();
+  ctx.rect(1.6, -21.6, 3, 5.8);
+  inked(ctx, gold, 0.8);
+  inkedCircle(ctx, 3, 0.8, 2.5, steel, 1);
+  ctx.restore();
+}
+
+// Heroes: a legendary paladin with a winged helmet that shows the face, a
+// floating halo, a long flowing cape, a sun on the chest, a golden sun shield
+// and a glowing magic sword.
+function drawHero(ctx, colors, state, time, stride, swing, mood) {
+  const steel = colors.helmet;
+  const gold = "#ffd23f";
+  const headY = -21;
+  const flutter = Math.sin(time * 4) * 1.2;
+
+  if (colors.cape) {
+    ctx.beginPath();
+    ctx.moveTo(-4.4, -18);
+    ctx.quadraticCurveTo(-15 - Math.abs(stride) - flutter, -9, -12 - Math.abs(stride) + flutter, 0.5);
+    ctx.lineTo(-6, -1);
+    ctx.lineTo(-0.5, -3.5);
+    ctx.closePath();
+    inked(ctx, colors.cape);
+  }
+
+  // A floating halo.
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, headY - 11.5 + Math.sin(time * 2.4) * 0.6, 5, 1.4, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 1.4;
+  ctx.shadowColor = gold;
+  ctx.shadowBlur = glowBlur(6);
+  ctx.stroke();
+  ctx.restore();
+
+  // Legs in white armour, gold boots.
+  for (const side of [-1, 1]) {
+    const x = side * 2.3 + side * stride;
+    ctx.beginPath();
+    ctx.rect(x - 1.5, -6.5, 3, 4.6);
+    inked(ctx, steel, 1);
+    ctx.beginPath();
+    ctx.moveTo(x - 2, -2.8);
+    ctx.lineTo(x + 2.4, -2.8);
+    ctx.quadraticCurveTo(x + 3.8, -2.4, x + 3.6, 0);
+    ctx.lineTo(x - 2, 0);
+    ctx.closePath();
+    inked(ctx, colors.trim, 1);
+  }
+
+  // A robe under the armour, in the army's colour.
+  ctx.beginPath();
+  ctx.moveTo(-4.6, -8);
+  ctx.lineTo(4.6, -8);
+  ctx.lineTo(5.6, -3.2);
+  ctx.lineTo(-5.6, -3.2);
+  ctx.closePath();
+  inked(ctx, colors.tunic, 1);
+
+  // Breastplate with a sun.
+  ctx.beginPath();
+  ctx.moveTo(-5.8, -17);
+  ctx.lineTo(5.8, -17);
+  ctx.lineTo(4.6, -7);
+  ctx.lineTo(-4.6, -7);
+  ctx.closePath();
+  inked(ctx, steel);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.moveTo(Math.cos(a) * 2.4, -12 + Math.sin(a) * 2.4);
+    ctx.lineTo(Math.cos(a) * 3.6, -12 + Math.sin(a) * 3.6);
+  }
+  ctx.stroke();
+  inkedCircle(ctx, 0, -12, 1.8, gold, 0.7);
+  ctx.beginPath();
+  ctx.rect(-5, -8.4, 10, 1.8);
+  inked(ctx, gold, 0.8);
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * 5.4, -16, 3, 2.3, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    inked(ctx, steel, 1);
+  }
+
+  // The face, under a winged helmet.
+  ctx.beginPath();
+  ctx.moveTo(-4, headY - 3.6);
+  ctx.quadraticCurveTo(-11, headY - 13, -14.5, headY - 7);
+  ctx.quadraticCurveTo(-11, headY - 7, -12.4, headY - 3.6);
+  ctx.quadraticCurveTo(-9, headY - 4, -9.6, headY - 0.8);
+  ctx.quadraticCurveTo(-6.4, headY - 2.4, -4, headY - 1);
+  ctx.closePath();
+  inked(ctx, "#ffffff", 1);
+  inkedCircle(ctx, 0, headY, 6.4, colors.skin);
+  drawCartoonEyes(ctx, 1.8, headY + 0.4, 1.8, false, mood);
+  drawSmallMouth(ctx, 2.2, headY + 4, mood);
+  if (mood === "scared") drawSweatDrop(ctx, -6, headY + 1);
+  ctx.beginPath();
+  ctx.arc(0, headY - 0.6, 6.9, Math.PI * 1.02, Math.PI * 1.98);
+  ctx.quadraticCurveTo(0, headY - 2.8, -6.9, headY - 0.4);
+  ctx.closePath();
+  inked(ctx, steel);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.arc(0, headY - 0.6, 5.6, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(4, headY - 4.6);
+  ctx.quadraticCurveTo(8.6, headY - 11, 10.6, headY - 7.6);
+  ctx.quadraticCurveTo(8.4, headY - 7, 8.8, headY - 4.6);
+  ctx.quadraticCurveTo(6.6, headY - 4.8, 5.2, headY - 2.6);
+  ctx.closePath();
+  inked(ctx, "#ffffff", 0.9);
+
+  // A round golden shield with a sun.
+  inkedCircle(ctx, -5, -10.4, 4.8, gold, 1.2);
+  inkedCircle(ctx, -5, -10.4, 3.4, colors.tunic, 0.8);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.moveTo(-5 + Math.cos(a) * 1.2, -10.4 + Math.sin(a) * 1.2);
+    ctx.lineTo(-5 + Math.cos(a) * 2.8, -10.4 + Math.sin(a) * 2.8);
+  }
+  ctx.stroke();
+  inkedCircle(ctx, -5, -10.4, 1, gold, 0.5);
+
+  // A glowing magic sword with a winged crossguard.
+  ctx.save();
+  ctx.translate(5.2, -12.5);
+  ctx.rotate(swing + 0.9);
+  ctx.save();
+  ctx.shadowColor = colors.blade;
+  ctx.shadowBlur = glowBlur(7);
+  ctx.beginPath();
+  ctx.moveTo(2.2, -2);
+  ctx.lineTo(2.2, -15);
+  ctx.lineTo(3.4, -17.6);
+  ctx.lineTo(4.6, -15);
+  ctx.lineTo(4.6, -2);
+  ctx.closePath();
+  inked(ctx, colors.blade, 1);
+  ctx.restore();
+  ctx.beginPath();
+  ctx.moveTo(3.4, -3);
+  ctx.lineTo(3.4, -15);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(3.4, -2);
+  ctx.quadraticCurveTo(0, -1, -0.6, -4);
+  ctx.quadraticCurveTo(1, -2.4, 3.4, -2.6);
+  ctx.quadraticCurveTo(5.8, -2.4, 7.4, -4);
+  ctx.quadraticCurveTo(6.8, -1, 3.4, -2);
+  ctx.closePath();
+  inked(ctx, gold, 0.8);
+  inkedCircle(ctx, 3.4, 2.4, 1, gold, 0.8);
+  inkedCircle(ctx, 3.4, 0.4, 2.2, steel, 1);
+  ctx.restore();
+}
+
+// Each rank is its own character, not the same knight in new colours.
+const KNIGHT_STYLES = { recruit: drawRecruit, knight: drawKnight, champion: drawChampion, hero: drawHero };
 
 // A small gear, the army's badge on tabards and shields.
 function drawGearEmblem(ctx, x, y, r, fill) {
@@ -5666,34 +6126,570 @@ function drawArmyCount(ctx, x, y, count) {
 
 // The boss stands just past the front line, glowing before each attack, and
 // flashes when soldiers hit it.
-const BOSS_MONSTER_SCALE = 1.8; // a boss is a wave monster drawn this much bigger
-const BOSS_HEADGEAR_LIFT = -6; // its crown sits on top of the taller monster body
 const BOSS_DROP_SECONDS = 1.1; // the warning siren plays while the boss falls in
 const BOSS_DROP_HEIGHT = 140; // pixels above the ground the boss falls from
 const BOSS_LAND_SHAKE = 9; // pixels
-// Each boss's monster: its own colour, and a feature or two of its own.
-const BOSS_FEATURES = {
-  rust: { eyes: 1 },
-  wall: { eyes: 2, tusks: true },
-  scramble: { eyes: 3 },
-  shield: { eyes: 2, tusks: true },
-  warlord: { eyes: 2, tusks: true },
-  wyrm: { eyes: 2, spikes: 6 },
-  queen: { eyes: 2, spikes: 6, eye: "#e8fbff" },
-  magma: { eyes: 3, wings: true },
-};
 
-function bossLook(kind, body) {
-  return {
-    skin: body,
-    tunic: mixColor(body, "#000000", 0.35),
-    trim: "#3d2a18",
-    horns: "#f3ead2",
-    blade: "#fff4d6",
-    eye: "#ff7a3d",
-    ...BOSS_FEATURES[kind.id],
-  };
+// Each boss is its own creature, not a wave monster in a hat. All are drawn
+// facing right with their feet on y = 0, about 55 pixels tall. `swing` winds
+// the weapon arm back before an attack.
+function bossColors(body) {
+  return { body, dark: mixColor(body, "#000000", 0.4), light: mixColor(body, "#ffffff", 0.35) };
 }
+
+function glowEye(ctx, x, y, rx, ry, color) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = glowBlur(5);
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+function bossArm(ctx, x, y, swing, draw) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(swing);
+  draw();
+  ctx.restore();
+}
+
+const BOSS_BODIES = {
+  // A boxy robot king of rusted iron, with a crown and a scepter.
+  rust(ctx, c, time, swing) {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.roundRect(side * 7 - 4, -11, 8, 11, 2);
+      inked(ctx, c.dark, 1.8);
+    }
+    bossArm(ctx, -14, -34, 0.25, () => {
+      ctx.beginPath();
+      ctx.roundRect(-3, 0, 6, 16, 2);
+      inked(ctx, c.dark, 1.6);
+    });
+    ctx.beginPath();
+    ctx.roundRect(-14, -40, 28, 31, 4);
+    inked(ctx, c.body, 2.2);
+    ctx.fillStyle = "rgba(255, 140, 60, 0.35)";
+    for (const [x, y, r] of [[-7, -30, 4], [5, -18, 3], [8, -34, 2.4]]) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.3, r, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = OUTLINE;
+    for (const x of [-11, 11]) for (const y of [-36, -26, -14]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.roundRect(-9, -53, 18, 14, 3);
+    inked(ctx, c.body, 2);
+    glowEye(ctx, 1.5, -46, 2.4, 1, "#ffb03d");
+    glowEye(ctx, 6.5, -46, 2.4, 1, "#ffb03d");
+    ctx.beginPath();
+    ctx.moveTo(-9, -52);
+    ctx.lineTo(-10, -61);
+    ctx.lineTo(-4.5, -56);
+    ctx.lineTo(0, -63);
+    ctx.lineTo(4.5, -56);
+    ctx.lineTo(10, -61);
+    ctx.lineTo(9, -52);
+    ctx.closePath();
+    inked(ctx, "#f2c23e", 1.8);
+    bossArm(ctx, 14, -32, swing, () => {
+      ctx.beginPath();
+      ctx.rect(-1.4, -26, 3, 28);
+      inked(ctx, "#5a3414", 1.4);
+      inkedCircle(ctx, 0, -28, 4.4, "#f2c23e", 1.6);
+      inkedCircle(ctx, 0, -28, 1.6, "#d8432f", 0.8);
+      inkedCircle(ctx, 0, 2, 3.6, c.body, 1.6);
+    });
+  },
+
+  // A golem built from bricks, with one big eye and a mason's trowel.
+  wall(ctx, c, time, swing) {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.rect(side * 7 - 4.5, -10, 9, 10);
+      inked(ctx, c.dark, 1.8);
+    }
+    ctx.beginPath();
+    ctx.roundRect(-15, -41, 30, 33, 3);
+    inked(ctx, c.body, 2.2);
+    ctx.strokeStyle = c.dark;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let row = 0; row < 5; row++) {
+      const y = -41 + row * 6.6;
+      if (row) {
+        ctx.moveTo(-15, y);
+        ctx.lineTo(15, y);
+      }
+      for (let x = row % 2 ? -10 : -5; x < 15; x += 10) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + 6.6);
+      }
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(-8, -53, 16, 13, 3);
+    inked(ctx, c.body, 2);
+    inkedCircle(ctx, 2, -47, 4, "#fff7e0", 1.4);
+    inkedCircle(ctx, 3.2, -47, 1.8, OUTLINE, 0.5);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-3, -53);
+    ctx.lineTo(8, -50.5);
+    ctx.stroke();
+    for (const [bx, by] of [[-9, -59], [1, -59], [-4, -64]]) {
+      ctx.beginPath();
+      ctx.rect(bx, by, 10, 5.4);
+      inked(ctx, "#c98560", 1.4);
+    }
+    bossArm(ctx, 15, -30, swing, () => {
+      ctx.beginPath();
+      ctx.rect(-1.4, -14, 2.8, 16);
+      inked(ctx, "#5a3414", 1.2);
+      ctx.beginPath();
+      ctx.moveTo(-6, -14);
+      ctx.lineTo(6, -14);
+      ctx.lineTo(0, -27);
+      ctx.closePath();
+      inked(ctx, "#c3ccd5", 1.4);
+      ctx.beginPath();
+      ctx.roundRect(-4, -1, 8, 6, 2);
+      inked(ctx, c.body, 1.4);
+    });
+  },
+
+  // A mad robot on one wheel, with goggles and a spinning gear on its antenna.
+  scramble(ctx, c, time, swing) {
+    ctx.save();
+    ctx.translate(0, -8);
+    ctx.rotate(time * 5);
+    inkedCircle(ctx, 0, 0, 8, "#3b3f46", 1.8);
+    ctx.strokeStyle = "#c3ccd5";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
+      ctx.lineTo(-Math.cos(a) * 6, -Math.sin(a) * 6);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.rect(-2.4, -20, 4.8, 9);
+    inked(ctx, "#8d99a6", 1.4);
+    ctx.beginPath();
+    ctx.ellipse(0, -32, 14, 13, 0, 0, Math.PI * 2);
+    inked(ctx, c.body, 2.2);
+    ctx.beginPath();
+    ctx.ellipse(0, -36, 10, 7, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(200, 245, 255, 0.45)";
+    ctx.fill();
+    for (const x of [2.5, 9]) {
+      inkedCircle(ctx, x, -31, 3.6, "#ffcc33", 1.4);
+      inkedCircle(ctx, x, -31, 2.3, "#8fe7ff", 0.8);
+      ctx.beginPath();
+      ctx.arc(x, -31, 1.2, time * 8, time * 8 + Math.PI * 1.4);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(0, -45);
+    ctx.lineTo(0, -52);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(0, -56);
+    ctx.rotate(time * 4);
+    traceToothedRim(ctx, 6.5, 4.6, 8);
+    inked(ctx, "#8fe7ff", 1.4);
+    inkedCircle(ctx, 0, 0, 1.8, c.dark, 1);
+    ctx.restore();
+    bossArm(ctx, 13, -30, swing, () => {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      for (let i = 1; i <= 6; i++) ctx.lineTo(i % 2 ? 3 : -3, -i * 2.6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.rect(-1.2, -26, 2.4, 10);
+      inked(ctx, "#c3ccd5", 1.2);
+      ctx.beginPath();
+      ctx.arc(0, -27, 3.6, Math.PI * 0.2, Math.PI * 1.8);
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = OUTLINE;
+      ctx.stroke();
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = "#c3ccd5";
+      ctx.stroke();
+    });
+  },
+
+  // A hulking brute behind a giant tower shield, a spiked mace over the top.
+  shield(ctx, c, time, swing) {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.roundRect(side * 7 - 5, -11, 10, 11, 2);
+      inked(ctx, c.dark, 1.8);
+    }
+    ctx.beginPath();
+    ctx.ellipse(-3, -27, 14, 17, 0, 0, Math.PI * 2);
+    inked(ctx, c.body, 2.2);
+    bossArm(ctx, -8, -38, swing - 0.4, () => {
+      ctx.beginPath();
+      ctx.rect(-1.6, -22, 3.2, 24);
+      inked(ctx, "#5a3414", 1.4);
+      inkedCircle(ctx, 0, -24, 5.6, "#59606b", 1.6);
+      ctx.fillStyle = "#c3ccd5";
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a - 0.3) * 5, -24 + Math.sin(a - 0.3) * 5);
+        ctx.lineTo(Math.cos(a) * 9, -24 + Math.sin(a) * 9);
+        ctx.lineTo(Math.cos(a + 0.3) * 5, -24 + Math.sin(a + 0.3) * 5);
+        ctx.closePath();
+        inked(ctx, "#c3ccd5", 1);
+      }
+    });
+    inkedCircle(ctx, -2, -47, 8, "#c3ccd5", 2);
+    ctx.beginPath();
+    ctx.rect(-4, -55, 4, 9);
+    inked(ctx, "#8d99a6", 1.2);
+    ctx.beginPath();
+    ctx.roundRect(-1, -49.5, 9, 3.4, 1.2);
+    inked(ctx, "#1c1410", 1);
+    glowEye(ctx, 2, -47.8, 1.3, 1, "#ff3b1f");
+    glowEye(ctx, 6, -47.8, 1.3, 1, "#ff3b1f");
+    ctx.beginPath();
+    ctx.roundRect(1, -44, 14, 43, 3);
+    inked(ctx, "#8d99a6", 2.4);
+    ctx.beginPath();
+    ctx.roundRect(3.4, -41.5, 9.2, 38, 2);
+    ctx.strokeStyle = "#c3ccd5";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(6.8, -38, 2.4, 31);
+    ctx.rect(3.4, -26, 9.2, 2.4);
+    ctx.fillStyle = "#59606b";
+    ctx.fill();
+    ctx.fillStyle = OUTLINE;
+    for (const [x, y] of [[4.5, -40], [11.5, -40], [4.5, -5], [11.5, -5]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+
+  // A huge goblin with a fur cape, a horned helmet and a great axe.
+  warlord(ctx, c, time, swing) {
+    ctx.beginPath();
+    ctx.moveTo(-6, -36);
+    ctx.quadraticCurveTo(-20, -20, -16, -2);
+    ctx.lineTo(-2, -8);
+    ctx.closePath();
+    inked(ctx, "#7a4a23", 1.8);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.rect(side * 5 - 2.4, -12, 4.8, 9);
+      inked(ctx, c.body, 1.6);
+      ctx.beginPath();
+      ctx.roundRect(side * 5 - 3.6, -4, 8, 4, 1.4);
+      inked(ctx, "#4a2c12", 1.6);
+    }
+    ctx.beginPath();
+    ctx.ellipse(1, -24, 12, 13, 0, 0, Math.PI * 2);
+    inked(ctx, c.body, 2.2);
+    ctx.beginPath();
+    ctx.moveTo(-9, -32);
+    ctx.lineTo(-5, -16);
+    ctx.lineTo(-11, -20);
+    ctx.closePath();
+    inked(ctx, "#5a3414", 1.4);
+    ctx.beginPath();
+    ctx.rect(-10, -16, 22, 3.6);
+    inked(ctx, "#4a2c12", 1.4);
+    inkedCircle(ctx, 3, -14.2, 2.6, "#f3ead2", 1.2);
+    // Head: long ears, a big nose, a tusky grin.
+    for (const [x, tip] of [[-6, -18], [8, 18]]) {
+      ctx.beginPath();
+      ctx.moveTo(x, -46);
+      ctx.lineTo(x + tip, -51);
+      ctx.lineTo(x, -40);
+      ctx.closePath();
+      inked(ctx, c.body, 1.6);
+    }
+    inkedCircle(ctx, 2, -44, 9.5, c.body, 2);
+    ctx.beginPath();
+    ctx.moveTo(7, -46);
+    ctx.lineTo(15, -42);
+    ctx.lineTo(7, -40);
+    ctx.closePath();
+    inked(ctx, c.light, 1.4);
+    glowEye(ctx, 2, -47, 1.8, 1.4, "#ffe14d");
+    glowEye(ctx, 7.4, -47, 1.6, 1.3, "#ffe14d");
+    ctx.beginPath();
+    ctx.moveTo(-1, -38);
+    ctx.quadraticCurveTo(5, -34, 10, -38);
+    ctx.closePath();
+    inked(ctx, "#3a0d06", 1.2);
+    ctx.fillStyle = "#fff7e0";
+    for (const x of [1, 7]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 1.2, -37.6);
+      ctx.lineTo(x, -40.6);
+      ctx.lineTo(x + 1.2, -37.6);
+      ctx.fill();
+    }
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 6, -52);
+      ctx.quadraticCurveTo(side * 18, -54, side * 17, -66);
+      ctx.quadraticCurveTo(side * 12, -58, side * 2, -57);
+      ctx.closePath();
+      inked(ctx, "#f3ead2", 1.5);
+    }
+    ctx.beginPath();
+    ctx.arc(2, -48, 10.4, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.closePath();
+    inked(ctx, "#7a4a23", 1.8);
+    bossArm(ctx, 12, -28, swing, () => {
+      ctx.beginPath();
+      ctx.rect(-1.5, -30, 3, 33);
+      inked(ctx, "#5a3414", 1.4);
+      ctx.beginPath();
+      ctx.moveTo(1.5, -29);
+      ctx.quadraticCurveTo(13, -33, 11, -18);
+      ctx.quadraticCurveTo(6, -22, 1.5, -20);
+      ctx.closePath();
+      inked(ctx, "#c3ccd5", 1.6);
+      ctx.beginPath();
+      ctx.moveTo(-1.5, -29);
+      ctx.quadraticCurveTo(-11, -32, -9, -20);
+      ctx.quadraticCurveTo(-5, -23, -1.5, -21);
+      ctx.closePath();
+      inked(ctx, "#c3ccd5", 1.6);
+      inkedCircle(ctx, 0, 2, 3.6, c.body, 1.6);
+    });
+  },
+
+  // A giant segmented worm rising out of a mound of sand.
+  wyrm(ctx, c, time, swing) {
+    const sway = Math.sin(time * 2.2) * 2;
+    ctx.beginPath();
+    ctx.ellipse(0, -2, 22, 5.5, 0, 0, Math.PI * 2);
+    inked(ctx, "#e0c07a", 1.8);
+    const segments = [[-6, -6, 9.5], [-6, -14, 9.2], [-4, -22, 9], [-1, -30, 8.8], [2, -37, 8.6]];
+    segments.forEach(([x, y, r], i) => {
+      const sx = x + sway * (i / segments.length);
+      for (const t of [-0.5, 0, 0.5]) {
+        const a = -Math.PI / 2 + Math.PI + t;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a - 0.12) * r * 0.9, y + Math.sin(a - 0.12) * r * 0.9);
+        ctx.lineTo(sx + Math.cos(a) * (r + 5), y + Math.sin(a) * (r + 5));
+        ctx.lineTo(sx + Math.cos(a + 0.12) * r * 0.9, y + Math.sin(a + 0.12) * r * 0.9);
+        ctx.closePath();
+        inked(ctx, "#6b3f17", 1.2);
+      }
+      inkedCircle(ctx, sx, y, r, i % 2 ? c.body : c.light, 2);
+    });
+    ctx.save();
+    ctx.translate(4 + sway, -48);
+    ctx.rotate(-swing * 0.25 - 0.1);
+    inkedCircle(ctx, 0, 0, 11.5, c.body, 2.2);
+    for (const [x, tall] of [[-8, 7], [-3, 10], [2, 8]]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 3, -9);
+      ctx.lineTo(x - 1, -9 - tall);
+      ctx.lineTo(x + 3, -10);
+      ctx.closePath();
+      inked(ctx, "#6b3f17", 1.3);
+    }
+    inkedCircle(ctx, 6, 1, 7, "#3a0d06", 1.6);
+    ctx.fillStyle = "#fff7e0";
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(6 + Math.cos(a - 0.25) * 6.6, 1 + Math.sin(a - 0.25) * 6.6);
+      ctx.lineTo(6 + Math.cos(a) * 3.4, 1 + Math.sin(a) * 3.4);
+      ctx.lineTo(6 + Math.cos(a + 0.25) * 6.6, 1 + Math.sin(a + 0.25) * 6.6);
+      ctx.fill();
+    }
+    glowEye(ctx, -2, -5, 1.6, 1.6, "#ff7a3d");
+    glowEye(ctx, 4, -7.5, 1.4, 1.4, "#ff7a3d");
+    ctx.restore();
+  },
+
+  // A tall ice sorceress with a bell gown, an ice crown and a crystal staff.
+  queen(ctx, c, time, swing) {
+    ctx.beginPath();
+    ctx.moveTo(-3, -46);
+    ctx.quadraticCurveTo(-16, -30, -12, -12);
+    ctx.lineTo(-4, -20);
+    ctx.closePath();
+    inked(ctx, "#f2fbff", 1.6);
+    ctx.beginPath();
+    ctx.moveTo(-15, 0);
+    ctx.quadraticCurveTo(-7, -18, -5.5, -31);
+    ctx.lineTo(5.5, -31);
+    ctx.quadraticCurveTo(7, -18, 15, 0);
+    ctx.closePath();
+    inked(ctx, c.body, 2.2);
+    ctx.beginPath();
+    ctx.moveTo(-15, 0);
+    for (let x = -15; x <= 15; x += 3) ctx.lineTo(x + 1.5, x % 2 ? -4.5 : -2);
+    ctx.lineTo(15, 0);
+    ctx.closePath();
+    inked(ctx, "#bdeeff", 1.2);
+    ctx.beginPath();
+    ctx.roundRect(-5, -39, 10, 9, 2);
+    inked(ctx, c.light, 1.6);
+    inkedCircle(ctx, 1, -45, 6.4, "#dff3ff", 1.8);
+    glowEye(ctx, 1, -45.5, 1, 1.3, "#3f7fc0");
+    glowEye(ctx, 5, -45.5, 1, 1.3, "#3f7fc0");
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(1.5, -42);
+    ctx.lineTo(4.5, -42.4);
+    ctx.stroke();
+    for (const [sx, tall, lean] of [[-5, 6, -2], [-2, 9, -1], [1, 12, 0], [4, 9, 1], [7, 6, 2]]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - 2, -50);
+      ctx.lineTo(sx + lean, -50 - tall);
+      ctx.lineTo(sx + 2, -50);
+      ctx.closePath();
+      inked(ctx, "#bdeeff", 1.2);
+    }
+    bossArm(ctx, 7, -34, swing, () => {
+      ctx.beginPath();
+      ctx.rect(-1, -26, 2, 34);
+      inked(ctx, "#d8f6ff", 1.2);
+      ctx.save();
+      ctx.shadowColor = "#bdeeff";
+      ctx.shadowBlur = glowBlur(8);
+      ctx.beginPath();
+      ctx.moveTo(0, -36);
+      ctx.lineTo(4, -29);
+      ctx.lineTo(0, -24);
+      ctx.lineTo(-4, -29);
+      ctx.closePath();
+      inked(ctx, "#bdeeff", 1.4);
+      ctx.restore();
+      inkedCircle(ctx, 0, 0, 2.4, "#dff3ff", 1.2);
+    });
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 4; i++) {
+      const fx = -16 + ((time * 6 + i * 11) % 34);
+      const fy = -54 + ((time * 9 + i * 17) % 50);
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+
+  // A rock giant with glowing lava cracks, a flaming crown and a molten fist.
+  magma(ctx, c, time, swing) {
+    const rock = mixColor(c.body, "#000000", 0.62);
+    const glow = 0.6 + Math.sin(time * 5) * 0.4;
+    const lava = `rgba(255, ${140 + Math.round(glow * 60)}, 50, 1)`;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * 3, 0);
+      ctx.lineTo(side * 3, -12);
+      ctx.lineTo(side * 12, -10);
+      ctx.lineTo(side * 11, 0);
+      ctx.closePath();
+      inked(ctx, rock, 1.8);
+    }
+    ctx.beginPath();
+    ctx.moveTo(-15, -12);
+    ctx.lineTo(-17, -30);
+    ctx.lineTo(-10, -42);
+    ctx.lineTo(6, -44);
+    ctx.lineTo(16, -34);
+    ctx.lineTo(14, -14);
+    ctx.lineTo(4, -8);
+    ctx.closePath();
+    inked(ctx, rock, 2.2);
+    ctx.save();
+    ctx.shadowColor = "#ff8a3d";
+    ctx.shadowBlur = glowBlur(6);
+    ctx.strokeStyle = lava;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-10, -36);
+    ctx.lineTo(-4, -28);
+    ctx.lineTo(-8, -20);
+    ctx.moveTo(-4, -28);
+    ctx.lineTo(4, -26);
+    ctx.lineTo(8, -16);
+    ctx.moveTo(4, -26);
+    ctx.lineTo(10, -36);
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(-7, -42);
+    ctx.lineTo(-8, -54);
+    ctx.lineTo(8, -56);
+    ctx.lineTo(10, -43);
+    ctx.closePath();
+    inked(ctx, rock, 2);
+    glowEye(ctx, 1, -49, 1.8, 1.3, "#ffe14d");
+    glowEye(ctx, 6, -49, 1.6, 1.2, "#ffe14d");
+    const lick = Math.sin(time * 9) * 2;
+    ctx.beginPath();
+    ctx.moveTo(-8, -54);
+    ctx.quadraticCurveTo(-10, -62, -5, -65 + lick);
+    ctx.quadraticCurveTo(-3, -60, -1, -61);
+    ctx.quadraticCurveTo(0, -69, 4, -72 - lick);
+    ctx.quadraticCurveTo(5, -63, 7, -63);
+    ctx.quadraticCurveTo(9, -66, 11, -65 + lick);
+    ctx.quadraticCurveTo(12, -59, 8, -56);
+    ctx.closePath();
+    inked(ctx, "#ff8a3d", 1.4);
+    ctx.beginPath();
+    ctx.moveTo(-3, -55);
+    ctx.quadraticCurveTo(-3, -61, 1, -63);
+    ctx.quadraticCurveTo(3, -59, 5, -61);
+    ctx.quadraticCurveTo(7, -58, 5, -55);
+    ctx.closePath();
+    ctx.fillStyle = "#ffe14d";
+    ctx.fill();
+    for (const [x, y] of [[-12, -10], [12, -12]]) {
+      const drip = (time * 1.4 + x) % 1;
+      ctx.beginPath();
+      ctx.ellipse(x, y + drip * 8, 1.4, 2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = lava;
+      ctx.fill();
+    }
+    bossArm(ctx, 13, -32, swing, () => {
+      ctx.beginPath();
+      ctx.moveTo(-3, 0);
+      ctx.lineTo(-4, -14);
+      ctx.lineTo(4, -15);
+      ctx.lineTo(3, 0);
+      ctx.closePath();
+      inked(ctx, rock, 1.6);
+      ctx.save();
+      ctx.shadowColor = "#ff8a3d";
+      ctx.shadowBlur = glowBlur(8);
+      inkedCircle(ctx, 0, -18, 6, lava, 1.8);
+      ctx.restore();
+    });
+  },
+};
 
 function drawBoss(ctx, who, markerX, x1, feetY) {
   const x = Math.min(x1 - 22, markerX + 32);
@@ -5714,102 +6710,9 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
     ctx.shadowBlur = glowBlur(16);
   }
 
-  // A big version of the wave monsters, facing the player's army, with the
-  // claw raised high before an attack.
-  ctx.save();
-  ctx.scale(-BOSS_MONSTER_SCALE, BOSS_MONSTER_SCALE);
-  drawMonster(ctx, bossLook(who.kind, body), "fight", time, 0, armSwing, "neutral");
-  ctx.restore();
-  ctx.shadowBlur = 0;
-  ctx.translate(0, BOSS_HEADGEAR_LIFT);
-
-  // Each kind of boss has its own headgear.
-  if (who.kind.id === "rust") {
-    ctx.beginPath();
-    ctx.moveTo(-10, -40);
-    ctx.lineTo(-11, -50);
-    ctx.lineTo(-5, -45);
-    ctx.lineTo(0, -52);
-    ctx.lineTo(5, -45);
-    ctx.lineTo(11, -50);
-    ctx.lineTo(10, -40);
-    ctx.closePath();
-    inked(ctx, "#f2c23e", 1.8);
-  } else if (who.kind.id === "wall") {
-    for (const [bx, by] of [[-11, -46], [-1, -46], [-6, -51]]) {
-      ctx.beginPath();
-      ctx.rect(bx, by, 11, 6);
-      inked(ctx, "#c98560", 1.5);
-    }
-  } else if (who.kind.id === "scramble") {
-    ctx.save();
-    ctx.translate(0, -47);
-    ctx.rotate(time * 4);
-    traceToothedRim(ctx, 8.5, 6, 8);
-    inked(ctx, "#8fe7ff", 1.6);
-    inkedCircle(ctx, 0, 0, 2.4, "#1d6e6a", 1.2);
-    ctx.restore();
-  } else if (who.kind.id === "warlord") {
-    // A war helmet with two great horns.
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(side * 8, -41);
-      ctx.quadraticCurveTo(side * 21, -43, side * 20, -56);
-      ctx.quadraticCurveTo(side * 14, -48, side * 4, -47);
-      ctx.closePath();
-      inked(ctx, "#f3ead2", 1.6);
-    }
-    ctx.beginPath();
-    ctx.arc(0, -36, 14, Math.PI * 1.08, Math.PI * 1.92);
-    ctx.closePath();
-    inked(ctx, "#7a4a23", 1.8);
-  } else if (who.kind.id === "wyrm") {
-    // A row of sharp spines running over the head.
-    for (const [sx, tall] of [[-11, 8], [-5.5, 12], [0, 15], [5.5, 12], [11, 8]]) {
-      ctx.beginPath();
-      ctx.moveTo(sx - 4, -40);
-      ctx.lineTo(sx, -40 - tall);
-      ctx.lineTo(sx + 4, -40);
-      ctx.closePath();
-      inked(ctx, "#6b3f17", 1.5);
-    }
-  } else if (who.kind.id === "queen") {
-    // A crown of ice shards.
-    for (const [sx, tall, lean] of [[-10, 9, -3], [-5, 13, -1], [0, 18, 0], [5, 13, 1], [10, 9, 3]]) {
-      ctx.beginPath();
-      ctx.moveTo(sx - 3.5, -40);
-      ctx.lineTo(sx + lean, -40 - tall);
-      ctx.lineTo(sx + 3.5, -40);
-      ctx.closePath();
-      inked(ctx, "#bdeeff", 1.4);
-    }
-  } else if (who.kind.id === "magma") {
-    // Flames that flicker on top of the head.
-    const lick = Math.sin(time * 9) * 2;
-    ctx.beginPath();
-    ctx.moveTo(-13, -40);
-    ctx.quadraticCurveTo(-16, -50, -9, -54 + lick);
-    ctx.quadraticCurveTo(-7, -48, -4, -49);
-    ctx.quadraticCurveTo(-4, -58, 2, -62 - lick);
-    ctx.quadraticCurveTo(3, -52, 7, -52);
-    ctx.quadraticCurveTo(9, -56, 12, -56 + lick);
-    ctx.quadraticCurveTo(16, -48, 13, -40);
-    ctx.closePath();
-    inked(ctx, "#ff8a3d", 1.6);
-    ctx.beginPath();
-    ctx.moveTo(-6, -40);
-    ctx.quadraticCurveTo(-7, -47, -2, -50);
-    ctx.quadraticCurveTo(0, -46, 3, -49);
-    ctx.quadraticCurveTo(7, -45, 6, -40);
-    ctx.closePath();
-    ctx.fillStyle = "#ffe14d";
-    ctx.fill();
-  } else {
-    ctx.beginPath();
-    ctx.arc(0, -35, 15, Math.PI * 1.08, Math.PI * 1.92);
-    ctx.closePath();
-    inked(ctx, "#c3ccd5", 1.8);
-  }
+  // Drawn facing right, then turned to face the player's army.
+  ctx.scale(-1, 1);
+  (BOSS_BODIES[who.kind.id] || BOSS_BODIES.rust)(ctx, bossColors(body), time, armSwing);
   ctx.restore();
   if (who.shield > 0) {
     const y = feetY - 25;
@@ -6102,9 +7005,11 @@ function drawBattle() {
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
   // During a boss fight the enemy's number sits over the boss, below its health bar.
   const minCountY = boss ? 26 : 12;
-  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(playerPower / armyStrength()));
-  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(enemyPower / enemyRank().strength));
-  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(enemyPower / enemyRank().strength));
+  // Both numbers are strength in the same unit, the one the bar measures, so
+  // the bigger number is always the side that is winning.
+  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(playerPower));
+  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(enemyPower));
+  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(enemyPower));
   ctx.font = "800 12px system-ui, sans-serif";
   ctx.fillStyle = "#ffcc33";
   ctx.textBaseline = "alphabetic";
@@ -6256,8 +7161,8 @@ function spawnFrontLineHit(marcher) {
       color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
     });
   }
-  if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value / enemyRank().strength, "#ff8a3d");
-  else if (marcher.charge) spawnHitNumber("player", marcher.value / armyStrength(), "#ffcc33");
+  if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value, "#ff8a3d");
+  else if (marcher.charge) spawnHitNumber("player", marcher.value, "#ffcc33");
   if (!isEnemy) maybeDropGear();
 }
 
@@ -6339,12 +7244,148 @@ function planTreasureGoblin() {
   return GOBLIN_EARLIEST + random() * (GOBLIN_LATEST - GOBLIN_EARLIEST);
 }
 
+// A four-pointed twinkle.
+function drawTwinkle(ctx, x, y, r, color) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.quadraticCurveTo(x, y, x, y + r);
+  ctx.quadraticCurveTo(x, y, x - r, y);
+  ctx.quadraticCurveTo(x, y, x, y - r);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+// The treasure goblin, 48 units square: a sneaky goblin in a bandana, running
+// hunched under a big bulging sack of gold, so it never looks like an ordinary
+// monster. It runs from right to left, so it's drawn facing left.
+function drawTreasureGoblin(ctx) {
+  const skin = "#7fc04a";
+  ctx.save();
+  ctx.translate(48, 0);
+  ctx.scale(-1, 1);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Legs mid-stride.
+  for (const [hip, foot] of [[[24, 34], [17, 43]], [[27, 34], [33, 42]]]) {
+    ctx.beginPath();
+    ctx.moveTo(...hip);
+    ctx.lineTo(...foot);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.strokeStyle = skin;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(foot[0] + 1.4, foot[1] + 0.4, 2.8, 1.6, 0, 0, Math.PI * 2);
+    inked(ctx, "#5a3414", 0.9);
+  }
+
+  // The sack of gold on its back, with coins peeking out of the top.
+  ctx.beginPath();
+  ctx.moveTo(14, 13);
+  ctx.quadraticCurveTo(1, 16, 3, 28);
+  ctx.quadraticCurveTo(6, 38, 16, 37);
+  ctx.quadraticCurveTo(27, 36, 25, 24);
+  ctx.quadraticCurveTo(23, 15, 18, 13);
+  ctx.closePath();
+  inked(ctx, "#c9a35a", 1.4);
+  ctx.strokeStyle = "#9a7a3a";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(8, 22);
+  ctx.quadraticCurveTo(10, 28, 9, 33);
+  ctx.moveTo(19, 21);
+  ctx.quadraticCurveTo(21, 27, 19, 33);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(6.4, 25, 5.4, 4.4);
+  inked(ctx, "#a8834a", 0.7);
+  for (const [x, y] of [[12, 12], [16.5, 11], [14, 9]]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, 2.8, 1.8, 0, 0, Math.PI * 2);
+    inked(ctx, "#ffd23f", 0.8);
+  }
+  ctx.beginPath();
+  ctx.ellipse(15, 14.4, 4.6, 1.6, 0, 0, Math.PI * 2);
+  inked(ctx, "#8a6a30", 0.9);
+
+  // A hunched little body in a brown vest.
+  ctx.beginPath();
+  ctx.ellipse(26.5, 28, 5.6, 7, 0.5, 0, Math.PI * 2);
+  inked(ctx, "#6b4422", 1.3);
+
+  // Arm reaching back to hold the sack shut.
+  ctx.beginPath();
+  ctx.moveTo(28, 25);
+  ctx.quadraticCurveTo(22, 20, 18.5, 15);
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3.6;
+  ctx.stroke();
+  ctx.strokeStyle = skin;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  inkedCircle(ctx, 18.5, 15, 1.9, skin, 0.9);
+
+  // Head: a long ear, a big grin, and a red bandana.
+  ctx.beginPath();
+  ctx.moveTo(29, 17);
+  ctx.lineTo(21, 13);
+  ctx.lineTo(28.5, 21);
+  ctx.closePath();
+  inked(ctx, skin, 1.1);
+  inkedCircle(ctx, 33, 19, 7, skin, 1.4);
+  ctx.beginPath();
+  ctx.moveTo(38.5, 19);
+  ctx.lineTo(43, 21.5);
+  ctx.lineTo(38.5, 22.4);
+  ctx.closePath();
+  inked(ctx, mixColor(skin, "#ffffff", 0.25), 1);
+  inkedCircle(ctx, 35.4, 17.4, 2, "#ffffff", 0.7);
+  inkedCircle(ctx, 36.2, 17.6, 1, OUTLINE, 0.3);
+  ctx.beginPath();
+  ctx.moveTo(31, 23);
+  ctx.quadraticCurveTo(35, 26.6, 38.6, 23.4);
+  ctx.closePath();
+  inked(ctx, "#fff7e0", 0.9);
+  ctx.beginPath();
+  ctx.arc(33, 19, 7.3, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.quadraticCurveTo(33, 15, 25.8, 18);
+  ctx.closePath();
+  inked(ctx, "#d8432f", 1.2);
+  ctx.beginPath();
+  ctx.moveTo(26.6, 15.4);
+  ctx.lineTo(21.6, 13.6);
+  ctx.lineTo(23, 17.4);
+  ctx.closePath();
+  inked(ctx, "#d8432f", 0.9);
+  ctx.fillStyle = "#fff7e0";
+  for (const [x, y] of [[30, 14.6], [35, 13.6], [39, 15.4]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Twinkles around the gold.
+  for (const [x, y, r] of [[4, 9, 2.6], [22, 6, 2], [2, 33, 1.8], [24, 40, 1.6]]) drawTwinkle(ctx, x, y, r, "#fff3a8");
+  ctx.restore();
+}
+
+function treasureGoblinIcon() {
+  return artIcon((ctx) => drawTreasureGoblin(ctx));
+}
+
+const GOBLIN_TAP_HINT_CATCHES = 3; // the Tap! bubble shows until this many have been caught
+
 function spawnTreasureGoblin() {
   treasureAt = NO_GEAR_DROP;
   discover("enemy:treasure");
   treasureGoblin = { age: 0, seconds: runEasy ? GOBLIN_SECONDS_EASY : GOBLIN_SECONDS, sparkle: 0 };
   const el = document.getElementById("treasure-goblin");
-  document.getElementById("treasure-goblin-art").replaceChildren(enemyIcon("runner"));
+  document.getElementById("treasure-goblin-art").replaceChildren(treasureGoblinIcon());
+  document.getElementById("treasure-goblin-tap").classList.toggle("hidden", statValue("goblins") >= GOBLIN_TAP_HINT_CATCHES);
   el.classList.remove("hidden");
   placeTreasureGoblin();
   playGoblinSound();
@@ -7348,7 +8389,7 @@ function guideSections() {
       ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
       ["Choose your path", "Every few waves, pick a route for the next one. Danger brings better rewards, or take the safe road.", emojiIcon(PATHS.elite.icon)],
-      ["Treasure goblin", TREASURE_GOBLIN_NOTE, enemyIcon("runner")],
+      ["Treasure goblin", TREASURE_GOBLIN_NOTE, treasureGoblinIcon()],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
     ]],
@@ -7395,7 +8436,7 @@ function bookPages() {
     { id: "enemies", name: "Enemies", coins: 50, entries: [
       ...ENEMY_RANKS.map((rank) => ({ id: `enemy:${rank.look}`, name: rank.plural, text: rankNote(rank), icon: () => enemyIcon(rank.look), starter: rank.fromWave === 1 })),
       ...Object.entries(ENEMY_NOTES).map(([id, note]) => ({ id: `enemy:${id}`, name: ENEMY_TYPES[id].name, text: note, icon: () => enemyIcon(ENEMY_TYPES[id].look) })),
-      { id: "enemy:treasure", name: "Treasure goblin", text: TREASURE_GOBLIN_NOTE, icon: () => enemyIcon("runner") },
+      { id: "enemy:treasure", name: "Treasure goblin", text: TREASURE_GOBLIN_NOTE, icon: () => treasureGoblinIcon() },
     ] },
     { id: "bosses", name: "Bosses", coins: 100, entries: [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, name: kind.name, text: NEXT_WAVE_HINTS[kind.id], icon: () => bossIcon(kind) })) },
     { id: "gears", name: "Gears", coins: 50, entries: [
