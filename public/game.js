@@ -836,6 +836,11 @@ let activeDeal = null; // this wave's entry in WAVE_DEALS
 let dealPayout = 0;
 let worldLevel = 0; // index into WORLD_LEVELS for the run being chosen or played
 let currentDaily = null; // { day, world, rules } during a daily challenge
+let runSeed = 0; // decides a run's drops, rewards, chests and routes, so a friend can play the same run
+let runRandomCounts = {}; // how often each kind of choice has been made this run
+let currentChallenge = null; // { seed, world, level, headStart, easy, target } while playing a friend's run
+let pendingChallenge = null; // a challenge accepted, until its run starts
+let incomingChallenge = null; // a challenge from the link the game was opened with
 let runRules = []; // ids from RULES in force this run
 let runCoinScale = 1;
 let runBonusCoins = 0;
@@ -1240,8 +1245,9 @@ function runLevel() {
 }
 
 // Whether a player has won enough waves to have met this feature.
+// A friend's challenge has everything on, so both players draw from the same pools.
 function featureOn(id) {
-  return statValue("waves") >= FEATURE_WAVES[id];
+  return Boolean(currentChallenge) || statValue("waves") >= FEATURE_WAVES[id];
 }
 
 function updateFeatureButtons() {
@@ -2564,6 +2570,7 @@ function statusChips() {
   if (activePath && activePath.id !== "safe") add("bad", activePath.icon, activePath.name, activePath.risk);
   if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
   if (hotStreak > 0) chips.push({ kind: "good", icon: "\u{1F525}", count: hotStreak > 1 ? hotStreak : null, name: "Hot streak", text: `Main gear ${Math.round(hotStreak * STREAK.perLevel * 100)}% faster. Win waves within ${STREAK.fastSeconds} seconds to keep it.` });
+  if (currentChallenge) add("good", "\u{1F3C1}", "Friend's challenge", `Beat your friend's wave ${currentChallenge.target}.`);
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
   if (sparkCharge > 0) add("good", STATUS_ICONS.spark, "Spark charge", `Your next Lightning hits ${Math.round(sparkCharge * 100)}% harder.`);
   if (steamFor > 0) add("good", REACTIONS["fire+ice"].icon, "Steam", "The enemy has stopped growing.");
@@ -2942,6 +2949,7 @@ function waveStartEnemy(forWave) {
 }
 
 function winWave() {
+  if (currentChallenge && wave === currentChallenge.target) announce(`You passed your friend's wave ${currentChallenge.target}!`);
   const bossBeaten = Boolean(boss);
   const clearedWorld = isFinalWave(wave);
   updateHotStreak();
@@ -3879,6 +3887,7 @@ function showWorldClear() {
   document.getElementById("world-clear-next").textContent = next
     ? (lastClear.firstTime ? `${next.name} unlocked!` : "")
     : currentEvent ? "A new challenge comes next week." : "You have cleared every world!";
+  showChallengeEnd("clear-challenge-btn", "clear-challenge-result");
   const harderLevel = currentEvent || runEasy ? null : nextWorldLevel(world);
   const harderBtn = document.getElementById("harder-btn");
   harderBtn.classList.toggle("hidden", harderLevel === null);
@@ -3901,6 +3910,7 @@ function hideWorldClear() {
 function tryHarderLevel() {
   const level = nextWorldLevel(WORLDS[currentWorld]);
   if (currentEvent || level === null) return;
+  currentChallenge = null;
   bankRun();
   worldLevel = level;
   startNewRun();
@@ -3908,6 +3918,7 @@ function tryHarderLevel() {
 
 function goToNextWorld() {
   if (currentEvent || !WORLDS[currentWorld + 1]) return;
+  currentChallenge = null;
   bankRun();
   currentWorld += 1;
   worldLevel = 0;
@@ -3926,6 +3937,7 @@ function worldUnlocked(index) {
 }
 
 function startChosenRun({ world, event = null, level = 0, daily = null, headStart = false }) {
+  currentChallenge = null;
   currentWorld = world;
   currentEvent = event;
   worldLevel = level;
@@ -3957,7 +3969,11 @@ function seededRandom(seed) {
 }
 
 function runRandom(salt) {
-  return currentDaily ? seededRandom(hashText(`${currentDaily.day}:${salt}`)) : Math.random;
+  if (currentDaily) return seededRandom(hashText(`${currentDaily.day}:${salt}`));
+  // Counted, so asking twice in a wave gives two answers, the same two for a friend.
+  const count = runRandomCounts[salt] || 0;
+  runRandomCounts[salt] = count + 1;
+  return seededRandom(hashText(`${runSeed}:${salt}:${count}`));
 }
 
 function makeDaily(day) {
@@ -3993,6 +4009,97 @@ function dailyCard() {
   button.append(name, detail, mark);
   button.addEventListener("click", () => startChosenRun({ world: daily.world, daily }));
   return button;
+}
+
+// A challenge link: world, level, head start, easy, seed and the wave reached.
+function challengeLink() {
+  const parts = [currentWorld, worldLevel, runStartWave > 1 ? 1 : 0, runEasy ? 1 : 0, runSeed.toString(36), wave];
+  return `${location.origin}${location.pathname}?challenge=${parts.join(".")}`;
+}
+
+function readChallengeLink() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("challenge");
+  if (!code) return null;
+  params.delete("challenge");
+  history.replaceState(null, "", `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`);
+  const [world, level, headStart, easy, seed, target] = code.split(".");
+  const challenge = { world: Number(world), level: Number(level), headStart: headStart === "1", easy: easy === "1", seed: parseInt(seed, 36), target: Number(target) };
+  const valid = WORLDS[challenge.world] && WORLD_LEVELS[challenge.level] && Number.isFinite(challenge.seed) && challenge.target >= 1;
+  return valid ? challenge : null;
+}
+
+function challengePlace(challenge) {
+  const level = challenge.level ? ` (${WORLD_LEVELS[challenge.level].name})` : challenge.easy ? ` (${EASY_LEVEL.name})` : "";
+  return `${WORLDS[challenge.world].name}${level}`;
+}
+
+function showChallengeOffer() {
+  if (!incomingChallenge) return;
+  document.getElementById("challenge-offer-text").textContent = `Your friend reached wave ${incomingChallenge.target} in ${challengePlace(incomingChallenge)}. Can you beat it?`;
+  document.getElementById("challenge-offer-note").classList.toggle("hidden", !savedRun);
+  document.getElementById("challenge-screen").classList.remove("hidden");
+}
+
+function acceptChallenge() {
+  const challenge = incomingChallenge;
+  incomingChallenge = null;
+  document.getElementById("challenge-screen").classList.add("hidden");
+  if (!challenge) return;
+  pendingChallenge = challenge;
+  for (const id of ["daily-screen", "away-screen", "worlds-screen"]) document.getElementById(id).classList.add("hidden");
+  currentChallenge = null;
+  currentWorld = challenge.world;
+  currentEvent = null;
+  currentDaily = null;
+  worldLevel = challenge.level;
+  startNewRun();
+  announce(`Challenge: beat wave ${challenge.target}!`);
+}
+
+function declineChallenge() {
+  incomingChallenge = null;
+  document.getElementById("challenge-screen").classList.add("hidden");
+}
+
+// How this run went against the friend's, for the end screens.
+function challengeResult() {
+  if (!currentChallenge) return "";
+  const mine = wave;
+  const theirs = currentChallenge.target;
+  if (mine > theirs) return `You win! Wave ${mine} vs your friend's ${theirs}`;
+  if (mine < theirs) return `Your friend wins: wave ${theirs} vs your ${mine}`;
+  return `A tie at wave ${mine}!`;
+}
+
+function canChallenge() {
+  return !currentDaily && !currentEvent && wave > 1;
+}
+
+// Fills in a Challenge button and the result line on an end screen.
+function showChallengeEnd(buttonId, resultId) {
+  const button = document.getElementById(buttonId);
+  button.classList.toggle("hidden", !canChallenge());
+  button.textContent = currentChallenge ? "Challenge back" : "Challenge a friend";
+  const result = document.getElementById(resultId);
+  result.textContent = challengeResult();
+  result.classList.toggle("hidden", !currentChallenge);
+}
+
+async function shareChallenge(button) {
+  const place = challengePlace({ world: currentWorld, level: worldLevel, easy: runEasy });
+  const text = t(`I reached wave ${wave} in ${place} on Gear Fight! Can you beat me?`);
+  const url = challengeLink();
+  try {
+    if (navigator.share) {
+      await navigator.share({ text, url });
+      return;
+    }
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    button.textContent = "Link copied!";
+  } catch (error) {
+    if (error?.name !== "AbortError") button.textContent = "Couldn't share";
+  }
 }
 
 function shareText() {
@@ -4459,6 +4566,9 @@ function runSnapshot() {
     paths: { offered: offeredPaths, next: nextPath?.id ?? null, active: activePath?.id ?? null },
     nextPlan: nextWavePlan,
     daily: currentDaily,
+    seed: runSeed,
+    randomCounts: runRandomCounts,
+    challenge: currentChallenge,
     rules: runRules,
     tray: gearTray.map(({ type, level }) => ({ type, level })),
     wavePace: wavePace?.id ?? null,
@@ -4531,6 +4641,9 @@ function loadRunSave() {
 
 function restoreRun(data) {
   fightCount = null;
+  runSeed = Number(data.seed) || 0;
+  runRandomCounts = data.randomCounts && typeof data.randomCounts === "object" ? { ...data.randomCounts } : {};
+  currentChallenge = data.challenge ?? null;
   currentWorld = data.world;
   currentEvent = WEEKLY_EVENTS.find((e) => e.id === data.event) || null;
   runEventWeek = data.eventWeek;
@@ -4938,6 +5051,7 @@ function gameOver() {
   gameState = "gameover";
   drag = null;
   showRunSummary(bankRun());
+  showChallengeEnd("challenge-btn", "challenge-result");
   buzz(150);
   showDailyReward();
   playLoseSound();
@@ -9176,6 +9290,14 @@ function handleResize() {
 
 function startNewRun() {
   ensureAudio();
+  if (pendingChallenge) {
+    currentChallenge = pendingChallenge;
+    pendingChallenge = null;
+    nextRunHeadStart = currentChallenge.headStart;
+  }
+  if (currentEvent || currentDaily) currentChallenge = null;
+  runSeed = currentChallenge ? currentChallenge.seed : Math.floor(Math.random() * 2147483647);
+  runRandomCounts = {};
   // Restart ends a run in progress, which still earns its coins.
   const restarted = RUN_SAVE_STATES.includes(gameState);
   // So does giving up a run saved last time.
@@ -9225,7 +9347,7 @@ function startNewRun() {
     currentWorld = currentDaily.world;
   }
   runRules = currentDaily ? currentDaily.rules : currentEvent ? [] : levelRules(currentWorld, worldLevel);
-  runEasy = save.easy && !currentDaily && !currentEvent && worldLevel === 0;
+  runEasy = currentChallenge ? currentChallenge.easy : save.easy && !currentDaily && !currentEvent && worldLevel === 0;
   runCoinScale = currentDaily || currentEvent ? 1 : runLevel().coins;
   runBonusCoins = 0;
   runKey = runKeyFor(currentWorld, currentEvent, currentDaily);
@@ -9728,6 +9850,12 @@ function init() {
   document.getElementById("play-btn").addEventListener("click", pressPlay);
   document.getElementById("next-world-btn").addEventListener("click", goToNextWorld);
   document.getElementById("harder-btn").addEventListener("click", tryHarderLevel);
+  document.getElementById("challenge-btn").addEventListener("click", (e) => shareChallenge(e.currentTarget));
+  document.getElementById("clear-challenge-btn").addEventListener("click", (e) => shareChallenge(e.currentTarget));
+  document.getElementById("challenge-accept-btn").addEventListener("click", acceptChallenge);
+  document.getElementById("challenge-decline-btn").addEventListener("click", declineChallenge);
+  incomingChallenge = readChallengeLink();
+  showChallengeOffer();
   document.getElementById("keep-going-btn").addEventListener("click", keepGoing);
   document.getElementById("clear-worlds-btn").addEventListener("click", backToWorlds);
   document.getElementById("gameover-worlds-btn").addEventListener("click", backToWorlds);

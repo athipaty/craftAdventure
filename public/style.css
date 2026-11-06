@@ -1233,6 +1233,65 @@ html.less-motion .chest-card.shaking {
 
 /* ---------- Tips ---------- */
 
+/* A friend's challenge, offered when the game opens from their link. */
+#challenge-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 5, 2, 0.75);
+}
+
+#challenge-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 340px;
+  padding: 20px;
+  border: 2px solid #ffe14d;
+  border-radius: 14px;
+  background: var(--panel);
+  text-align: center;
+  box-shadow: 0 0 24px rgba(255, 210, 63, 0.35);
+}
+
+#challenge-card b {
+  color: #ffe14d;
+  font-size: 1.3rem;
+}
+
+#challenge-card p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+#challenge-offer-note {
+  color: #e4d3b8;
+  font-size: 0.85rem;
+}
+
+#challenge-accept-btn,
+#challenge-btn {
+  padding: 11px 26px;
+  border: 2px solid #1c0f06;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe14d, #e0a92e);
+  color: #2a1405;
+  font-weight: 900;
+  box-shadow: 0 4px 0 #8a5200;
+}
+
+.challenge-result {
+  margin: 4px 0;
+  color: #ffe14d;
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
 /* How to install on iPhone and iPad, over everything. */
 #install-screen {
   position: absolute;
