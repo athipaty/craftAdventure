@@ -4215,6 +4215,21 @@ function pauseGame() {
   document.getElementById("pause-screen").classList.remove("hidden");
 }
 
+// From the pause menu to the title screen. The run is kept, so Continue on
+// the title screen picks it up again where it was paused.
+function goHome() {
+  if (gameState !== "paused") return;
+  saveRun();
+  savedRun = JSON.parse(JSON.stringify(runSnapshot()));
+  gameState = "title";
+  drag = null;
+  document.getElementById("pause-screen").classList.add("hidden");
+  document.getElementById("game-screen").classList.add("hidden");
+  document.getElementById("title-screen").classList.remove("hidden");
+  updateContinueButton();
+  renderWorkshop();
+}
+
 function resumeGame() {
   if (gameState !== "paused") return;
   gameState = pausedFromBuild ? "building" : "playing";
@@ -6147,8 +6162,10 @@ function updateFx(dt) {
   }
 
   screenShake = Math.max(0, screenShake - SHAKE_FADE_PER_SEC * dt);
+  // Only the battle shakes. Shaking the board too, where the player is
+  // dragging gears, was dizzying when bombs go off quickly.
   const shake = REDUCED_MOTION ? 0 : screenShake;
-  document.getElementById("game-screen").style.transform = shake > 0
+  document.getElementById("battle-canvas").style.transform = shake > 0
     ? `translate(${randomBetween(-shake, shake)}px, ${randomBetween(-shake, shake)}px)`
     : "";
 }
@@ -7182,6 +7199,7 @@ function init() {
   });
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
   document.getElementById("restart-btn").addEventListener("click", startNewRun);
+  document.getElementById("home-btn").addEventListener("click", goHome);
   document.getElementById("strike-btn").addEventListener("click", pressLightning);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);
   document.getElementById("rally-btn").addEventListener("click", toggleRally);
