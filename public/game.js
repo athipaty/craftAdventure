@@ -68,7 +68,7 @@ const RUN_SAVE_KEY = "gearfight_run";
 const HINT_WAVES = 10; // the how-to line under the buttons shows until this many waves are won
 const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10, powerGears: 12 };
 const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!", powerGears: "New: Spark, Oil and Ice gears!" };
-const TIP_FEATURES = { rally: "rally", train: "train" };
+const TIP_FEATURES = { rally: "rally", train: "train", short: "train" };
 const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
 // and bosses use their real art instead.
@@ -741,12 +741,14 @@ const TIPS = [
   // Every later boss gets its own introduction the first time it comes.
   ...[...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, urgent: true, text: kind.final ? "This world's last boss. Beat it to clear the world!" : "A new boss! Watch what it does, and keep Lightning ready for its glow.", when: () => Boolean(save.tips.boss) && boss?.kind.id === kind.id, card: () => bossCard() })),
   { id: "rust", urgent: true, text: "Rust! A rusted gear stops working and blocks the gears behind it. Tap it to fix it.", when: () => grid.flat().some((cell) => cell?.rusted) },
+  // Lightning is the main tool, so it is explained early, from the second wave.
+  { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => wave >= 2 && waveTime > 3 },
   { id: "gearDrop", urgent: true, text: "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.", target: "#gear-tray", when: () => gearTray.length > 0 },
   { id: "fusion", text: "These two gears can fuse! Drag one onto the other and look for the purple ring to make a new, stronger gear.", when: () => boardCanFuse() },
   { id: "hotStreak", urgent: true, text: "Hot streak! Win waves quickly and your main gear spins faster. A slow wave ends the streak.", when: () => hotStreak >= 2 },
   { id: "treasureGoblin", urgent: true, text: "A treasure goblin! Tap it before it escapes to grab what it's carrying.", target: "#treasure-goblin", when: () => treasureGoblin?.age > GOBLIN_TIP_AGE },
-  { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => boss && boss.attackIn < BOSS_WARNING_SECONDS },
-  { id: "short", text: "\"Need 12 more\" means your army must grow first. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
+  { id: "counter", urgent: true, text: "The boss glows before it attacks. Keep Lightning ready, then press it during the glow to cancel the attack!", when: () => Boolean(save.tips.strike) && boss && boss.attackIn < BOSS_WARNING_SECONDS },
+  { id: "short", text: "The Train button fills up as your army grows. When it's full, tap it to train. Training costs soldiers, and the game won't let it lose you the wave.", when: () => nextRank() && soldiersShortFor(trainCost()) > 0 && runTime > 20 },
   { id: "line", text: "Soldiers push the line. Get your side of the bar to 70% to win the wave. If it falls to 30%, you lose.", when: () => totalArmyScore >= 1 && waveTime > 5 },
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
@@ -755,7 +757,6 @@ const TIPS = [
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank.", target: "#train-btn", when: () => canTrain() },
-  { id: "strike", text: "Press Lightning to strike the enemy! The button fills up as it recharges.", target: "#strike-btn", when: () => waveTime > 8 },
   { id: "brute", urgent: true, text: "Armoured brutes! Soldiers do less against them, but lightning and bombs hit at full strength.", when: () => enemyType?.id === "brute", card: () => enemyTypeCard("brute") },
   { id: "frost", urgent: true, text: "Frost trolls freeze your main gear to half speed. A lightning strike thaws it right away.", when: () => enemyType?.id === "frost", card: () => enemyTypeCard("frost") },
   { id: "imp", urgent: true, text: "Fire imps burn the progress out of your gears. Win fast, before they burn it all.", when: () => enemyType?.id === "imp", card: () => enemyTypeCard("imp") },
@@ -5149,6 +5150,20 @@ function drawElementDot(ctx, cx, cy, size, element) {
   ctx.restore();
 }
 
+let flashGlow = null;
+function flashGlowSprite() {
+  if (flashGlow) return flashGlow;
+  flashGlow = document.createElement("canvas");
+  flashGlow.width = flashGlow.height = 128;
+  const g = flashGlow.getContext("2d");
+  const glow = g.createRadialGradient(64, 64, 20, 64, 64, 64);
+  glow.addColorStop(0, "rgba(255, 204, 51, 0.9)");
+  glow.addColorStop(1, "rgba(255, 204, 51, 0)");
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 128, 128);
+  return flashGlow;
+}
+
 function drawGearCell(ctx, cx, cy, size, cell) {
   const flashBoost = 1 + cell.flash * 0.06;
   const r = size * 0.48 * flashBoost;
@@ -5170,13 +5185,18 @@ function drawGearCell(ctx, cx, cy, size, cell) {
 
   // The gear body visibly turns one tooth per hit. It never resets, so it
   // keeps turning rather than snapping back.
+  // A hit makes the gear flash: a ready-made soft glow behind it, since a live
+  // shadow on every gear of a big machine was the costliest thing on the board.
+  if (cell.flash > 0 && !lowFx) {
+    const glow = flashGlowSprite();
+    const g = r * 1.35;
+    ctx.globalAlpha = Math.min(1, cell.flash);
+    ctx.drawImage(glow, cx - g, cy - g, g * 2, g * 2);
+    ctx.globalAlpha = 1;
+  }
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(cell.spinAnim * TICK_ANGLE);
-  if (cell.flash > 0) {
-    ctx.shadowColor = "#ffcc33";
-    ctx.shadowBlur = glowBlur(size * 0.3 * cell.flash);
-  }
   const sprite = gearSprite(palette);
   const half = sprite.halfSize * (size / cellSize) * flashBoost;
   ctx.drawImage(sprite, -half, -half, half * 2, half * 2);
@@ -8920,7 +8940,9 @@ function showToast(text) {
 let announcements = [];
 let announcing = false;
 
+// Collection notices matter least, so they give way when others are already waiting.
 function announce(text) {
+  if (text.startsWith("New in the book") && announcements.length > 0) return;
   announcements.push(text);
   if (!announcing) nextAnnouncement();
 }
@@ -9043,7 +9065,9 @@ let strugglingFor = 0;
 function watchFrameRate(frameMs, dt) {
   if (lowFx || gameState !== "playing" || document.hidden || frameMs > 250) return;
   frameMsAverage += (frameMs - frameMsAverage) * 0.05;
-  strugglingFor = frameMsAverage > LOW_FX_FRAME_MS ? strugglingFor + dt : 0;
+  // Real time, filling while slow and draining while not, so an uneven frame
+  // rate still adds up rather than starting over at every quick frame.
+  strugglingFor = Math.max(0, strugglingFor + (frameMsAverage > LOW_FX_FRAME_MS ? 1 : -1) * frameMs / 1000);
   if (strugglingFor >= LOW_FX_SECONDS) lowFx = true;
 }
 
