@@ -209,7 +209,7 @@ async function check(name, fn) {
       for (const x of Object.values(BOSS_TAUNTS)) add(x);
       for (const x of Object.values(WORLD_STORIES)) add(x.intro, x.outro);
       for (const x of Object.values(FEATURE_NEWS)) add(x);
-      for (const [title, rows] of guideSections()) { add(title); for (const [a, b] of rows) add(a, b); }
+      for (const [title, rows] of guideSections()) { add(title); for (const row of rows) { if (row instanceof Node) add(row.querySelector("b").firstChild.textContent, row.querySelector(".guide-words span").textContent); else add(row[0], row[1]); } }
       for (const k of QUEST_KINDS) add(k.text(k.kind === "rank" ? 1 : 3));
       return [...new Set(texts)].filter((x) => /[A-Za-z]/.test(translate(x)) && !/Gear Fight/.test(x) && /[A-Za-z]{2}/.test(translate(x).replace(/XP/g, "")));
     });

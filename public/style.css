@@ -3151,6 +3151,46 @@ html.less-motion *::after {
   gap: 10px;
 }
 
+/* A fusion recipe: [gear] + [gear] = [gear], above what it does. */
+.guide-row.guide-recipe-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.guide-recipe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.guide-recipe .art-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.guide-recipe span {
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.guide-row small.super {
+  color: #ffe14d;
+}
+
+.guide-row small.fire {
+  color: #ff8a5a;
+}
+
+.guide-row small.ice {
+  color: #8fe7ff;
+}
+
+.guide-row small.storm {
+  color: #ffe14d;
+}
+
 .guide-words {
   display: flex;
   flex-direction: column;
