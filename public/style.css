@@ -225,6 +225,7 @@ button {
 #battle-lane {
   height: 124px;
   flex-shrink: 0;
+  overflow: hidden; /* the battle shakes inside it */
   background: rgba(0, 0, 0, 0.18);
   border-bottom: 2px solid rgba(0, 0, 0, 0.3);
 }

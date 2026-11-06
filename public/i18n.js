@@ -33,7 +33,7 @@ const TH_WORDS = {
   "Cannon gear": "เฟืองปืนใหญ่", "Dynamo gear": "เฟืองไดนาโม", "Comet gear": "เฟืองดาวหาง", "Hermit gear": "เฟืองฤๅษี", "Made from a Big gear and a Bomb gear. Fills half as fast, then sends 6 soldiers and blasts 3 enemies": "สร้างจากเฟืองใหญ่และเฟืองระเบิด เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 6 นายและระเบิดศัตรู 3 ตัว", "Made from a Big gear and a Booster gear. Fills half as fast, sends 5 soldiers, and boosts the gears touching it": "สร้างจากเฟืองใหญ่และเฟืองบูสต์ เติมช้าลงครึ่งหนึ่ง ส่งทหาร 5 นาย และบูสต์เฟืองที่อยู่ติดกัน", "Made from a Far gear and a Bomb gear. Fills half as fast, then blasts 3 enemies, more the farther it is from the main gear": "สร้างจากเฟืองไกลและเฟืองระเบิด เติมช้าลงครึ่งหนึ่ง แล้วระเบิดศัตรู 3 ตัว ยิ่งไกลจากเฟืองหลักยิ่งมาก", "Made from a Lone gear and a Big gear. Fills half as fast, then sends 6 soldiers, more for each empty space beside it": "สร้างจากเฟืองเดี่ยวและเฟืองใหญ่ เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 6 นาย ยิ่งมีช่องว่างข้างๆ ยิ่งมาก", "These two gears can fuse! Drag one onto the other and look for the purple ring to make a new, stronger gear.": "เฟืองสองตัวนี้รวมร่างได้! ลากตัวหนึ่งไปวางบนอีกตัวที่มีวงแหวนสีม่วง เพื่อสร้างเฟืองใหม่ที่แกร่งกว่า", "Gear fusion": "รวมร่างเฟือง", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.": "ลากเฟืองพิเศษไปวางบนเฟืองพิเศษอีกชนิดที่เลเวลเท่ากัน ถ้ามีวงแหวนสีม่วงจะรวมร่างเป็นเฟืองใหม่ที่แกร่งกว่า สะสมให้ครบในสมุดของคุณ", "Mad inventor": "นักประดิษฐ์บ้าคลั่ง", "Fuse gears 5 times": "รวมร่างเฟือง 5 ครั้ง",
   "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง บางตัวเป็นเฟืองพิเศษ ลากไปวางบนกระดานหรือแตะก็ได้",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
-  "Rush wave": "เวฟบุกเร็ว", "Siege wave": "เวฟล้อมเมือง",
+  "Rush wave": "เวฟบุกเร็ว", "Save and go home": "บันทึกและกลับหน้าหลัก", "Siege wave": "เวฟล้อมเมือง",
 
   // Bosses
   "Rust King": "ราชาสนิม", "Wall Maker": "จอมสร้างกำแพง", "Scrambler": "จอมสลับ", "Iron Guard": "ผู้พิทักษ์เหล็ก",
@@ -231,8 +231,8 @@ const TH_PATTERNS = [
   [/^(.+) complete!$/i, (m) => `${T(m[1])} สำเร็จ!`],
   [/^(.+) unlocked!$/i, (m) => `ปลดล็อก${T(m[1])}แล้ว!`],
   [/^Go to (.+)$/i, (m) => `ไปที่${T(m[1])}`],
-  [/^(.+): (.+)\. Reach wave (\d+) for (\d+) coins\. Best today: wave (\d+)$/i, (m) => `${T(m[1])}: ${T(m[2])} ถึงเวฟ ${m[3]} รับ ${m[4]} เหรียญ สถิติวันนี้: เวฟ ${m[5]}`],
-  [/^(.+): (.+)\. Reach wave (\d+) for (\d+) coins$/i, (m) => `${T(m[1])}: ${T(m[2])} ถึงเวฟ ${m[3]} รับ ${m[4]} เหรียญ`],
+  [/^(.+): (.+)\. Reach wave (\d+) for (\d+) coins\. Best today: wave (\d+)$/i, (m) => `${T(m[1])}: ${thaiList(m[2])} ถึงเวฟ ${m[3]} รับ ${m[4]} เหรียญ สถิติวันนี้: เวฟ ${m[5]}`],
+  [/^(.+): (.+)\. Reach wave (\d+) for (\d+) coins$/i, (m) => `${T(m[1])}: ${thaiList(m[2])} ถึงเวฟ ${m[3]} รับ ${m[4]} เหรียญ`],
   [/^(.+)\. Reach wave (\d+) for (\d+) coins$/i, (m) => `${T(m[1])} ถึงเวฟ ${m[2]} รับ ${m[3]} เหรียญ`],
   [/^Gear Fight! daily challenge (\S+): I reached wave (\d+)\. Can you beat it\? (.+)$/i, (m) => `Gear Fight! ภารกิจรายวัน ${m[1]}: ฉันไปถึงเวฟ ${m[2]} คุณทำได้ไหม? ${m[3]}`],
   [/^This week: (.+)$/i, (m) => `สัปดาห์นี้: ${T(m[1])}`],
