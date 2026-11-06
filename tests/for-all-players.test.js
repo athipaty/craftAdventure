@@ -94,7 +94,7 @@ async function check(name, fn) {
     await page.locator(".world-easy-btn").click();
     assert.equal(await page.locator(".world-easy-btn").textContent(), "Easy mode: on");
     await page.screenshot({ path: path.join(scratch, "shot7-worlds.png") });
-    await page.locator(".world-card", { hasText: "Green Forest" }).click();
+    await page.locator(".world-card:not(.weekly)", { hasText: "Green Forest" }).click();
     const r = await page.evaluate(() => { wave = 11; bossesBeaten = 0; const coins = coinsForRun(); peakRate = 20; const easy = { easy: runEasy, scale: worldScale(), size: waveStartEnemy(11), weak: bossWeakening(), coins }; wave = 1; return easy; });
     assert.equal(r.easy, true); assert.ok(Math.abs(r.scale - 1.47) < 1e-9); assert.equal(r.coins, 15); assert.ok(Math.abs(r.weak - 0.65) < 1e-9);
   });
