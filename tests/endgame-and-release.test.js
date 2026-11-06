@@ -38,9 +38,9 @@ async function check(name, fn) {
   await reset(() => { save.worldsCleared.forest = true; writeSave(); });
   await check("Hard appears after a clear; Expert only after Hard", async () => {
     await page.click("#play-btn");
-    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster"]);
+    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster · +25% coins"]);
     await page.evaluate(() => { save.worldLevels.forest = 2; openWorlds(); });
-    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster \u2713", "Expert: enemies grow 25% faster, rust attacks on every wave"]);
+    assert.deepEqual(await page.locator(".world-level-btn").allTextContents(), ["Hard: enemies grow 25% faster \u2713", "Expert: enemies grow 25% faster, rust attacks on every wave · +50% coins"]);
     await page.screenshot({ path: path.join(scratch, "shot3-worlds.png") });
   });
   await page.locator(".world-level-btn").first().click();
