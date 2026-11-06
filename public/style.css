@@ -1232,6 +1232,54 @@ html.less-motion .chest-card.shaking {
   line-height: 1.35;
 }
 
+/* Meeting a new enemy or boss: its picture, big, on a red glow. */
+#tip-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+#tip-intro-art {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 90, 60, 0.55), rgba(255, 90, 60, 0) 70%);
+  animation: intro-in 0.45s ease-out;
+}
+
+#tip-intro-art .art-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#tip-intro-label {
+  color: #ff8a7a;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#tip-intro-name {
+  color: var(--accent);
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+#tip-intro-hint {
+  color: #e4d3b8;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+@keyframes intro-in {
+  0% { opacity: 0; transform: scale(0.5) rotate(-8deg); }
+  70% { opacity: 1; transform: scale(1.12) rotate(2deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
 #tip-ok-btn {
   padding: 10px 30px;
   border-radius: 999px;
