@@ -53,6 +53,8 @@ const STRIKE_OUTPUT_SECONDS = 0.5; // a strike is worth this much of the machine
 const VICTORY_MS = 900; // the armies react to a win before the reward choice appears
 const HIT_STOP_SECONDS = 0.07; // a tiny freeze that gives big hits weight
 const HIT_NUMBER_SECONDS = 0.9;
+const FIGHT_HIT_SECONDS = 0.5; // each side's losses show as one number this often
+const FIGHT_BIG_HIT = 0.08; // a loss this big a share of an army shows at once
 const HIT_NUMBER_RISE = 18; // pixels per second
 const HIT_NUMBER_GAP = 68; // pixels from the front line, clear of the fighter
 const HIT_NUMBER_BOSS_GAP = 98; // bosses are wider
@@ -820,6 +822,7 @@ let hitStop = 0;
 let winAt = 0; // when the current win happened, for the armies' reactions
 let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
 let rewardTimer = 0;
+let fightCount = null; // the numbers above the armies, as a fight; see updateFightCount()
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
@@ -1550,15 +1553,102 @@ function canTrain() {
   return gameState === "playing" && Boolean(nextRank()) && soldiersShortFor(trainCost()) === 0;
 }
 
+// A rank-up is a transformation: light comes down on the front fighter, a
+// flash, and the new character pops out. See drawRankUp().
+const RANK_UP_SECONDS = 1.4;
+const RANK_UP_REVEAL = 0.35; // share of the way through when the new character appears
+let rankUp = null; // { t, fromLook, x, y, burst } while the transformation plays
+
 function trainArmy() {
   if (!canTrain()) return;
+  const fromLook = fighterLook();
   playerPower -= trainCost() * armyStrength();
   armyRank += 1;
   questEvent("rank", armyRank);
   buzz(30);
-  showWaveBanner(`${ARMY_RANKS[armyRank].plural}!`);
-  spawnConfetti();
-  playWinSound();
+  showWaveBanner(`${ARMY_RANKS[armyRank].plural}!`, false, true);
+  if (!save.lessMotion && !REDUCED_MOTION) rankUp = { t: 0, fromLook, x: 0, y: 0, burst: false };
+  else spawnConfetti();
+  playRankUpSound();
+}
+
+function updateRankUp(dt) {
+  if (!rankUp) return;
+  rankUp.t += dt / RANK_UP_SECONDS;
+  if (!rankUp.burst && rankUp.t >= RANK_UP_REVEAL) {
+    rankUp.burst = true;
+    buzz(60);
+    spawnConfetti();
+    for (let i = 0; i < 24; i++) {
+      const angle = randomBetween(0, Math.PI * 2);
+      const speed = randomBetween(60, 220);
+      spawnParticle({
+        x: rankUp.x,
+        y: rankUp.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 60,
+        gravity: 260,
+        life: randomBetween(0.5, 0.9),
+        size: randomBetween(2.5, 5),
+        color: i % 3 ? "#ffe14d" : "#ffffff",
+      });
+    }
+  }
+  if (rankUp.t >= 1) rankUp = null;
+}
+
+function drawRankUp(ctx, x, groundY, newLook) {
+  const t = rankUp.t;
+  rankUp.x = laneRect.x + x;
+  rankUp.y = laneRect.y + groundY - 22;
+  // A beam of light from the sky.
+  const beam = t < 0.7 ? Math.min(1, t / 0.2) : Math.max(0, 1 - (t - 0.7) / 0.3);
+  const light = ctx.createLinearGradient(0, 0, 0, groundY);
+  light.addColorStop(0, "rgba(255, 240, 160, 0)");
+  light.addColorStop(1, `rgba(255, 240, 160, ${0.75 * beam})`);
+  ctx.fillStyle = light;
+  ctx.fillRect(x - 15, 0, 30, groundY);
+  if (t < RANK_UP_REVEAL) {
+    // The old fighter shakes and glows white.
+    const k = t / RANK_UP_REVEAL;
+    ctx.save();
+    ctx.translate(Math.sin(t * 140) * k * 1.6, 0);
+    drawArmyFighter(ctx, x, groundY, rankUp.fromLook, 1, "idle", "happy");
+    ctx.restore();
+    ctx.beginPath();
+    ctx.ellipse(x, groundY - 20, 13, 22, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${k * 0.7})`;
+    ctx.fill();
+  } else {
+    // The new one pops out big, then settles.
+    const k = (t - RANK_UP_REVEAL) / (1 - RANK_UP_REVEAL);
+    const pop = k < 0.3 ? 0.4 + (k / 0.3) * 0.85 : k < 0.6 ? 1.25 - ((k - 0.3) / 0.3) * 0.25 : 1;
+    ctx.save();
+    ctx.translate(x, groundY);
+    ctx.scale(pop, pop);
+    ctx.translate(-x, -groundY);
+    drawArmyFighter(ctx, x, groundY, newLook, 1, "cheer", "happy");
+    ctx.restore();
+    for (const delay of [0, 0.18]) {
+      const rk = k - delay;
+      if (rk <= 0 || rk >= 0.6) continue;
+      const r = 8 + rk * 70;
+      ctx.beginPath();
+      ctx.ellipse(x, groundY - 1, r, r * 0.28, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 210, 63, ${1 - rk / 0.6})`;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+  }
+  // The flash at the moment of change.
+  const flash = 1 - Math.abs(t - RANK_UP_REVEAL) / 0.1;
+  if (flash > 0) {
+    const glow = ctx.createRadialGradient(x, groundY - 22, 2, x, groundY - 22, 34);
+    glow.addColorStop(0, `rgba(255, 255, 255, ${flash})`);
+    glow.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 34, groundY - 56, 68, 68);
+  }
 }
 
 // Train only takes up room while there is a rank left to train to.
@@ -2002,7 +2092,6 @@ function strikeEnemy() {
   hitStop = HIT_STOP_SECONDS;
   screenShake = Math.max(screenShake, 3);
   spawnFaller("enemy");
-  spawnHitNumber("enemy", (amount * (1 - WIN_RATIO)) / WIN_RATIO, "#ffe14d");
   for (let i = 0; i < 10; i++) {
     spawnParticle({
       x,
@@ -2796,6 +2885,7 @@ function startWave() {
   enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1) * (activePath?.enemy || 1);
   playerPower = enemyPower * (waveLead + nextWaveBonus - runLevel().lead);
   nextWaveBonus = 0;
+  fightCount = null;
   discover(`enemy:${enemyRank().look}`);
   if (plan.boss) {
     const hp = bossMaxHp(wave);
@@ -4170,6 +4260,7 @@ function loadRunSave() {
 }
 
 function restoreRun(data) {
+  fightCount = null;
   currentWorld = data.world;
   currentEvent = WEEKLY_EVENTS.find((e) => e.id === data.event) || null;
   runEventWeek = data.eventWeek;
@@ -7430,9 +7521,10 @@ function drawBattle() {
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
   const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
-  drawCrowd(ctx, playerX, x0, -1, CROWD_FIRST_GAP, playerLook, playerPower / armyStrength(), groundY, won);
-  if (boss) drawCrowd(ctx, Math.min(x1 - 22, markerX + 32), x1, 1, CROWD_BOSS_GAP, enemyRank().look, enemyPower / enemyRank().strength, groundY, false);
-  else drawCrowd(ctx, enemyX, x1, 1, CROWD_FIRST_GAP, enemyLook, enemyPower / enemyRank().strength, groundY, false);
+  const fight = updateFightCount();
+  drawCrowd(ctx, playerX, x0, -1, CROWD_FIRST_GAP, playerLook, fight.player / armyStrength(), groundY, won);
+  if (boss) drawCrowd(ctx, Math.min(x1 - 22, markerX + 32), x1, 1, CROWD_BOSS_GAP, enemyRank().look, fight.enemy / enemyRank().strength, groundY, false);
+  else drawCrowd(ctx, enemyX, x1, 1, CROWD_FIRST_GAP, enemyLook, fight.enemy / enemyRank().strength, groundY, false);
   // Behind the two fighters, so the ones still fighting are always in plain view.
   for (const f of fallers) {
     ctx.save();
@@ -7442,7 +7534,8 @@ function drawBattle() {
     drawSoldier(ctx, 0, 10, f.facing, f.look, "idle", 0, "wince");
     ctx.restore();
   }
-  drawArmyFighter(ctx, playerX, groundY, playerLook, 1, won ? "cheer" : "fight", won ? "happy" : moodFor(ratio, shove.player));
+  if (rankUp) drawRankUp(ctx, playerX, groundY, playerLook);
+  else drawArmyFighter(ctx, playerX, groundY, playerLook, 1, won ? "cheer" : "fight", won ? "happy" : moodFor(ratio, shove.player));
   if (!boss) {
     drawArmyFighter(ctx, enemyX, groundY, enemyLook, won ? 1 : -1, won ? "flee" : "fight", won ? "scared" : moodFor(1 - ratio, shove.enemy));
   }
@@ -7491,11 +7584,11 @@ function drawBattle() {
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
   // During a boss fight the enemy's number sits over the boss, below its health bar.
   const minCountY = boss ? 26 : 12;
-  // Both numbers are strength in the same unit, the one the bar measures, so
-  // the bigger number is always the side that is winning.
-  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(playerPower));
-  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(enemyPower));
-  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(enemyPower));
+  // Who is still standing on each side, in the same unit, so the bigger
+  // number is always the side that is winning.
+  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(fight.player));
+  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(fight.enemy));
+  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(fight.enemy));
   ctx.font = "800 12px system-ui, sans-serif";
   ctx.fillStyle = "#ffcc33";
   ctx.textBaseline = "alphabetic";
@@ -7589,10 +7682,43 @@ function frontLineFx() {
 
 // Only the big moments get a number, counted the way the army totals are. Hits
 // that land close together add up into one number, so they never pile up.
+// The numbers above the armies, shown as a fight: who is still standing.
+// Whenever the bar moves one way, the other side's number drops, so both
+// always match the bar exactly. Arriving soldiers, Lightning and bombs are
+// seen knocking the enemy down; enemy reinforcements knock the army down.
+// The rules underneath (playerPower and enemyPower) are unchanged.
+function updateFightCount() {
+  const total = playerPower + enemyPower;
+  const share = total > 0 ? playerPower / total : 0.5;
+  const now = performance.now();
+  if (!fightCount) fightCount = { player: playerPower, enemy: enemyPower, share, lost: { player: 0, enemy: 0 }, shownAt: now };
+  const fight = fightCount;
+  if (share > fight.share && share < 1) {
+    const enemy = (fight.player * (1 - share)) / share;
+    fight.lost.enemy += fight.enemy - enemy;
+    fight.enemy = enemy;
+  } else if (share < fight.share && share > 0) {
+    const player = (fight.enemy * share) / (1 - share);
+    fight.lost.player += fight.player - player;
+    fight.player = player;
+  }
+  fight.share = share;
+  const big = (side) => fight.lost[side] >= Math.max(1, fight[side] * FIGHT_BIG_HIT);
+  if (now - fight.shownAt >= FIGHT_HIT_SECONDS * 1000 || big("enemy") || big("player")) {
+    for (const side of ["enemy", "player"]) {
+      if (fight.lost[side] < 1) continue;
+      spawnHitNumber(side, fight.lost[side], side === "enemy" ? "#ffe14d" : "#ff8a7a");
+      fight.lost[side] = 0;
+    }
+    fight.shownAt = now;
+  }
+  return fight;
+}
+
 function spawnHitNumber(side, amount, color) {
   const number = hitNumbers.find((n) => n.side === side);
   if (number) {
-    number.amount += amount;
+    number.amount = amount;
     number.color = color;
     number.age = 0;
     number.rise = 0;
@@ -7647,8 +7773,6 @@ function spawnFrontLineHit(marcher) {
       color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
     });
   }
-  if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value, "#ff8a3d");
-  else if (marcher.charge) spawnHitNumber("player", marcher.value, "#ffcc33");
   if (!isEnemy) maybeDropGear();
 }
 
@@ -7965,6 +8089,7 @@ function spawnConfetti() {
 
 function updateFx(dt) {
   updateTreasureGoblin(dt);
+  updateRankUp(dt);
   for (const p of particles) {
     p.age += dt;
     p.vy += p.gravity * dt;
@@ -8044,7 +8169,7 @@ function drawFx() {
   const gap = boss ? HIT_NUMBER_BOSS_GAP : HIT_NUMBER_GAP;
   for (const number of hitNumbers) {
     const value = Math.max(1, Math.round(number.amount));
-    const label = `${number.side === "enemy" ? "-" : "+"}${shortNumber(value)}`;
+    const label = `-${shortNumber(value)}`;
     const wanted = front.x + (number.side === "enemy" ? gap : -gap);
     const x = Math.max(laneRect.x + HIT_NUMBER_MARGIN, Math.min(laneRect.x + laneRect.w - HIT_NUMBER_MARGIN, wanted));
     const y = laneRect.y + laneRect.h * 0.34 - number.rise;
@@ -8376,6 +8501,17 @@ function playChestOpenSound(rare) {
   if (rare) setTimeout(playWinSound, 520);
 }
 
+// A rising fanfare with a shimmer, and a deep boom on the reveal.
+function playRankUpSound() {
+  [523, 659, 784, 1047].forEach((note, i) => setTimeout(() => beep(note, 0.16, "square", 0.14), i * 90));
+  setTimeout(() => sweep(600, 2400, 0.4, "triangle", 0.08), 120);
+  setTimeout(() => {
+    sweep(140, 45, 0.45, "sine", 0.35);
+    beep(1319, 0.3, "triangle", 0.12);
+    beep(1568, 0.35, "triangle", 0.1);
+  }, RANK_UP_SECONDS * RANK_UP_REVEAL * 1000);
+}
+
 function playGoblinSound() {
   for (const [delay, note] of [[0, 1320], [70, 1760], [140, 1320], [210, 1760]]) setTimeout(() => beep(note, 0.05, "square", 0.08), delay);
 }
@@ -8448,17 +8584,18 @@ function nextAnnouncement() {
   setTimeout(nextAnnouncement, ANNOUNCEMENT_MS);
 }
 
-function showWaveBanner(text, bossArrives = false) {
+function showWaveBanner(text, bossArrives = false, rankUpBanner = false) {
   const el = document.getElementById("wave-banner");
   const txt = document.getElementById("wave-banner-text");
   txt.textContent = text;
   el.classList.toggle("boss", bossArrives);
+  el.classList.toggle("rankup", rankUpBanner);
   el.classList.remove("hidden");
   el.style.animation = "none";
   void el.offsetWidth;
   el.style.animation = "";
   clearTimeout(showWaveBanner._t);
-  showWaveBanner._t = setTimeout(() => el.classList.add("hidden"), bossArrives ? 1900 : 1300);
+  showWaveBanner._t = setTimeout(() => el.classList.add("hidden"), bossArrives || rankUpBanner ? 1900 : 1300);
 }
 
 // =====================================================================
@@ -8524,8 +8661,24 @@ function canvasScale() {
 // A glow's blur counts screen pixels and ignores the canvas scale, so without
 // this it would look wider on a canvas drawn at a lower scale. Sizes are given
 // as they look at scale 3.
+// Quality that adjusts itself. Glows are the costliest part of the art, so a
+// phone that cannot keep up drops them for the rest of the session, and keeps
+// everything else.
+const LOW_FX_FRAME_MS = 22; // an average frame this slow counts as struggling (about 45 fps)
+const LOW_FX_SECONDS = 2; // for this long in a row
+let lowFx = false;
+let frameMsAverage = 1000 / 60;
+let strugglingFor = 0;
+
+function watchFrameRate(frameMs, dt) {
+  if (lowFx || gameState !== "playing" || document.hidden || frameMs > 250) return;
+  frameMsAverage += (frameMs - frameMsAverage) * 0.05;
+  strugglingFor = frameMsAverage > LOW_FX_FRAME_MS ? strugglingFor + dt : 0;
+  if (strugglingFor >= LOW_FX_SECONDS) lowFx = true;
+}
+
 function glowBlur(blur) {
-  return (blur * canvasScale()) / 3;
+  return lowFx ? 0 : (blur * canvasScale()) / 3;
 }
 
 function fitCanvasDPR(canvas, cssW, cssH) {
@@ -8711,6 +8864,7 @@ function startNewRun() {
 let lastTime = 0;
 function loop(now) {
   const dt = lastTime ? Math.min(0.05, (now - lastTime) / 1000) : 0;
+  if (lastTime) watchFrameRate(now - lastTime, dt);
   lastTime = now;
   if (save.lessMotion) {
     screenShake = 0;
