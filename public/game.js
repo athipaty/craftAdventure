@@ -3140,6 +3140,13 @@ function paintChest(canvas, id, lid, time) {
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.clearRect(0, 0, GUIDE_ICON_SIZE, GUIDE_ICON_SIZE);
   drawChest(ctx, lid > 0, lid > 0 && Boolean(chestPrize(id).rare), id, lid, time);
+  // Faint twinkles on a shut chest that holds something rare, coming and going.
+  if (lid === 0 && chestPrize(id).rare) {
+    [[10, 16, 0], [37, 21, 2.1], [24, 9, 4.2]].forEach(([x, y, phase]) => {
+      const shine = Math.max(0, Math.sin(time * 2.2 + phase));
+      if (shine > 0.05) drawTwinkle(ctx, x, y, 2.6 * shine, `rgba(255, 236, 180, ${shine})`);
+    });
+  }
 }
 
 function animateChests() {
@@ -3202,6 +3209,8 @@ function renderChests(revealed) {
     button.classList.toggle("chosen", open && chosen);
     button.classList.toggle("missed", open && !chosen);
     button.classList.toggle("rare", open && Boolean(prize.rare));
+    // A shut chest with a rare prize glows faintly, for players who look closely.
+    button.classList.toggle("rare-hint", !open && Boolean(prize.rare));
     button.disabled = chestPicked !== null;
     button.setAttribute("aria-label", open ? chestPrizeLabel(id) : `Open chest ${i + 1}`);
     const label = document.createElement("span");

@@ -441,6 +441,26 @@ button {
   55% { transform: translateY(-5px) rotate(2deg); }
 }
 
+/* A shut chest with a rare prize: a soft glow that slowly comes and goes. */
+.chest-card.rare-hint::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 14px;
+  box-shadow: 0 0 14px 3px rgba(255, 150, 210, 0.75);
+  opacity: 0;
+  animation: chest-rare-hint 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.chest-card.rare-hint {
+  position: relative;
+}
+
+@keyframes chest-rare-hint {
+  50% { opacity: 0.85; }
+}
+
 /* An opened chest's prize pops in once its lid is up. */
 .chest-card.open span {
   animation: chest-label-in 0.35s ease both;
