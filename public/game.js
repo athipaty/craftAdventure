@@ -872,6 +872,8 @@ let winAt = 0; // when the current win happened, for the armies' reactions
 let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
 let rewardTimer = 0;
 let fightCount = null; // the numbers above the armies, as a fight; see updateFightCount()
+let runLowestShare = 1; // the lowest the player's side of the bar fell this run
+const COMFORTABLE_SHARE = 0.45; // a run that never fell below this was too easy
 let sparkCharge = 0; // next Lightning's extra strength, from spark gears
 let chillFor = 0; // seconds the enemy still grows at ICE_GROWTH
 let steamFor = 0; // seconds the enemy doesn't grow at all, from steam
@@ -3807,6 +3809,14 @@ function showWorldClear() {
   document.getElementById("world-clear-next").textContent = next
     ? (lastClear.firstTime ? `${next.name} unlocked!` : "")
     : currentEvent ? "A new challenge comes next week." : "You have cleared every world!";
+  const harderLevel = currentEvent || runEasy ? null : nextWorldLevel(world);
+  const harderBtn = document.getElementById("harder-btn");
+  harderBtn.classList.toggle("hidden", harderLevel === null);
+  if (harderLevel !== null) {
+    const comfortable = runLowestShare >= COMFORTABLE_SHARE;
+    harderBtn.textContent = `${comfortable ? "Too easy? Try" : "Next challenge:"} ${WORLD_LEVELS[harderLevel].name} · +${levelCoinBonus(harderLevel)}% coins`;
+    harderBtn.classList.toggle("comfortable", comfortable);
+  }
   const nextBtn = document.getElementById("next-world-btn");
   nextBtn.classList.toggle("hidden", !next);
   if (next) nextBtn.textContent = `Go to ${next.name}`;
@@ -3815,6 +3825,15 @@ function showWorldClear() {
 
 function hideWorldClear() {
   document.getElementById("world-clear-screen").classList.add("hidden");
+}
+
+// Straight into the same world one level harder.
+function tryHarderLevel() {
+  const level = nextWorldLevel(WORLDS[currentWorld]);
+  if (currentEvent || level === null) return;
+  bankRun();
+  worldLevel = level;
+  startNewRun();
 }
 
 function goToNextWorld() {
@@ -4046,6 +4065,16 @@ function worldCard(world, i, isNext) {
   return button;
 }
 
+// The level of a world to try next: the one after the highest cleared.
+function nextWorldLevel(world) {
+  const tier = clearedTier(world);
+  return tier >= 1 && tier < WORLD_LEVELS.length ? tier : null;
+}
+
+function levelCoinBonus(level) {
+  return Math.round((WORLD_LEVELS[level].coins - 1) * 100);
+}
+
 function worldExtras(world, i) {
   const extras = document.createElement("div");
   extras.className = "world-extras";
@@ -4059,6 +4088,14 @@ function worldExtras(world, i) {
     harder.className = "world-level-btn";
     const done = clearedTier(world) > level ? " \u2713" : "";
     harder.textContent = `${WORLD_LEVELS[level].name}: ${rulesText(levelRules(i, level))}${done}`;
+    // The next level to beat stands out, with what it pays.
+    if (level === nextWorldLevel(world)) {
+      harder.classList.add("suggested");
+      const bonus = document.createElement("span");
+      bonus.className = "world-level-bonus";
+      bonus.textContent = ` · +${levelCoinBonus(level)}% coins`;
+      harder.append(bonus);
+    }
     harder.addEventListener("click", () => startChosenRun({ world: i, level }));
     extras.append(harder);
   }
@@ -4825,6 +4862,7 @@ function update(dt) {
   }
   const total = playerPower + enemyPower;
   const ratio = total > 0 ? playerPower / total : 0.5;
+  runLowestShare = Math.min(runLowestShare, ratio);
   const won = boss ? boss.hp <= 0 : ratio >= WIN_RATIO;
   if (won) winWave();
   else if (ratio <= LOSE_RATIO) {
@@ -9007,6 +9045,7 @@ function startNewRun() {
   sparkCharge = 0;
   chillFor = 0;
   steamFor = 0;
+  runLowestShare = 1;
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
@@ -9512,6 +9551,7 @@ function init() {
   document.getElementById("continue-btn").addEventListener("click", continueRun);
   document.getElementById("play-btn").addEventListener("click", pressPlay);
   document.getElementById("next-world-btn").addEventListener("click", goToNextWorld);
+  document.getElementById("harder-btn").addEventListener("click", tryHarderLevel);
   document.getElementById("keep-going-btn").addEventListener("click", keepGoing);
   document.getElementById("clear-worlds-btn").addEventListener("click", backToWorlds);
   document.getElementById("gameover-worlds-btn").addEventListener("click", backToWorlds);

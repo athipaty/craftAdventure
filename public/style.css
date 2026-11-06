@@ -857,6 +857,37 @@ html.less-motion .chest-card.shaking {
   background: rgba(10, 5, 2, 0.85);
 }
 
+/* The next level up, offered right after a clear. */
+#harder-btn {
+  padding: 11px 20px;
+  border: 2px solid #ffe14d;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #d8432f, #8c1d10);
+  color: #fff3a8;
+  font-weight: 900;
+  box-shadow: 0 4px 0 #4a0d06, 0 0 16px rgba(255, 90, 60, 0.45);
+}
+
+#harder-btn.comfortable {
+  animation: harder-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes harder-pulse {
+  50% { box-shadow: 0 4px 0 #4a0d06, 0 0 26px rgba(255, 150, 60, 0.8); }
+}
+
+/* Under a cleared world: the next level to beat stands out. */
+.world-level-btn.suggested {
+  border-color: #ffe14d;
+  color: #fff3a8;
+  box-shadow: 0 0 12px rgba(255, 210, 63, 0.45);
+}
+
+.world-level-bonus {
+  color: #ffe14d;
+  font-weight: 900;
+}
+
 #world-clear-screen h2 {
   margin: 0;
   font-size: 1.9rem;
