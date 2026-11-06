@@ -4172,6 +4172,49 @@ function worldExtras(world, i) {
   return extras;
 }
 
+// Installing as an app. Android and desktop Chrome offer it through an event;
+// iPhone and iPad can't, so the button shows the steps instead.
+let installPrompt = null;
+function appInstalled() {
+  return matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
+}
+
+function appleDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function updateInstallButton() {
+  const show = !appInstalled() && (Boolean(installPrompt) || appleDevice());
+  document.getElementById("install-btn").classList.toggle("hidden", !show);
+}
+
+async function installApp() {
+  if (installPrompt) {
+    const prompt = installPrompt;
+    installPrompt = null;
+    prompt.prompt();
+    await prompt.userChoice.catch(() => null);
+    updateInstallButton();
+    return;
+  }
+  document.getElementById("install-screen").classList.remove("hidden");
+}
+
+function wireInstall() {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    updateInstallButton();
+  });
+  window.addEventListener("appinstalled", () => {
+    installPrompt = null;
+    updateInstallButton();
+  });
+  document.getElementById("install-btn").addEventListener("click", installApp);
+  document.getElementById("install-close-btn").addEventListener("click", () => document.getElementById("install-screen").classList.add("hidden"));
+  updateInstallButton();
+}
+
 function openWorlds() {
   const list = document.getElementById("worlds-list");
   list.replaceChildren();
@@ -9747,6 +9790,7 @@ function init() {
   renderWorkshop();
 
   wireBoardInput();
+  wireInstall();
   window.addEventListener("resize", handleResize);
   window.addEventListener("orientationchange", handleResize);
 

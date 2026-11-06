@@ -33,7 +33,7 @@ const TH_WORDS = {
   "Cannon gear": "เฟืองปืนใหญ่", "Dynamo gear": "เฟืองไดนาโม", "Comet gear": "เฟืองดาวหาง", "Hermit gear": "เฟืองฤๅษี", "Made from a Big gear and a Bomb gear. Fills half as fast, then sends 6 soldiers and blasts 3 enemies": "สร้างจากเฟืองใหญ่และเฟืองระเบิด เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 6 นายและระเบิดศัตรู 3 ตัว", "Made from a Big gear and a Booster gear. Fills half as fast, sends 5 soldiers, and boosts the gears touching it": "สร้างจากเฟืองใหญ่และเฟืองบูสต์ เติมช้าลงครึ่งหนึ่ง ส่งทหาร 5 นาย และบูสต์เฟืองที่อยู่ติดกัน", "Made from a Far gear and a Bomb gear. Fills half as fast, then blasts 3 enemies, more the farther it is from the main gear": "สร้างจากเฟืองไกลและเฟืองระเบิด เติมช้าลงครึ่งหนึ่ง แล้วระเบิดศัตรู 3 ตัว ยิ่งไกลจากเฟืองหลักยิ่งมาก", "Made from a Lone gear and a Big gear. Fills half as fast, then sends 6 soldiers, more for each empty space beside it": "สร้างจากเฟืองเดี่ยวและเฟืองใหญ่ เติมช้าลงครึ่งหนึ่ง แล้วส่งทหาร 6 นาย ยิ่งมีช่องว่างข้างๆ ยิ่งมาก", "These two gears can fuse! Drag one onto the other and look for the purple ring to make a new, stronger gear.": "เฟืองสองตัวนี้รวมร่างได้! ลากตัวหนึ่งไปวางบนอีกตัวที่มีวงแหวนสีม่วง เพื่อสร้างเฟืองใหม่ที่แกร่งกว่า", "Gear fusion": "รวมร่างเฟือง", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.": "ลากเฟืองพิเศษไปวางบนเฟืองพิเศษอีกชนิดที่เลเวลเท่ากัน ถ้ามีวงแหวนสีม่วงจะรวมร่างเป็นเฟืองใหม่ที่แกร่งกว่า สะสมให้ครบในสมุดของคุณ", "Mad inventor": "นักประดิษฐ์บ้าคลั่ง", "Fuse gears 5 times": "รวมร่างเฟือง 5 ครั้ง",
   "Free": "ฟรี", "Level": "เลเวล", "Free gear": "เฟืองฟรี", "A monster dropped a gear! Drag it from the tray onto the board, next to your chain, or tap it to place it there.": "มอนสเตอร์ทำเฟืองหล่น! ลากจากถาดไปวางบนกระดานให้ต่อกับโซ่ หรือแตะเพื่อให้วางให้", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.": "เป็นทางเดียวที่จะได้เฟืองเพิ่ม มอนสเตอร์จะทำหล่นลงถาดใต้กระดาน และบอสทุกตัวจะทำเฟืองเลเวล 2 หล่นเมื่อพลังเหลือครึ่งหนึ่ง บางตัวเป็นเฟืองพิเศษ ลากไปวางบนกระดานหรือแตะก็ได้",
   "Frozen": "แข็งตัว", "The main gear is frozen. Use Lightning to thaw it.": "เฟืองหลักถูกแช่แข็ง ใช้สายฟ้าเพื่อละลาย", "Risky deal": "ข้อตกลงเสี่ยง",
-  "Rush wave": "เวฟบุกเร็ว", "The Train button fills up as your army grows. When it's full, tap it to train. Training costs soldiers, and the game won't let it lose you the wave.": "ปุ่มฝึกจะเติมขึ้นเมื่อกองทัพโตขึ้น เมื่อเต็มแล้วให้กดเพื่อฝึก การฝึกใช้ทหาร และเกมจะไม่ปล่อยให้มันทำให้คุณแพ้เวฟ", "Gear upgrade": "อัปเกรดเฟือง", "At the special gear limit, levels up one of your special gears instead": "เมื่อเฟืองพิเศษครบจำนวนแล้ว จะอัปเลเวลเฟืองพิเศษของคุณหนึ่งตัวแทน",
+  "Rush wave": "เวฟบุกเร็ว", "Install the app": "ติดตั้งแอป", "To install Gear Fight! on your iPhone or iPad, tap the Share button in Safari, then \"Add to Home Screen\".": "ติดตั้ง Gear Fight! บน iPhone หรือ iPad: กดปุ่มแชร์ใน Safari แล้วเลือก \"เพิ่มไปยังหน้าจอโฮม\"", "Backup text": "ข้อความสำรองข้อมูล", "Catch the treasure goblin": "จับก็อบลินสมบัติ", "Gears waiting to be placed": "เฟืองที่รอวาง", "Pause": "หยุดชั่วคราว", "Turn sound on": "เปิดเสียง", "Turn sound off": "ปิดเสียง", "Game speed: double": "ความเร็วเกม: สองเท่า", "Game speed: normal": "ความเร็วเกม: ปกติ", "The Train button fills up as your army grows. When it's full, tap it to train. Training costs soldiers, and the game won't let it lose you the wave.": "ปุ่มฝึกจะเติมขึ้นเมื่อกองทัพโตขึ้น เมื่อเต็มแล้วให้กดเพื่อฝึก การฝึกใช้ทหาร และเกมจะไม่ปล่อยให้มันทำให้คุณแพ้เวฟ", "Gear upgrade": "อัปเกรดเฟือง", "At the special gear limit, levels up one of your special gears instead": "เมื่อเฟืองพิเศษครบจำนวนแล้ว จะอัปเลเวลเฟืองพิเศษของคุณหนึ่งตัวแทน",
   "You've reached the special gear limit, so rewards now offer gear upgrades instead of new gears. Fusing two special gears into one also frees a slot for a new one.": "เฟืองพิเศษครบจำนวนแล้ว รางวัลจะเสนออัปเกรดเฟืองแทนเฟืองใหม่ การหลอมเฟืองพิเศษสองตัวเป็นหนึ่งก็ช่วยเปิดช่องให้เฟืองใหม่ได้", "Meteor gear": "เฟืองอุกกาบาต", "Tempest gear": "เฟืองพายุใหญ่", "Fortress gear": "เฟืองป้อมปราการ", "Reactor gear": "เฟืองปฏิกรณ์", "Super fusion": "หลอมรวมขั้นสุด",
   "Meteor gear!": "เฟืองอุกกาบาต!", "Tempest gear!": "เฟืองพายุใหญ่!", "Fortress gear!": "เฟืองป้อมปราการ!", "Reactor gear!": "เฟืองปฏิกรณ์!",
   "Super fusion of a Cannon and a Comet. Blasts 10 enemies, more the farther it is from the main gear": "หลอมรวมขั้นสุดจากเฟืองปืนใหญ่และเฟืองดาวหาง ระเบิดศัตรู 10 ตัว ยิ่งไกลจากเฟืองหลักยิ่งแรง",
@@ -232,6 +232,7 @@ const TH_PATTERNS = [
   [/^Upgrade: (.+)$/, (m) => `อัปเกรด: ${T(m[1])}`],
   [/^Level (\d+) → (\d+)$/, (m) => `เลเวล ${m[1]} → ${m[2]}`],
   [/^(.+ gear): level (\d+)!$/, (m) => `${T(m[1])}: เลเวล ${m[2]}!`],
+  [/^Open chest (\d+)$/, (m) => `เปิดหีบ ${m[1]}`],
   [/^Train (.+): (\d+)$/i, (m) => `ฝึก${T(m[1])}: ${m[2]}`],
   [/^Train ([^:]+?)(!?)$/i, (m) => `ฝึก${T(m[1])}${m[2]}`],
   [/^Scrapped: \+(\d+)$/i, (m) => `แยกแล้ว: +${m[1]}`],
@@ -341,13 +342,24 @@ function t(text) {
   return result;
 }
 
+// What a screen reader says for a button, translated like the text you see.
+function translateLabel(el) {
+  const label = el.getAttribute("aria-label");
+  if (!label) return;
+  const next = t(label);
+  if (next !== label) el.setAttribute("aria-label", next);
+}
+
 function translateNode(node) {
   if (node.nodeType === Node.TEXT_NODE) {
     const next = t(node.nodeValue);
     if (next !== node.nodeValue) node.nodeValue = next;
     return;
   }
-  if (node.nodeType !== Node.ELEMENT_NODE || node.tagName === "TEXTAREA") return;
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  translateLabel(node);
+  // A text box holds what the player typed or a save code: only its label is translated.
+  if (node.tagName === "TEXTAREA") return;
   for (const child of node.childNodes) translateNode(child);
 }
 
@@ -360,9 +372,10 @@ function installTranslation(root) {
   new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === "characterData") translateNode(record.target);
+      else if (record.type === "attributes") translateLabel(record.target);
       else for (const node of record.addedNodes) translateNode(node);
     }
-  }).observe(root, { subtree: true, childList: true, characterData: true });
+  }).observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["aria-label"] });
   const proto = CanvasRenderingContext2D.prototype;
   const fill = proto.fillText;
   const stroke = proto.strokeText;
