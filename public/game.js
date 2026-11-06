@@ -53,6 +53,8 @@ const STRIKE_OUTPUT_SECONDS = 0.5; // a strike is worth this much of the machine
 const VICTORY_MS = 900; // the armies react to a win before the reward choice appears
 const HIT_STOP_SECONDS = 0.07; // a tiny freeze that gives big hits weight
 const HIT_NUMBER_SECONDS = 0.9;
+const FIGHT_HIT_SECONDS = 0.5; // each side's losses show as one number this often
+const FIGHT_BIG_HIT = 0.08; // a loss this big a share of an army shows at once
 const HIT_NUMBER_RISE = 18; // pixels per second
 const HIT_NUMBER_GAP = 68; // pixels from the front line, clear of the fighter
 const HIT_NUMBER_BOSS_GAP = 98; // bosses are wider
@@ -820,6 +822,7 @@ let hitStop = 0;
 let winAt = 0; // when the current win happened, for the armies' reactions
 let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
 let rewardTimer = 0;
+let fightCount = null; // the numbers above the armies, as a fight; see updateFightCount()
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
@@ -2089,7 +2092,6 @@ function strikeEnemy() {
   hitStop = HIT_STOP_SECONDS;
   screenShake = Math.max(screenShake, 3);
   spawnFaller("enemy");
-  spawnHitNumber("enemy", (amount * (1 - WIN_RATIO)) / WIN_RATIO, "#ffe14d");
   for (let i = 0; i < 10; i++) {
     spawnParticle({
       x,
@@ -2883,6 +2885,7 @@ function startWave() {
   enemyPower = waveStartEnemy(wave) * (wavePace ? wavePace.enemy : 1) * (activeDeal?.enemy || 1) * (activePath?.enemy || 1);
   playerPower = enemyPower * (waveLead + nextWaveBonus - runLevel().lead);
   nextWaveBonus = 0;
+  fightCount = null;
   discover(`enemy:${enemyRank().look}`);
   if (plan.boss) {
     const hp = bossMaxHp(wave);
@@ -4257,6 +4260,7 @@ function loadRunSave() {
 }
 
 function restoreRun(data) {
+  fightCount = null;
   currentWorld = data.world;
   currentEvent = WEEKLY_EVENTS.find((e) => e.id === data.event) || null;
   runEventWeek = data.eventWeek;
@@ -7517,9 +7521,10 @@ function drawBattle() {
   const playerX = Math.max(x0 + 12, markerX - 20) - shove.player * 8;
   const enemyX = Math.min(x1 - 12, markerX + 20) + shove.enemy * 8 + fleeing;
   const moodFor = (ahead, hit) => (hit > 0.3 ? "wince" : ahead > 0.58 ? "happy" : ahead < 0.42 ? "scared" : "neutral");
-  drawCrowd(ctx, playerX, x0, -1, CROWD_FIRST_GAP, playerLook, playerPower / armyStrength(), groundY, won);
-  if (boss) drawCrowd(ctx, Math.min(x1 - 22, markerX + 32), x1, 1, CROWD_BOSS_GAP, enemyRank().look, enemyPower / enemyRank().strength, groundY, false);
-  else drawCrowd(ctx, enemyX, x1, 1, CROWD_FIRST_GAP, enemyLook, enemyPower / enemyRank().strength, groundY, false);
+  const fight = updateFightCount();
+  drawCrowd(ctx, playerX, x0, -1, CROWD_FIRST_GAP, playerLook, fight.player / armyStrength(), groundY, won);
+  if (boss) drawCrowd(ctx, Math.min(x1 - 22, markerX + 32), x1, 1, CROWD_BOSS_GAP, enemyRank().look, fight.enemy / enemyRank().strength, groundY, false);
+  else drawCrowd(ctx, enemyX, x1, 1, CROWD_FIRST_GAP, enemyLook, fight.enemy / enemyRank().strength, groundY, false);
   // Behind the two fighters, so the ones still fighting are always in plain view.
   for (const f of fallers) {
     ctx.save();
@@ -7579,11 +7584,11 @@ function drawBattle() {
   // Counted in soldiers of each army's rank, so numbers stay small as ranks rise.
   // During a boss fight the enemy's number sits over the boss, below its health bar.
   const minCountY = boss ? 26 : 12;
-  // Both numbers are strength in the same unit, the one the bar measures, so
-  // the bigger number is always the side that is winning.
-  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(playerPower));
-  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(enemyPower));
-  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(enemyPower));
+  // Who is still standing on each side, in the same unit, so the bigger
+  // number is always the side that is winning.
+  drawArmyCount(ctx, playerX, Math.max(minCountY, fighterTop(playerLook, groundY) - 9), Math.round(fight.player));
+  if (boss) drawArmyCount(ctx, Math.min(x1 - 22, markerX + 32), Math.max(minCountY, battleCssH * 0.75 - 62), Math.round(fight.enemy));
+  else if (!won) drawArmyCount(ctx, enemyX, Math.max(minCountY, fighterTop(enemyLook, groundY) - 9), Math.round(fight.enemy));
   ctx.font = "800 12px system-ui, sans-serif";
   ctx.fillStyle = "#ffcc33";
   ctx.textBaseline = "alphabetic";
@@ -7677,10 +7682,43 @@ function frontLineFx() {
 
 // Only the big moments get a number, counted the way the army totals are. Hits
 // that land close together add up into one number, so they never pile up.
+// The numbers above the armies, shown as a fight: who is still standing.
+// Whenever the bar moves one way, the other side's number drops, so both
+// always match the bar exactly. Arriving soldiers, Lightning and bombs are
+// seen knocking the enemy down; enemy reinforcements knock the army down.
+// The rules underneath (playerPower and enemyPower) are unchanged.
+function updateFightCount() {
+  const total = playerPower + enemyPower;
+  const share = total > 0 ? playerPower / total : 0.5;
+  const now = performance.now();
+  if (!fightCount) fightCount = { player: playerPower, enemy: enemyPower, share, lost: { player: 0, enemy: 0 }, shownAt: now };
+  const fight = fightCount;
+  if (share > fight.share && share < 1) {
+    const enemy = (fight.player * (1 - share)) / share;
+    fight.lost.enemy += fight.enemy - enemy;
+    fight.enemy = enemy;
+  } else if (share < fight.share && share > 0) {
+    const player = (fight.enemy * share) / (1 - share);
+    fight.lost.player += fight.player - player;
+    fight.player = player;
+  }
+  fight.share = share;
+  const big = (side) => fight.lost[side] >= Math.max(1, fight[side] * FIGHT_BIG_HIT);
+  if (now - fight.shownAt >= FIGHT_HIT_SECONDS * 1000 || big("enemy") || big("player")) {
+    for (const side of ["enemy", "player"]) {
+      if (fight.lost[side] < 1) continue;
+      spawnHitNumber(side, fight.lost[side], side === "enemy" ? "#ffe14d" : "#ff8a7a");
+      fight.lost[side] = 0;
+    }
+    fight.shownAt = now;
+  }
+  return fight;
+}
+
 function spawnHitNumber(side, amount, color) {
   const number = hitNumbers.find((n) => n.side === side);
   if (number) {
-    number.amount += amount;
+    number.amount = amount;
     number.color = color;
     number.age = 0;
     number.rise = 0;
@@ -7735,8 +7773,6 @@ function spawnFrontLineHit(marcher) {
       color: isEnemy ? "#ff9a85" : i % 2 ? "#ffcc33" : "#ffffff",
     });
   }
-  if (marcher.side === "bomb") spawnHitNumber("enemy", marcher.value, "#ff8a3d");
-  else if (marcher.charge) spawnHitNumber("player", marcher.value, "#ffcc33");
   if (!isEnemy) maybeDropGear();
 }
 
@@ -8133,7 +8169,7 @@ function drawFx() {
   const gap = boss ? HIT_NUMBER_BOSS_GAP : HIT_NUMBER_GAP;
   for (const number of hitNumbers) {
     const value = Math.max(1, Math.round(number.amount));
-    const label = `${number.side === "enemy" ? "-" : "+"}${shortNumber(value)}`;
+    const label = `-${shortNumber(value)}`;
     const wanted = front.x + (number.side === "enemy" ? gap : -gap);
     const x = Math.max(laneRect.x + HIT_NUMBER_MARGIN, Math.min(laneRect.x + laneRect.w - HIT_NUMBER_MARGIN, wanted));
     const y = laneRect.y + laneRect.h * 0.34 - number.rise;
