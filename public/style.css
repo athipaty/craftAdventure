@@ -802,6 +802,16 @@ html.less-motion .chest-card.shaking {
   animation: banner-pop 1.3s ease forwards;
 }
 
+/* A rank-up: gold, glowing, and a little bounce. */
+#wave-banner.rankup {
+  background: #4a3208;
+  border-color: #ffe14d;
+  color: #fff3a8;
+  font-size: 2rem;
+  box-shadow: 0 0 26px 8px rgba(255, 210, 63, 0.6);
+  animation: banner-boss 1.9s ease forwards;
+}
+
 /* A boss arriving: red, bigger, and a little shake. */
 #wave-banner.boss {
   background: #5a0d06;
