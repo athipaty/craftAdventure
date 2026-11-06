@@ -481,6 +481,10 @@ const ICE_PALETTE = { light: "#e6fbff", mid: "#7fd3f0", dark: "#1f6f8f", recess:
 const STORM_PALETTE = { light: "#e2c8ff", mid: "#8a4fe0", dark: "#3a1478", recess: "#6c38b8", hub: "#fff3a8" };
 const ENGINE_PALETTE = { light: "#c6e8b0", mid: "#4f7a3a", dark: "#1f3414", recess: "#3d6230", hub: "#e2f4d6" };
 const BLIZZARD_PALETTE = { light: "#ffffff", mid: "#a9c8ff", dark: "#2f4f9a", recess: "#7fa2e6", hub: "#ffffff" };
+const METEOR_PALETTE = { light: "#ffc2a0", mid: "#c8321a", dark: "#4a0a04", recess: "#9a2410", hub: "#ffe14d" };
+const TEMPEST_PALETTE = { light: "#c9f2ff", mid: "#3a8fb0", dark: "#102e48", recess: "#2c6f90", hub: "#e9d4ff" };
+const FORTRESS_PALETTE = { light: "#e4dccb", mid: "#8a7f68", dark: "#3a3324", recess: "#6e6450", hub: "#ffd23f" };
+const REACTOR_PALETTE = { light: "#e2ff9a", mid: "#6fc21f", dark: "#22470a", recess: "#559a18", hub: "#fff3a8" };
 // Two different gears of the same level make a new one. Listed either way round.
 const FUSIONS = [
   { parts: ["big", "bomb"], gear: "cannon", name: "Cannon gear", text: "Made from a Big gear and a Bomb gear. Fills half as fast, then sends 6 soldiers and blasts 3 enemies" },
@@ -490,6 +494,11 @@ const FUSIONS = [
   { parts: ["spark", "bomb"], gear: "storm", name: "Storm gear", text: "Made from a Spark gear and a Bomb gear. Fills half as fast, then blasts 3 enemies and charges your next Lightning" },
   { parts: ["oil", "booster"], gear: "engine", name: "Engine gear", text: "Made from an Oil gear and a Booster gear. Boosts the gears touching it, and none of them can rust" },
   { parts: ["ice", "big"], gear: "blizzard", name: "Blizzard gear", text: "Made from an Ice gear and a Big gear. Fills half as fast, then sends 5 soldiers and slows the enemy's growth" },
+  // Super fusions: two fused gears of the same level.
+  { parts: ["cannon", "comet"], gear: "meteor", name: "Meteor gear", text: "Super fusion of a Cannon and a Comet. Blasts 10 enemies, more the farther it is from the main gear" },
+  { parts: ["storm", "blizzard"], gear: "tempest", name: "Tempest gear", text: "Super fusion of a Storm and a Blizzard. Blasts 6 enemies, charges your next Lightning and slows the enemy" },
+  { parts: ["hermit", "engine"], gear: "fortress", name: "Fortress gear", text: "Super fusion of a Hermit and an Engine. Sends 18 soldiers, and neither it nor the gears touching it can rust" },
+  { parts: ["dynamo", "storm"], gear: "reactor", name: "Reactor gear", text: "Super fusion of a Dynamo and a Storm. Sends 10 soldiers and blasts 2 enemies, boosts the gears touching it, and charges your next Lightning" },
 ];
 const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
@@ -512,6 +521,11 @@ const GEAR_TYPES = {
   storm: { hits: 8, enemies: 3, blast: true, spark: true, element: "storm", palette: STORM_PALETTE, mark: "STM" },
   engine: { hits: 0, boosts: true, oil: true, palette: ENGINE_PALETTE, mark: "ENG" },
   blizzard: { hits: 8, soldiers: 5, heavy: true, chill: true, element: "ice", palette: BLIZZARD_PALETTE, mark: "BLZ" },
+  // Super gears, made by fusing two fused gears. They glow gold.
+  meteor: { hits: 8, enemies: 10, heavy: true, blast: true, far: true, element: "fire", super: true, palette: METEOR_PALETTE, mark: "MET" },
+  tempest: { hits: 8, enemies: 6, blast: true, spark: true, chill: true, element: "storm", super: true, palette: TEMPEST_PALETTE, mark: "TMP" },
+  fortress: { hits: 8, soldiers: 18, heavy: true, oil: true, super: true, palette: FORTRESS_PALETTE, mark: "FRT" },
+  reactor: { hits: 8, soldiers: 10, enemies: 2, heavy: true, blast: true, boosts: true, spark: true, element: "storm", super: true, palette: REACTOR_PALETTE, mark: "RCT" },
 };
 // Fire, ice and storm gears react when two different ones touch: each time
 // one of them fills, it sets off the reaction with each neighbour of another
@@ -752,6 +766,7 @@ const TIPS = [
   { id: "oil", text: "Oil gear! It never rusts, and keeps the gears touching it from rusting too. Put it among your best gears.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].oil) },
   { id: "ice", text: "Ice gear! Each time it fills, the enemy grows at half speed for a few seconds.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].chill) },
   { id: "elements", text: "Elements! Fire, ice and storm gears react when two different ones touch. Fire + ice makes steam (the enemy stops growing), fire + storm makes plasma (an extra blast), ice + storm makes a shatter (a free lightning hit).", when: () => grid.some((row, r) => row.some((cell, c) => reactionBetween(cell, grid[r][c + 1]) || reactionBetween(cell, grid[r + 1]?.[c]))) },
+  { id: "superFusion", urgent: true, text: "Super fusion! Two of your fused gears can fuse again into a golden super gear. Drag one onto the other when they're the same level.", when: () => { const gears = grid.flat().filter((cell) => cell && !cell.driver && FUSIONS.some((f) => f.gear === cell.type)); return gears.some((a) => gears.some((b) => GEAR_TYPES[fusionOf(a, b)?.gear]?.super)); } },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -1824,7 +1839,11 @@ function fuseOnto(from, toRow, toCol) {
   discover(`gear:${fusion.gear}`);
   recordStat("fusions");
   spawnRustBurst(toRow, toCol, "#d08cff", "#f3e0ff");
-  showToast(`Fusion: ${fusion.name}!`);
+  if (GEAR_TYPES[fusion.gear].super) {
+    showWaveBanner(`${fusion.name}!`, false, true);
+    spawnConfetti();
+    playRankUpSound();
+  } else showToast(`Fusion: ${fusion.name}!`);
   playOverdriveSound();
   buzz(60);
 }
@@ -5085,6 +5104,19 @@ function drawGearCell(ctx, cx, cy, size, cell) {
   const r = size * 0.48 * flashBoost;
   const spec = GEAR_TYPES[cell.type];
   const palette = cell.rusted ? RUST_PALETTE : spec.palette;
+  if (spec.super && !cell.rusted) {
+    const pulse = 0.75 + Math.sin(performance.now() / 300) * 0.25;
+    const glow = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 1.25);
+    glow.addColorStop(0, `rgba(255, 215, 80, ${0.9 * pulse})`);
+    glow.addColorStop(1, "rgba(255, 215, 80, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - r * 1.3, cy - r * 1.3, r * 2.6, r * 2.6);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.08, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 225, 77, ${pulse})`;
+    ctx.lineWidth = Math.max(1.5, r * 0.09);
+    ctx.stroke();
+  }
 
   // The gear body visibly turns one tooth per hit. It never resets, so it
   // keeps turning rather than snapping back.
@@ -9318,6 +9350,7 @@ function guideSections() {
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
       ["Elements", "Bomb gears are fire, Ice gears are ice and Spark gears are storm, and so are their fusions. Put two different ones side by side to make them react: fire + ice makes steam, fire + storm makes plasma, ice + storm makes a shatter.", emojiIcon("\u2668\uFE0F")],
+      ["Super fusion", "Fuse two fused gears of the same level for a golden super gear: Cannon + Comet makes a Meteor, Storm + Blizzard a Tempest, Hermit + Engine a Fortress, Dynamo + Storm a Reactor.", gearIcon("meteor")],
       ["Gear fusion", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.", gearIcon("cannon")],
       ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
