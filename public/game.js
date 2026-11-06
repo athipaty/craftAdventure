@@ -149,8 +149,10 @@ const CHEST_PRIZES = [
 ];
 const CHEST_COUNT = 3;
 const CHEST_FULL_TRAY_COINS = 20; // paid for a gear when the tray has no room
-const CHEST_OPEN_MS = 450; // the chosen chest shakes before it opens
-const CHEST_REVEAL_MS = 450; // then the others open, to show what was missed
+const CHEST_OPEN_MS = 750; // the chosen chest rattles, harder and harder, before it opens
+const CHEST_LID_MS = 380; // how long a lid takes to fly open
+const CHEST_REVEAL_MS = 650; // then the others open one by one, to show what was missed
+const CHEST_ART_SCALE = 2; // chests are drawn big on their cards
 // A route to choose for the next wave: the risk is paid during it, the reward
 // when it's won, unless it says otherwise.
 const PATH_FIRST_WAVE = 3;
@@ -826,6 +828,9 @@ let hotStreak = 0; // fast waves in a row, up to STREAK.maxLevel
 let chestPrizes = null; // ids from CHEST_PRIZES while the chests are open
 let chestPicked = null; // the index chosen, or null until then
 let chestTimer = null;
+let chestCanvases = []; // each card's chest, redrawn every frame while the chests are open
+let chestOpenAt = []; // when each lid starts to open: null while shut, 0 if it was open already
+let chestFrame = null;
 let lastPathWave = 0; // the wave the last route was chosen for
 let offeredPaths = null; // ids from PATHS while a choice is open
 let nextPath = null; // the route chosen for the next wave
@@ -2089,6 +2094,15 @@ function updateWaveEvent(dt) {
 
 function updateBoss(dt) {
   if (!boss) return;
+  // The boss drops in from the sky and lands with a crash.
+  if ((boss.enter ?? 1) < 1) {
+    boss.enter = Math.min(1, boss.enter + dt / BOSS_DROP_SECONDS);
+    if (boss.enter >= 1) {
+      screenShake = Math.max(screenShake, BOSS_LAND_SHAKE);
+      buzz(120);
+      playBossSound();
+    }
+  }
   boss.hitFlash = Math.max(0, boss.hitFlash - dt / 0.2);
   boss.attackIn -= dt;
   if (boss.attackIn <= 0) {
@@ -2777,8 +2791,8 @@ function startWave() {
     const hp = bossMaxHp(wave);
     const kind = bossKind(plan.boss);
     discover(`boss:${kind.id}`);
-    boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0 };
-    playBossSound();
+    boss = { kind, hp, maxHp: hp, attackIn: BOSS_FIRST_ATTACK_SECONDS, hitFlash: 0, reinforcePerSec: bossReinforcePerSec(enemyPower), shield: 0, enter: 0 };
+    playBossWarningSound();
   } else {
     setEnemyType(plan.enemy);
     if (plan.enemy !== "goblin") discover(`enemy:${plan.enemy}`);
@@ -2896,49 +2910,198 @@ function chestPrizeLabel(id) {
   return prize.coins ? `+${prize.coins} coins` : `Level ${prize.level} gear`;
 }
 
-function drawChest(ctx, open, rare) {
-  const size = GUIDE_ICON_SIZE;
-  const wood = rare ? "#a8324a" : "#9a5f2c";
-  const dark = rare ? "#5c1426" : "#5a3414";
-  const band = "#ffcc33";
-  const left = size * 0.12;
-  const width = size * 0.76;
-  const bodyTop = size * 0.5;
-  const bodyHeight = size * 0.34;
-  if (open) {
-    const glow = ctx.createRadialGradient(size / 2, bodyTop, 1, size / 2, bodyTop, size * 0.42);
-    glow.addColorStop(0, "rgba(255, 236, 150, 0.95)");
+// A treasure chest, 48 units square. lid: 0 shut, 1 thrown open. Once open,
+// light pours out and the prize shows inside: a pile of coins, or a gear.
+function drawChest(ctx, open, rare, prizeId = null, lid = open ? 1 : 0, time = 0) {
+  const wood = rare ? "#8e2f6e" : "#9a5f2c";
+  const woodDark = rare ? "#4f1340" : "#5a3414";
+  const woodLight = rare ? "#c0569a" : "#c4834a";
+  const metal = rare ? "#ffe28a" : "#ffcc33";
+  const left = 7;
+  const right = 41;
+  const top = 25;
+  const bottom = 43;
+  const width = right - left;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Light pouring out of an open chest, slowly turning.
+  if (lid > 0.4) {
+    const shine = Math.min(1, (lid - 0.4) / 0.6);
+    const glow = ctx.createRadialGradient(24, 24, 1, 24, 24, 23);
+    glow.addColorStop(0, `rgba(255, 236, 150, ${0.95 * shine})`);
     glow.addColorStop(1, "rgba(255, 220, 110, 0)");
     ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, size, size);
-    // The lid, thrown back.
-    ctx.beginPath();
-    ctx.rect(left, bodyTop - size * 0.3, width, size * 0.14);
-    inked(ctx, dark);
+    ctx.fillRect(0, 0, 48, 48);
+    ctx.save();
+    ctx.translate(24, 24);
+    ctx.rotate(time * 0.6);
+    ctx.globalAlpha = shine * (rare ? 0.85 : 0.6);
+    for (let i = 0; i < 10; i++) {
+      ctx.rotate(Math.PI / 5);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-3.2, -26);
+      ctx.lineTo(3.2, -26);
+      ctx.closePath();
+      ctx.fillStyle = rare && i % 2 ? "#ff9ad5" : "#fff1a8";
+      ctx.fill();
+    }
+    ctx.restore();
   }
+
+  // Shadow.
   ctx.beginPath();
-  ctx.rect(left, bodyTop, width, bodyHeight);
-  inked(ctx, wood);
-  if (!open) {
+  ctx.ellipse(24, 44, 18, 2.6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.fill();
+
+  // The open lid, seen from inside, behind the treasure.
+  if (lid > 0.5) {
+    const h = 13 * Math.min(1, (lid - 0.5) / 0.5);
     ctx.beginPath();
-    ctx.moveTo(left, bodyTop);
-    ctx.quadraticCurveTo(size / 2, bodyTop - size * 0.34, left + width, bodyTop);
+    ctx.moveTo(left + 1, top);
+    ctx.lineTo(left + 2.5, top - h);
+    ctx.lineTo(right - 2.5, top - h);
+    ctx.lineTo(right - 1, top);
     ctx.closePath();
-    inked(ctx, wood);
+    inked(ctx, woodDark, 1.2);
+    if (h > 3) {
+      ctx.beginPath();
+      ctx.rect(left + 2.5, top - h - 1, width - 5, 2.2);
+      inked(ctx, metal, 0.8);
+    }
   }
-  for (const x of [left + width * 0.14, left + width * 0.86]) {
-    ctx.fillStyle = band;
-    ctx.fillRect(x - size * 0.025, open ? bodyTop : bodyTop - size * 0.13, size * 0.05, open ? bodyHeight : bodyHeight + size * 0.13);
-  }
-  if (!open) {
+
+  // What's inside, rising up as the lid opens.
+  if (lid > 0.3 && prizeId) {
+    const rise = Math.min(1, (lid - 0.3) / 0.7);
+    const prize = chestPrize(prizeId);
+    ctx.save();
+    ctx.translate(0, (1 - rise) * 8);
+    if (prize.level) {
+      ctx.save();
+      ctx.translate(24, top - 4);
+      ctx.rotate(time * 1.5);
+      traceToothedRim(ctx, 8.5, 6.6, 10);
+      inked(ctx, prize.level >= 3 ? "#6fb1ff" : "#e0a92e", 1.1);
+      inkedCircle(ctx, 0, 0, 3, prize.level >= 3 ? "#d8ecff" : "#f6e6ae", 0.9);
+      ctx.restore();
+      ctx.font = "900 6px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = OUTLINE;
+      ctx.fillText(String(prize.level), 24, top - 3.6);
+    } else {
+      const piles = {
+        coins: [[18, 0], [24, 0], [30, 0], [21, -3], [27, -3]],
+        moreCoins: [[14, 0], [19, 0], [24, 0], [29, 0], [34, 0], [16.5, -3], [21.5, -3], [26.5, -3], [31.5, -3], [19, -6], [24, -6], [29, -6]],
+        jackpot: [[12, 0], [17, 0], [22, 0], [27, 0], [32, 0], [36, 0], [14.5, -3], [19.5, -3], [24.5, -3], [29.5, -3], [34, -3], [17, -6], [22, -6], [27, -6], [32, -6], [19.5, -9], [24.5, -9], [29.5, -9], [24, -12]],
+      }[prizeId] || [[24, 0]];
+      for (const [cx, cy] of piles) {
+        ctx.beginPath();
+        ctx.ellipse(cx, top - 1 + cy, 3.2, 2, 0, 0, Math.PI * 2);
+        inked(ctx, "#ffd23f", 0.8);
+        ctx.beginPath();
+        ctx.ellipse(cx - 0.8, top - 1.6 + cy, 1.1, 0.6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff7c9";
+        ctx.fill();
+      }
+      if (prizeId === "jackpot") {
+        for (const [gx, gy, color] of [[15, -5, "#ff5a8a"], [33, -6, "#5ad1ff"], [24, -15, "#8bd65a"]]) {
+          ctx.beginPath();
+          ctx.moveTo(gx, top - 1 + gy - 2.6);
+          ctx.lineTo(gx + 2, top - 1 + gy);
+          ctx.lineTo(gx, top - 1 + gy + 2.6);
+          ctx.lineTo(gx - 2, top - 1 + gy);
+          ctx.closePath();
+          inked(ctx, color, 0.8);
+        }
+      }
+    }
+    ctx.restore();
+    // The dark mouth of the chest, behind its front edge.
     ctx.beginPath();
-    ctx.rect(size / 2 - size * 0.07, bodyTop - size * 0.05, size * 0.14, size * 0.14);
-    inked(ctx, band);
+    ctx.rect(left + 1.5, top - 1.5, width - 3, 3);
+    ctx.fillStyle = "#2a1405";
+    ctx.fill();
   }
+
+  // The body: planks, a highlight, gold bands and rivets.
+  ctx.beginPath();
+  ctx.roundRect(left, top, width, bottom - top, 2);
+  inked(ctx, wood, 1.4);
+  ctx.strokeStyle = woodDark;
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  for (const y of [31, 37]) {
+    ctx.moveTo(left + 1.2, y);
+    ctx.lineTo(right - 1.2, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = woodLight;
+  ctx.beginPath();
+  ctx.moveTo(left + 2, top + 1.6);
+  ctx.lineTo(right - 2, top + 1.6);
+  ctx.stroke();
+  for (const x of [12.5, 33]) {
+    ctx.beginPath();
+    ctx.rect(x, top, 2.6, bottom - top);
+    inked(ctx, metal, 0.8);
+    ctx.fillStyle = woodDark;
+    for (const y of [top + 3, bottom - 3]) {
+      ctx.beginPath();
+      ctx.arc(x + 1.3, y, 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // The shut lid jumps a little as it starts to open, then flips back.
+  if (lid < 0.5) {
+    const lift = lid * 2;
+    const k = 1 - lift * 0.5;
+    ctx.save();
+    ctx.translate(0, -lift * 6);
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(left, top - 4);
+    ctx.quadraticCurveTo(24, top - 4 - 14 * k, right, top - 4);
+    ctx.lineTo(right, top);
+    ctx.closePath();
+    inked(ctx, wood, 1.4);
+    ctx.beginPath();
+    ctx.moveTo(left + 3, top - 5);
+    ctx.quadraticCurveTo(24, top - 4 - 11 * k, right - 3, top - 5);
+    ctx.strokeStyle = woodLight;
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+    for (const x of [12.5, 33]) {
+      ctx.beginPath();
+      ctx.rect(x, top - 4 - 5.5 * k, 2.6, 4 + 5.5 * k);
+      inked(ctx, metal, 0.8);
+    }
+    ctx.beginPath();
+    ctx.rect(left - 0.5, top - 1.6, width + 1, 2.6);
+    inked(ctx, metal, 0.9);
+    if (lid === 0) {
+      // Padlock with a keyhole.
+      ctx.beginPath();
+      ctx.roundRect(20.5, top - 3, 7, 8, 1.5);
+      inked(ctx, metal, 1);
+      inkedCircle(ctx, 24, top + 0.4, 1, "#2a1405", 0.5);
+      ctx.beginPath();
+      ctx.rect(23.5, top + 0.8, 1, 2.2);
+      ctx.fillStyle = "#2a1405";
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
-function chestIcon(open, rare) {
-  return artIcon((ctx) => drawChest(ctx, open, rare));
+function chestIcon(open, rare, prizeId = null) {
+  return artIcon((ctx) => drawChest(ctx, open, rare, prizeId));
 }
 
 function showChests(prizes, picked = null, delay = VICTORY_MS) {
@@ -2946,6 +3109,8 @@ function showChests(prizes, picked = null, delay = VICTORY_MS) {
   drag = null;
   chestPrizes = prizes;
   chestPicked = picked;
+  chestOpenAt = [];
+  chestCanvases = [];
   rewardOpenedAt = performance.now() + delay;
   renderChests(picked !== null);
   clearTimeout(chestTimer);
@@ -2953,6 +3118,65 @@ function showChests(prizes, picked = null, delay = VICTORY_MS) {
     if (gameState === "chest") document.getElementById("chest-screen").classList.remove("hidden");
   }, delay);
   saveRun();
+}
+
+function chestCanvas() {
+  const canvas = document.createElement("canvas");
+  canvas.className = "art-icon";
+  canvas.width = canvas.height = Math.round(GUIDE_ICON_SIZE * canvasScale() * CHEST_ART_SCALE);
+  return canvas;
+}
+
+function paintChest(canvas, id, lid, time) {
+  const ctx = canvas.getContext("2d");
+  const scale = canvas.width / GUIDE_ICON_SIZE;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.clearRect(0, 0, GUIDE_ICON_SIZE, GUIDE_ICON_SIZE);
+  drawChest(ctx, lid > 0, lid > 0 && Boolean(chestPrize(id).rare), id, lid, time);
+}
+
+function animateChests() {
+  chestFrame = null;
+  if (gameState !== "chest" || !chestPrizes) return;
+  const now = performance.now();
+  chestPrizes.forEach((id, i) => {
+    const canvas = chestCanvases[i];
+    if (!canvas) return;
+    const at = chestOpenAt[i];
+    const lid = at === null || at === undefined ? 0 : Math.min(1, Math.max(0, (now - at) / CHEST_LID_MS));
+    paintChest(canvas, id, lid, now / 1000);
+  });
+  chestFrame = requestAnimationFrame(animateChests);
+}
+
+function startChestAnimation() {
+  if (!chestFrame) chestFrame = requestAnimationFrame(animateChests);
+}
+
+// Gold coins, or sparks for a gear, bursting out of the chosen chest.
+function spawnChestBurst(card, prize) {
+  if (!card || save.lessMotion || REDUCED_MOTION) return;
+  const frame = document.getElementById("app-frame").getBoundingClientRect();
+  const box = card.getBoundingClientRect();
+  const x = box.left + box.width / 2 - frame.left;
+  const y = box.top + box.height * 0.4 - frame.top;
+  const count = prize.level ? 14 : Math.min(30, 8 + prize.coins / 3);
+  for (let i = 0; i < count; i++) {
+    const angle = -Math.PI / 2 + randomBetween(-1.1, 1.1);
+    const speed = randomBetween(160, 380);
+    spawnParticle({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: 620,
+      life: randomBetween(0.7, 1.2),
+      size: randomBetween(4, 7),
+      color: prize.level ? (i % 2 ? "#8fe7ff" : "#fff3c4") : i % 3 ? "#ffd23f" : "#fff7c9",
+      angle: randomBetween(0, Math.PI),
+      spin: randomBetween(-12, 12),
+    });
+  }
 }
 
 function renderChests(revealed) {
@@ -2975,12 +3199,20 @@ function renderChests(revealed) {
     button.setAttribute("aria-label", open ? chestPrizeLabel(id) : `Open chest ${i + 1}`);
     const label = document.createElement("span");
     label.textContent = open ? chestPrizeLabel(id) : "?";
-    button.append(chestIcon(open, open && Boolean(prize.rare)), label);
+    // Shown once that chest's lid is open.
+    if (open && chestOpenAt[i] > 0) label.style.animationDelay = `${Math.max(0, chestOpenAt[i] - performance.now()) + CHEST_LID_MS * 0.6}ms`;
+    if (!open) chestOpenAt[i] = null;
+    else if (chestOpenAt[i] === null || chestOpenAt[i] === undefined) chestOpenAt[i] = 0;
+    const canvas = chestCanvas();
+    chestCanvases[i] = canvas;
+    paintChest(canvas, id, chestOpenAt[i] === 0 ? 1 : 0, performance.now() / 1000);
+    button.append(canvas, label);
     button.addEventListener("click", () => {
       if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) pickChest(i);
     });
     list.append(button);
   });
+  startChestAnimation();
 }
 
 // Paid at once and saved, so closing the game mid-animation can't lose or repeat it.
@@ -3006,12 +3238,16 @@ function pickChest(index) {
   for (const other of document.querySelectorAll(".chest-card")) other.disabled = true;
   card?.classList.add("shaking");
   const quick = save.lessMotion || REDUCED_MOTION;
+  if (!quick) for (let i = 0; i < 3; i++) setTimeout(() => playChestRattleSound(i), i * 230);
   clearTimeout(chestTimer);
   chestTimer = setTimeout(() => {
     if (gameState !== "chest") return;
-    playLootSound();
-    if (prize.rare) spawnConfetti();
+    const now = performance.now();
+    chestOpenAt = chestPrizes.map((_, i) => (quick ? 0 : i === index ? now : now + CHEST_REVEAL_MS + [0, 1, 2].filter((j) => j !== index).indexOf(i) * 300));
     renderChests(true);
+    playChestOpenSound(Boolean(prize.rare));
+    spawnChestBurst(document.querySelector(`.chest-card[data-index="${index}"]`), prize);
+    if (prize.rare) spawnConfetti();
   }, quick ? 0 : CHEST_OPEN_MS);
   playClankSound();
 }
@@ -3771,7 +4007,7 @@ function beginWave() {
   treasureAt = activePath?.goblin ? GOBLIN_EARLIEST : planTreasureGoblin();
   if (boss) announce(BOSS_TAUNTS[boss.kind.id]);
   updateFeatureButtons();
-  showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : activePath && activePath.id !== "safe" ? `${activePath.name}!` : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`);
+  showWaveBanner(boss ? (boss.kind.final ? `${boss.kind.name}!` : "Boss wave!") : activePath && activePath.id !== "safe" ? `${activePath.name}!` : waveEvent ? `${waveEvent.name}!` : wavePace ? `${wavePace.name}!` : `Wave ${wave}!`, Boolean(boss));
   saveRun();
 }
 
@@ -4880,31 +5116,6 @@ function drawCartoonEyes(ctx, x, y, size, angry, mood = "neutral") {
   }
 }
 
-function drawCartoonMouth(ctx, x, y, mood) {
-  ctx.beginPath();
-  if (mood === "happy") {
-    ctx.arc(x, y - 1.2, 2.6, 0, Math.PI);
-    ctx.closePath();
-    inked(ctx, "#a8322a", 0.9);
-  } else if (mood === "scared") {
-    ctx.ellipse(x, y, 1.4, 1.9, 0, 0, Math.PI * 2);
-    inked(ctx, "#3a0d06", 0.8);
-  } else if (mood === "wince") {
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1;
-    ctx.moveTo(x - 2, y);
-    ctx.lineTo(x - 0.7, y - 1);
-    ctx.lineTo(x + 0.7, y);
-    ctx.lineTo(x + 2, y - 1);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1;
-    ctx.arc(x, y - 1, 2, 0.2, Math.PI - 0.2);
-    ctx.stroke();
-  }
-}
-
 // A chunky cartoon soldier standing on `feetY`, facing +1 (right) or -1 (left).
 // state: "idle" bounces, "walk" moves its legs, "fight" swings its weapon.
 // `seed` keeps a crowd from moving in step.
@@ -4931,121 +5142,216 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
     ctx.restore();
     return;
   }
+  drawKnight(ctx, colors, state, time, stride, swing, mood);
+  ctx.restore();
+}
+
+// A small gear, the army's badge on tabards and shields.
+function drawGearEmblem(ctx, x, y, r, fill) {
+  ctx.beginPath();
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2;
+    const rr = i % 4 < 2 ? r : r * 0.72;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+  inked(ctx, fill, 0.6);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.32, 0, Math.PI * 2);
+  ctx.fillStyle = OUTLINE;
+  ctx.fill();
+}
+
+// The player's soldiers: an upright little knight in a closed helmet, with a
+// tabard in the army's colour, a sword and a shield, nothing like the round
+// toothy monsters. Drawn facing right with its feet on y = 0.
+function drawKnight(ctx, colors, state, time, stride, swing, mood) {
+  const steel = colors.helmet;
+  const steelDark = mixColor(steel, "#000000", 0.4);
+  const headY = -21;
+
   if (colors.cape) {
     ctx.beginPath();
-    ctx.moveTo(-3, -15);
-    ctx.quadraticCurveTo(-11 - Math.abs(stride), -8, -8 - Math.abs(stride), -2);
+    ctx.moveTo(-3.5, -16);
+    ctx.quadraticCurveTo(-11 - Math.abs(stride), -9, -8.5 - Math.abs(stride), -1.5);
     ctx.lineTo(-1, -5);
     ctx.closePath();
     inked(ctx, colors.cape);
   }
 
-  // Boots.
+  // Armoured legs and boots.
   for (const side of [-1, 1]) {
+    const x = side * 2.3 + side * stride;
     ctx.beginPath();
-    ctx.ellipse(side * 2.6 + side * stride, -1.6, 2.8, 1.9, 0, 0, Math.PI * 2);
-    inked(ctx, colors.trim);
-  }
-
-  // Round body.
-  ctx.beginPath();
-  ctx.ellipse(0, -8, 5.8, 6, 0, 0, Math.PI * 2);
-  inked(ctx, colors.tunic);
-
-  // Weapon arm.
-  ctx.save();
-  ctx.translate(4.2, -9);
-  ctx.rotate(swing);
-  ctx.beginPath();
-  if (colors.horns) {
-    // A knobbly club.
-    ctx.moveTo(3, 1.2);
-    ctx.lineTo(4.4, -6);
-    ctx.quadraticCurveTo(7, -12, 3.4, -12.5);
-    ctx.quadraticCurveTo(0.4, -12, 2, -6);
-    ctx.lineTo(1.6, 1);
-  } else {
-    // A big toy sword.
-    ctx.moveTo(1.8, 0);
-    ctx.lineTo(1.4, -11);
-    ctx.lineTo(3.2, -14);
-    ctx.lineTo(5, -11);
-    ctx.lineTo(4.4, 0);
-  }
-  ctx.closePath();
-  inked(ctx, colors.blade);
-  if (!colors.horns) {
+    ctx.rect(x - 1.4, -6.5, 2.8, 4.5);
+    inked(ctx, steelDark, 1);
     ctx.beginPath();
-    ctx.rect(0.4, -1.5, 5.6, 2.2);
+    ctx.moveTo(x - 2, -2.8);
+    ctx.lineTo(x + 2.4, -2.8);
+    ctx.quadraticCurveTo(x + 3.8, -2.4, x + 3.6, 0);
+    ctx.lineTo(x - 2, 0);
+    ctx.closePath();
     inked(ctx, colors.trim, 1);
   }
-  inkedCircle(ctx, 3, 1, 2.3, colors.skin, 1.1);
-  ctx.restore();
 
-  // Big head.
-  const headY = -19;
-  if (colors.horns) {
-    // Pointed ears behind the head.
-    for (const side of [-1, 1]) {
+  // Broad steel chest, narrowing to the belt.
+  ctx.beginPath();
+  ctx.moveTo(-6.2, -16);
+  ctx.lineTo(6.2, -16);
+  ctx.lineTo(4.8, -5.5);
+  ctx.lineTo(-4.8, -5.5);
+  ctx.closePath();
+  inked(ctx, steel);
+
+  // Tabard in the army's colour, with the gear badge.
+  ctx.beginPath();
+  ctx.moveTo(-3.3, -15.6);
+  ctx.lineTo(3.3, -15.6);
+  ctx.lineTo(3.6, -3.6);
+  ctx.lineTo(0, -2.2);
+  ctx.lineTo(-3.6, -3.6);
+  ctx.closePath();
+  inked(ctx, colors.tunic, 1.1);
+  ctx.beginPath();
+  ctx.rect(-4.7, -7.6, 9.4, 1.8);
+  inked(ctx, colors.trim, 0.9);
+  drawGearEmblem(ctx, 0, -11.4, 2.1, colors.blade);
+
+  // Shoulder plates.
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * 5.6, -15, 3.1, 2.4, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    inked(ctx, steel, 1);
+  }
+
+  // Closed helmet with a visor slit.
+  ctx.beginPath();
+  ctx.moveTo(-5.8, headY + 5.5);
+  ctx.lineTo(-6.2, headY - 1);
+  ctx.quadraticCurveTo(-6.2, headY - 7, 0, headY - 7);
+  ctx.quadraticCurveTo(6.2, headY - 7, 6.2, headY - 1);
+  ctx.lineTo(5.8, headY + 5.5);
+  ctx.closePath();
+  inked(ctx, steel);
+  ctx.beginPath();
+  ctx.arc(-2.4, headY - 3.2, 2.4, Math.PI * 1.05, Math.PI * 1.55);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+  // The ridge down the middle of the helmet.
+  ctx.beginPath();
+  ctx.moveTo(1.4, headY - 6.8);
+  ctx.quadraticCurveTo(2.6, headY - 4, 2.4, headY - 1.6);
+  ctx.strokeStyle = steelDark;
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  const visorH = mood === "scared" ? 3.6 : 2.8;
+  ctx.beginPath();
+  ctx.roundRect(-3.4, headY - visorH / 2 + 0.4, 9.6, visorH, 1.3);
+  inked(ctx, "#1c1410", 0.9);
+  // Eyes shining through the slit.
+  for (const ex of [0.6, 3.8]) {
+    const ey = headY + 0.4;
+    if (mood === "wince" || mood === "happy") {
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(side * 5, headY - 2);
-      ctx.lineTo(side * 11, headY - 4);
-      ctx.lineTo(side * 5.5, headY + 2.5);
-      ctx.closePath();
-      inked(ctx, colors.skin);
+      if (mood === "happy") {
+        ctx.moveTo(ex - 0.9, ey + 0.5);
+        ctx.lineTo(ex, ey - 0.5);
+        ctx.lineTo(ex + 0.9, ey + 0.5);
+      } else {
+        ctx.moveTo(ex - 0.8, ey - 0.6);
+        ctx.lineTo(ex + 0.6, ey);
+        ctx.lineTo(ex - 0.8, ey + 0.6);
+      }
+      ctx.stroke();
+      continue;
+    }
+    ctx.beginPath();
+    ctx.fillStyle = "#ffffff";
+    const r = mood === "scared" ? 1.2 : 0.9;
+    ctx.ellipse(ex, ey, r, r * 1.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (mood === "scared") {
+      ctx.beginPath();
+      ctx.fillStyle = OUTLINE;
+      ctx.arc(ex + 0.2, ey, 0.4, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
-  inkedCircle(ctx, 0, headY, 7.6, colors.skin);
-  drawCartoonEyes(ctx, 1.6, headY - 0.4, 2.2, Boolean(colors.horns), mood);
+  // Breathing holes.
+  ctx.fillStyle = steelDark;
+  for (const [hx, hy] of [[2, 3], [3.6, 3], [5.1, 2.8], [2.8, 4.5], [4.4, 4.4]]) {
+    ctx.beginPath();
+    ctx.arc(hx, headY + hy, 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
   if (mood === "scared") {
     // A nervous sweat drop.
     ctx.beginPath();
-    ctx.moveTo(-5, headY - 6);
-    ctx.quadraticCurveTo(-8, headY - 2, -5, headY - 1.4);
-    ctx.quadraticCurveTo(-2.4, headY - 2.4, -5, headY - 6);
+    ctx.moveTo(-7, headY - 4);
+    ctx.quadraticCurveTo(-10, headY, -7, headY + 0.6);
+    ctx.quadraticCurveTo(-4.4, headY - 0.4, -7, headY - 4);
     inked(ctx, "#a8e6ff", 0.7);
   }
 
-  if (colors.helmet) {
-    // Helmet with a little crest.
+  if (colors.plume) {
     ctx.beginPath();
-    ctx.arc(0, headY - 1, 8, Math.PI * 1.02, Math.PI * 1.98);
-    ctx.quadraticCurveTo(0, headY - 3.4, -8, headY - 1);
+    ctx.moveTo(-0.6, headY - 6.6);
+    ctx.quadraticCurveTo(-6, headY - 12.5, -10, headY - 5);
+    ctx.quadraticCurveTo(-5.4, headY - 8, 1.6, headY - 6.2);
     ctx.closePath();
-    inked(ctx, colors.helmet);
-    if (colors.plume) {
-      ctx.beginPath();
-      ctx.moveTo(-1.6, headY - 8.4);
-      ctx.quadraticCurveTo(-7, headY - 14, -9.4, headY - 7);
-      ctx.quadraticCurveTo(-5, headY - 9.4, 1.4, headY - 8);
-      ctx.closePath();
-      inked(ctx, colors.plume, 1.1);
-    }
-    drawCartoonMouth(ctx, 2, headY + 3.6, mood);
-    // Round shield.
-    inkedCircle(ctx, -4.8, -8, 4.4, colors.helmet, 1.2);
-    inkedCircle(ctx, -4.8, -8, 1.8, colors.trim, 0.8);
+    inked(ctx, colors.plume, 1.1);
   } else {
-    if (mood === "scared" || mood === "wince") {
-      drawCartoonMouth(ctx, 2, headY + 3.8, mood);
-    } else {
-      // Toothy grin.
-      ctx.beginPath();
-      ctx.moveTo(-1.5, headY + 3);
-      ctx.quadraticCurveTo(2.2, headY + (mood === "happy" ? 7 : 5.6), 6, headY + 2.6);
-      ctx.closePath();
-      inked(ctx, "#fff7e0", 0.9);
-    }
-    // Horns.
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(side * 2, headY - 6.6);
-      ctx.quadraticCurveTo(side * 5, headY - 12, side * 5.6, headY - 12.6);
-      ctx.lineTo(side * 6, headY - 5.4);
-      ctx.closePath();
-      inked(ctx, colors.horns, 1.1);
-    }
+    inkedCircle(ctx, 0, headY - 7, 1.3, colors.trim, 0.9);
   }
+
+  // A pointed shield, with the badge.
+  ctx.beginPath();
+  ctx.moveTo(-8.8, -14);
+  ctx.lineTo(-1.8, -14);
+  ctx.lineTo(-1.8, -8.6);
+  ctx.quadraticCurveTo(-2, -4.4, -5.3, -2.6);
+  ctx.quadraticCurveTo(-8.6, -4.4, -8.8, -8.6);
+  ctx.closePath();
+  inked(ctx, steel, 1.2);
+  ctx.beginPath();
+  ctx.moveTo(-7.8, -13);
+  ctx.lineTo(-2.8, -13);
+  ctx.lineTo(-2.8, -8.8);
+  ctx.quadraticCurveTo(-3, -5.4, -5.3, -4);
+  ctx.quadraticCurveTo(-7.6, -5.4, -7.8, -8.8);
+  ctx.closePath();
+  ctx.fillStyle = colors.tunic;
+  ctx.fill();
+  drawGearEmblem(ctx, -5.3, -9.4, 1.9, colors.blade);
+
+  // Sword arm: a long blade with a crossguard, held up and forward, clear of the visor.
+  ctx.save();
+  ctx.translate(5.4, -12);
+  ctx.rotate(swing + 0.9);
+  ctx.beginPath();
+  ctx.moveTo(2.4, -2);
+  ctx.lineTo(2.4, -14);
+  ctx.lineTo(3.4, -16.2);
+  ctx.lineTo(4.4, -14);
+  ctx.lineTo(4.4, -2);
+  ctx.closePath();
+  inked(ctx, colors.blade, 1);
+  ctx.beginPath();
+  ctx.moveTo(3.4, -3);
+  ctx.lineTo(3.4, -13.6);
+  ctx.strokeStyle = mixColor(colors.blade, "#000000", 0.25);
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(0.2, -2.8, 6.4, 1.7);
+  inked(ctx, colors.trim, 0.9);
+  inkedCircle(ctx, 3.4, 2.4, 1, colors.trim, 0.8);
+  inkedCircle(ctx, 3.4, 0.4, 2.2, steel, 1);
   ctx.restore();
 }
 
@@ -5360,6 +5666,35 @@ function drawArmyCount(ctx, x, y, count) {
 
 // The boss stands just past the front line, glowing before each attack, and
 // flashes when soldiers hit it.
+const BOSS_MONSTER_SCALE = 1.8; // a boss is a wave monster drawn this much bigger
+const BOSS_HEADGEAR_LIFT = -6; // its crown sits on top of the taller monster body
+const BOSS_DROP_SECONDS = 1.1; // the warning siren plays while the boss falls in
+const BOSS_DROP_HEIGHT = 140; // pixels above the ground the boss falls from
+const BOSS_LAND_SHAKE = 9; // pixels
+// Each boss's monster: its own colour, and a feature or two of its own.
+const BOSS_FEATURES = {
+  rust: { eyes: 1 },
+  wall: { eyes: 2, tusks: true },
+  scramble: { eyes: 3 },
+  shield: { eyes: 2, tusks: true },
+  warlord: { eyes: 2, tusks: true },
+  wyrm: { eyes: 2, spikes: 6 },
+  queen: { eyes: 2, spikes: 6, eye: "#e8fbff" },
+  magma: { eyes: 3, wings: true },
+};
+
+function bossLook(kind, body) {
+  return {
+    skin: body,
+    tunic: mixColor(body, "#000000", 0.35),
+    trim: "#3d2a18",
+    horns: "#f3ead2",
+    blade: "#fff4d6",
+    eye: "#ff7a3d",
+    ...BOSS_FEATURES[kind.id],
+  };
+}
+
 function drawBoss(ctx, who, markerX, x1, feetY) {
   const x = Math.min(x1 - 22, markerX + 32);
   const warning = who.attackIn < BOSS_WARNING_SECONDS;
@@ -5368,7 +5703,8 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
   const armSwing = warning ? -1.7 + Math.sin(time * 18) * 0.15 : -0.5 + Math.sin(time * 4) * 0.4;
   const breathe = Math.sin(time * 3) * 0.03;
   ctx.save();
-  ctx.translate(x, feetY);
+  const fall = 1 - (who.enter ?? 1);
+  ctx.translate(x, feetY - fall * fall * BOSS_DROP_HEIGHT);
   const size = who.kind.final ? FINAL_BOSS_DRAW_SCALE : 1;
   ctx.scale(size * (1 - breathe), size * (1 + breathe + (warning ? 0.05 : 0)));
   ctx.lineCap = "round";
@@ -5378,61 +5714,14 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
     ctx.shadowBlur = glowBlur(16);
   }
 
-  // Stubby feet.
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(side * 8, -3, 6.5, 3.6, 0, 0, Math.PI * 2);
-    inked(ctx, "#3d2a18", 1.8);
-  }
-
-  // Weapon arm, raised before an attack.
+  // A big version of the wave monsters, facing the player's army, with the
+  // claw raised high before an attack.
   ctx.save();
-  ctx.translate(-16, -23);
-  ctx.rotate(armSwing);
-  ctx.beginPath();
-  ctx.rect(-10.5, -17, 3.4, 18);
-  inked(ctx, "#7a5430", 1.6);
-  ctx.beginPath();
-  ctx.ellipse(-8.8, -21, 8, 6, 0, 0, Math.PI * 2);
-  inked(ctx, who.kind.id === "shield" ? "#c3ccd5" : "#8a5f36", 1.8);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-8.8, 0);
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = OUTLINE;
-  ctx.stroke();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = body;
-  ctx.stroke();
+  ctx.scale(-BOSS_MONSTER_SCALE, BOSS_MONSTER_SCALE);
+  drawMonster(ctx, bossLook(who.kind, body), "fight", time, 0, armSwing, "neutral");
   ctx.restore();
-
-  // One big round monster.
-  ctx.beginPath();
-  ctx.ellipse(0, -22, 18, 20, 0, 0, Math.PI * 2);
-  inked(ctx, body, 2.2);
   ctx.shadowBlur = 0;
-  ctx.beginPath();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.ellipse(-6, -32, 5, 7, 0.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  drawCartoonEyes(ctx, -3, -27, 4.6, true);
-
-  // Wide toothy mouth, pointing at the player's army.
-  ctx.beginPath();
-  ctx.moveTo(-13, -16);
-  ctx.quadraticCurveTo(-3, -8, 8, -16);
-  ctx.closePath();
-  inked(ctx, "#3a0d06", 1.6);
-  ctx.fillStyle = "#fff7e0";
-  for (const toothX of [-10, -4, 2]) {
-    ctx.beginPath();
-    ctx.moveTo(toothX, -15.6);
-    ctx.lineTo(toothX + 2, -12);
-    ctx.lineTo(toothX + 4, -15.8);
-    ctx.closePath();
-    ctx.fill();
-  }
+  ctx.translate(0, BOSS_HEADGEAR_LIFT);
 
   // Each kind of boss has its own headgear.
   if (who.kind.id === "rust") {
@@ -5537,6 +5826,17 @@ function drawBoss(ctx, who, markerX, x1, feetY) {
     ctx.textBaseline = "middle";
     ctx.fillText(`SHIELD ${who.shield}`, x, y);
   }
+}
+
+// While a boss is alive the battlefield's edges glow red, pulsing slowly.
+function drawBossDanger(ctx, x0, x1) {
+  const pulse = REDUCED_MOTION ? 0.5 : 0.5 + Math.sin(performance.now() / 400) * 0.5;
+  const w = x1 - x0;
+  const glow = ctx.createRadialGradient(x0 + w / 2, battleCssH / 2, Math.min(w, battleCssH) * 0.35, x0 + w / 2, battleCssH / 2, Math.max(w, battleCssH) * 0.75);
+  glow.addColorStop(0, "rgba(200, 20, 10, 0)");
+  glow.addColorStop(1, `rgba(200, 20, 10, ${0.3 + pulse * 0.22})`);
+  ctx.fillStyle = glow;
+  ctx.fillRect(x0, 0, w, battleCssH);
 }
 
 // A beaten boss tips over and fades away during the win.
@@ -5784,6 +6084,7 @@ function drawBattle() {
       ctx.fillText(headCount, x, feetY - 29);
     }
   }
+  if (boss) drawBossDanger(ctx, x0, x1);
   if (boss) drawBoss(ctx, boss, markerX, x1, battleCssH * 0.75);
   if (fallenBoss) drawFallenBoss(ctx, battleCssH * 0.75);
   for (const c of clashes) {
@@ -6315,7 +6616,13 @@ function beep(freq, duration, type, gainPeak) {
 // song's root; a null step is a rest. bass has one note per bar of eight steps.
 const MUSIC_VOLUME = 0.5; // the notes below are already quiet
 const MUSIC_LOOKAHEAD = 0.25; // seconds scheduled in advance, so frame drops don't break the beat
-const MUSIC_BOSS_TEMPO = 1.15;
+// One boss theme for every world, played a little below that world's key: a
+// minor riff over drums.
+const BOSS_SONG = {
+  bpm: 138, lead: "sawtooth", leadGain: 0.05, bassType: "triangle",
+  notes: [0, null, 0, 12, 0, null, 10, null, 0, null, 0, 7, 8, null, 7, 5, 0, null, 0, 12, 0, null, 10, null, 3, null, 5, null, 7, 8, 10, 11],
+  bass: [0, 0, -4, -2],
+};
 const SONGS = [
   { // Green Forest: bright and bouncy
     bpm: 112, root: 60, lead: "triangle", leadGain: 0.16, bassType: "sine",
@@ -6356,13 +6663,46 @@ function musicNote(note, at, duration, type, peak) {
   osc.stop(at + duration + 0.02);
 }
 
+// Drums for the boss theme, on the music's own volume.
+function musicDrum(at, kick) {
+  const gain = audioCtx.createGain();
+  gain.connect(musicGain);
+  if (kick) {
+    const osc = audioCtx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, at);
+    osc.frequency.exponentialRampToValueAtTime(45, at + 0.12);
+    gain.gain.setValueAtTime(0.5, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+    osc.connect(gain);
+    osc.start(at);
+    osc.stop(at + 0.18);
+    return;
+  }
+  if (!noiseBuffer) return;
+  const source = audioCtx.createBufferSource();
+  source.buffer = noiseBuffer;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = 1800;
+  gain.gain.setValueAtTime(0.28, at);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+  source.connect(filter).connect(gain);
+  source.start(at);
+  source.stop(at + 0.14);
+}
+
 function playMusicStep(song, step, at, stepSeconds) {
+  if (song.drums) {
+    if (step % 4 === 0) musicDrum(at, true);
+    else if (step % 8 === 6) musicDrum(at, false);
+  }
   const lead = song.notes[step];
   if (lead !== null) musicNote(song.root + lead, at, stepSeconds * 1.6, song.lead, song.leadGain);
-  // Bosses get a busier bass line.
-  if (step % (boss ? 2 : 4) === 0) {
+  // The boss theme has a busier bass line.
+  if (step % (song.drums ? 2 : 4) === 0) {
     const bass = song.bass[Math.floor(step / 8) % song.bass.length];
-    musicNote(song.root + bass - 24, at, stepSeconds * (boss ? 1.8 : 3.5), song.bassType, 0.22);
+    musicNote(song.root + bass - 24, at, stepSeconds * (song.drums ? 1.8 : 3.5), song.bassType, 0.22);
   }
 }
 
@@ -6377,8 +6717,9 @@ function updateMusic() {
     musicGain.gain.value = MUSIC_VOLUME;
     musicGain.connect(audioCtx.destination);
   }
-  const song = SONGS[currentWorld % SONGS.length];
-  const stepSeconds = 60 / (song.bpm * (boss ? MUSIC_BOSS_TEMPO : 1)) / 2;
+  const worldSong = SONGS[currentWorld % SONGS.length];
+  const song = boss ? { ...BOSS_SONG, root: worldSong.root - 3, drums: true } : worldSong;
+  const stepSeconds = 60 / song.bpm / 2;
   const now = audioCtx.currentTime;
   if (musicTime < now) musicTime = now + 0.05;
   while (musicTime < now + MUSIC_LOOKAHEAD) {
@@ -6467,9 +6808,17 @@ function playStrikeSound() {
   noiseBurst(0.16, "highpass", 2500, 0.25);
 }
 
+// The landing: a deep crash and a roar.
 function playBossSound() {
   sweep(95, 45, 0.7, "sawtooth", 0.25);
   noiseBurst(0.4, "lowpass", 500, 0.25);
+  sweep(160, 30, 0.6, "sine", 0.4);
+  setTimeout(() => sweep(240, 110, 0.55, "sawtooth", 0.16), 120);
+}
+
+// A warning siren while the boss falls in.
+function playBossWarningSound() {
+  for (let i = 0; i < 3; i++) setTimeout(() => sweep(520, 880, 0.3, "square", 0.07), i * 340);
 }
 
 function playRustSound() {
@@ -6484,6 +6833,20 @@ function playOverdriveSound() {
 function playLootSound() {
   beep(1050, 0.06, "square", 0.12);
   setTimeout(() => beep(1500, 0.08, "square", 0.12), 50);
+}
+
+// The chosen chest rattling, a little higher each time.
+function playChestRattleSound(step) {
+  noiseBurst(0.06, "bandpass", 1300 + step * 400, 0.2);
+  beep(260 + step * 90, 0.06, "square", 0.07);
+}
+
+// The lid flying open, then a sparkle. A rare prize gets a fanfare.
+function playChestOpenSound(rare) {
+  sweep(300, 1300, 0.22, "triangle", 0.14);
+  const notes = rare ? [1047, 1319, 1568, 2093, 2637] : [1319, 1760, 2093];
+  notes.forEach((note, i) => setTimeout(() => beep(note, 0.12, rare ? "square" : "triangle", rare ? 0.1 : 0.12), 120 + i * 70));
+  if (rare) setTimeout(playWinSound, 520);
 }
 
 function playGoblinSound() {
@@ -6558,16 +6921,17 @@ function nextAnnouncement() {
   setTimeout(nextAnnouncement, ANNOUNCEMENT_MS);
 }
 
-function showWaveBanner(text) {
+function showWaveBanner(text, bossArrives = false) {
   const el = document.getElementById("wave-banner");
   const txt = document.getElementById("wave-banner-text");
   txt.textContent = text;
+  el.classList.toggle("boss", bossArrives);
   el.classList.remove("hidden");
   el.style.animation = "none";
   void el.offsetWidth;
   el.style.animation = "";
   clearTimeout(showWaveBanner._t);
-  showWaveBanner._t = setTimeout(() => el.classList.add("hidden"), 1300);
+  showWaveBanner._t = setTimeout(() => el.classList.add("hidden"), bossArrives ? 1900 : 1300);
 }
 
 // =====================================================================

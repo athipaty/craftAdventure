@@ -403,9 +403,39 @@ button {
   padding: 8px 4px 10px;
   border: 3px solid var(--accent-dark);
   border-radius: 14px;
-  background: #3a2414;
+  background: radial-gradient(circle at 50% 35%, #5a3a1c, #3a2414 70%);
   color: var(--text);
   box-shadow: 0 4px 0 #120a04;
+}
+
+/* Shut chests bob, each at its own pace, as if something inside wants out. */
+.chest-card:not(.open):not(.shaking) .art-icon {
+  animation: chest-bob 1.4s ease-in-out infinite;
+}
+
+.chest-card:nth-child(2):not(.open):not(.shaking) .art-icon {
+  animation-delay: -0.45s;
+}
+
+.chest-card:nth-child(3):not(.open):not(.shaking) .art-icon {
+  animation-delay: -0.9s;
+}
+
+@keyframes chest-bob {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  40% { transform: translateY(-4px) rotate(-2deg); }
+  55% { transform: translateY(-5px) rotate(2deg); }
+}
+
+/* An opened chest's prize pops in once its lid is up. */
+.chest-card.open span {
+  animation: chest-label-in 0.35s ease both;
+}
+
+@keyframes chest-label-in {
+  0% { opacity: 0; transform: scale(0.4); }
+  70% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 .chest-card .art-icon {
@@ -436,9 +466,20 @@ button {
 }
 
 .chest-card.chosen {
-  border-color: #8bd65a;
-  background: #2c4a1c;
-  animation: chest-pop 0.3s ease;
+  border-color: #ffd23f;
+  background: radial-gradient(circle at 50% 35%, #6a5a1c, #2c4a1c 75%);
+  box-shadow: 0 4px 0 #120a04, 0 0 22px 4px rgba(255, 210, 63, 0.55);
+  animation: chest-pop 0.45s ease;
+}
+
+.chest-card.chosen.rare {
+  border-color: #ff9ad5;
+  box-shadow: 0 4px 0 #120a04, 0 0 26px 6px rgba(255, 120, 200, 0.6);
+}
+
+.chest-card.chosen span {
+  font-size: 1rem;
+  color: #ffe14d;
 }
 
 .chest-card.missed {
@@ -449,17 +490,34 @@ button {
   color: var(--accent);
 }
 
+/* Rattles harder and harder until the lid flies open. */
 .chest-card.shaking {
-  animation: chest-shake 0.15s linear 3;
+  animation: chest-shake 0.75s ease-in;
 }
 
 @keyframes chest-shake {
-  25% { transform: rotate(-4deg); }
-  75% { transform: rotate(4deg); }
+  0% { transform: rotate(0) scale(1); }
+  10% { transform: rotate(-2deg) scale(1.01); }
+  20% { transform: rotate(2deg) scale(1.02); }
+  30% { transform: rotate(-3deg) scale(1.03); }
+  40% { transform: rotate(3deg) scale(1.04); }
+  50% { transform: rotate(-5deg) scale(1.05); }
+  60% { transform: rotate(5deg) scale(1.06); }
+  70% { transform: rotate(-7deg) scale(1.08); }
+  80% { transform: rotate(7deg) scale(1.09); }
+  90% { transform: rotate(-9deg) scale(1.1); }
+  100% { transform: rotate(0) scale(1.12); }
 }
 
 @keyframes chest-pop {
-  50% { transform: scale(1.08); }
+  0% { transform: scale(1.12); }
+  40% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+html.less-motion .chest-card .art-icon,
+html.less-motion .chest-card.shaking {
+  animation: none !important;
 }
 
 #chest-continue-btn {
@@ -708,6 +766,27 @@ button {
   z-index: 20;
   pointer-events: none;
   animation: banner-pop 1.3s ease forwards;
+}
+
+/* A boss arriving: red, bigger, and a little shake. */
+#wave-banner.boss {
+  background: #5a0d06;
+  border-color: #ff5a3d;
+  color: #ffe14d;
+  font-size: 2rem;
+  box-shadow: 0 0 24px 6px rgba(255, 60, 30, 0.6);
+  animation: banner-boss 1.9s ease forwards;
+}
+
+@keyframes banner-boss {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(1.8); }
+  12% { opacity: 1; transform: translate(-50%, -50%) scale(0.95); }
+  18% { transform: translate(-48%, -50%) scale(1); }
+  24% { transform: translate(-52%, -50%) scale(1); }
+  30% { transform: translate(-50%, -50%) scale(1); }
+  45% { box-shadow: 0 0 34px 10px rgba(255, 60, 30, 0.8); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
 }
 
 @keyframes banner-pop {
@@ -2494,14 +2573,36 @@ button {
   --fill: #ffd21f;
 }
 
-/* Recharging: a dull face while the ring fills. */
+/* Recharging, Overdrive running down, or a Rally building up: the button is
+   dark, and fills with its colour from the bottom like a glass filling up,
+   with a bright line on top, so the level is easy to see at a glance. */
 #strike-btn:not(.ready):not(.shield),
-#overdrive-btn:not(.ready):not(.active),
+#overdrive-btn:not(.ready),
 #rally-btn.holding:not(.full) {
-  --face-light: #8a7a66;
-  --face: #4a3c2e;
-  --face-dark: #261b12;
   color: #d8c9b0;
+}
+
+#strike-btn:not(.ready):not(.shield)::before,
+#overdrive-btn:not(.ready)::before,
+#rally-btn.holding:not(.full)::before {
+  background:
+    var(--icon) center / 46% no-repeat,
+    linear-gradient(to top, transparent calc(var(--charge, 0%) - 2.5px), rgba(255, 255, 255, 0.9) calc(var(--charge, 0%) - 2.5px), rgba(255, 255, 255, 0.9) var(--charge, 0%), transparent var(--charge, 0%)),
+    linear-gradient(to top, var(--bottom) 0%, var(--top) var(--charge, 0%), #241910 var(--charge, 0%));
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.55), 0 3px 0 #120a04, 0 5px 6px rgba(0, 0, 0, 0.45);
+}
+
+/* The moment it's charged, the button pops. */
+#strike-btn.ready:not(:disabled)::before,
+#overdrive-btn.ready:not(:disabled)::before,
+#rally-btn.full::before {
+  animation: power-ready 0.45s ease-out;
+}
+
+@keyframes power-ready {
+  0% { transform: scale(0.82); }
+  55% { transform: scale(1.18); }
+  100% { transform: scale(1); }
 }
 
 #strike-btn:disabled {
