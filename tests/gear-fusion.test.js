@@ -41,7 +41,7 @@ async function check(name, fn) {
   console.log("\nWhat can fuse");
   await check("every recipe works either way round, and makes its own gear", async () => {
     const r = await page.evaluate(() => FUSIONS.map((f) => { const a = freshCell(f.parts[0]), b = freshCell(f.parts[1]); return [fusionOf(a, b)?.gear, fusionOf(b, a)?.gear, f.gear, Boolean(GEAR_TYPES[f.gear])]; }));
-    assert.equal(r.length, 4);
+    assert.equal(r.length, 7);
     for (const [one, two, want, exists] of r) { assert.equal(one, want); assert.equal(two, want); assert.equal(exists, true); }
   });
   await check("levels must match, and other pairs don't fuse", async () => {
@@ -234,7 +234,7 @@ async function check(name, fn) {
       const marks = FUSIONS.map((f) => GEAR_TYPES[f.gear].mark);
       return { unique: new Set(looks).size, marks, painted: FUSIONS.every((f) => { const c = gearIcon(f.gear); return c.getContext("2d").getImageData(c.width / 2, c.height / 2, 1, 1).data[3] > 0; }) };
     });
-    assert.deepEqual(r, { unique: 4, marks: ["CAN", "DYN", "COM", "HER"], painted: true });
+    assert.deepEqual(r, { unique: 7, marks: ["CAN", "DYN", "COM", "HER", "STM", "ENG", "BLZ"], painted: true });
   });
   await check("holding a gear rings what it can fuse with", async () => {
     await lay([[0, 1, "big"], [1, 1, "bomb"], [-1, 1, "soldier"]]);

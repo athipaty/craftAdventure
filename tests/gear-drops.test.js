@@ -32,7 +32,7 @@ async function check(name, fn) {
     playerPower = 1000; enemyPower = 1000; marchers = []; enemyBacklog = 0; blockedCells.clear(); drag = null;
     grid.forEach((row, r) => row.forEach((cell, c) => { if (cell && !cell.driver) grid[r][c] = null; }));
   }, dropAt);
-  const GEAR_NAMES = ["soldier", "big", "booster", "bomb", "far", "lone"];
+  const GEAR_NAMES = ["soldier", "big", "booster", "bomb", "far", "lone", "spark", "oil", "ice"];
   const gears = () => page.evaluate(() => grid.flat().filter((c) => c && !c.driver).map((c) => c.level));
   const tray = () => page.evaluate(() => gearTray.map((g) => g.level));
   const stock = (...levels) => page.evaluate((ls) => { gearTray = ls.map((level) => ({ type: "soldier", level })); renderGearTray(); }, levels);
@@ -207,7 +207,7 @@ async function check(name, fn) {
     });
     const special = (20000 - r.soldier) / 20000;
     assert.ok(special > 0.13 && special < 0.17, `share ${special}`);
-    for (const type of ["big", "booster", "bomb", "far", "lone"]) assert.ok(r[type] > 0, `never dropped ${type}`);
+    for (const type of ["big", "booster", "bomb", "far", "lone", "spark", "oil", "ice"]) assert.ok(r[type] > 0, `never dropped ${type}`);
     assert.deepEqual(Object.keys(r).filter((type) => !GEAR_NAMES.includes(type)), []);
   });
   await check("a special drop goes into the tray and works from there", async () => {
@@ -228,7 +228,7 @@ async function check(name, fn) {
       save.stats.waves = waves;
       return [...seen];
     });
-    assert.ok(!r.includes("far") && !r.includes("lone"), r.join());
+    assert.ok(!["far", "lone", "spark", "oil", "ice"].some((type) => r.includes(type)), r.join());
   });
   await check("no special drops past the cap, counting the tray; Bomb Week stays all bombs", async () => {
     await fresh();

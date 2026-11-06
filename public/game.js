@@ -66,8 +66,8 @@ const RUN_SAVE_KEY = "gearfight_run";
 // Lifetime waves won before each feature appears, so a new player meets them one
 // at a time. Anyone past these numbers simply has them all.
 const HINT_WAVES = 10; // the how-to line under the buttons shows until this many waves are won
-const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10 };
-const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!" };
+const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10, powerGears: 12 };
+const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!", powerGears: "New: Spark, Oil and Ice gears!" };
 const TIP_FEATURES = { rally: "rally", train: "train" };
 const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
@@ -89,6 +89,8 @@ const STATUS_ICONS = {
   rally: "\u{1F6A9}",
   doubleEvent: "2\uFE0F\u20E3",
   guardian: "\u{1F6E1}\uFE0F",
+  spark: "\u26A1",
+  chill: "\u{1F9CA}",
   pace: { rush: "\u{1F3C3}", siege: "\u{1F3F0}" },
 };
 const GUIDE_ICON_SIZE = 48;
@@ -473,12 +475,21 @@ const CANNON_PALETTE = { light: "#ffd27a", mid: "#e0701c", dark: "#7a3208", rece
 const DYNAMO_PALETTE = { light: "#b8f5ea", mid: "#2fa8c0", dark: "#10525e", recess: "#23859a", hub: "#def9f4" };
 const COMET_PALETTE = { light: "#f5b8e8", mid: "#c04aa8", dark: "#5e1650", recess: "#9a3a88", hub: "#fbe0f5" };
 const HERMIT_PALETTE = { light: "#d5e0a0", mid: "#7f9a35", dark: "#3c4d12", recess: "#667d28", hub: "#eef4cf" };
+const SPARK_PALETTE = { light: "#fff6a0", mid: "#f2c418", dark: "#7a5a00", recess: "#c99a0c", hub: "#fffbd6" };
+const OIL_PALETTE = { light: "#9aa3ad", mid: "#3d4652", dark: "#14181e", recess: "#2a313b", hub: "#c9d0d8" };
+const ICE_PALETTE = { light: "#e6fbff", mid: "#7fd3f0", dark: "#1f6f8f", recess: "#5ab6d6", hub: "#f6feff" };
+const STORM_PALETTE = { light: "#e2c8ff", mid: "#8a4fe0", dark: "#3a1478", recess: "#6c38b8", hub: "#fff3a8" };
+const ENGINE_PALETTE = { light: "#c6e8b0", mid: "#4f7a3a", dark: "#1f3414", recess: "#3d6230", hub: "#e2f4d6" };
+const BLIZZARD_PALETTE = { light: "#ffffff", mid: "#a9c8ff", dark: "#2f4f9a", recess: "#7fa2e6", hub: "#ffffff" };
 // Two different gears of the same level make a new one. Listed either way round.
 const FUSIONS = [
   { parts: ["big", "bomb"], gear: "cannon", name: "Cannon gear", text: "Made from a Big gear and a Bomb gear. Fills half as fast, then sends 6 soldiers and blasts 3 enemies" },
   { parts: ["big", "booster"], gear: "dynamo", name: "Dynamo gear", text: "Made from a Big gear and a Booster gear. Fills half as fast, sends 5 soldiers, and boosts the gears touching it" },
   { parts: ["far", "bomb"], gear: "comet", name: "Comet gear", text: "Made from a Far gear and a Bomb gear. Fills half as fast, then blasts 3 enemies, more the farther it is from the main gear" },
   { parts: ["lone", "big"], gear: "hermit", name: "Hermit gear", text: "Made from a Lone gear and a Big gear. Fills half as fast, then sends 6 soldiers, more for each empty space beside it" },
+  { parts: ["spark", "bomb"], gear: "storm", name: "Storm gear", text: "Made from a Spark gear and a Bomb gear. Fills half as fast, then blasts 3 enemies and charges your next Lightning" },
+  { parts: ["oil", "booster"], gear: "engine", name: "Engine gear", text: "Made from an Oil gear and a Booster gear. Boosts the gears touching it, and none of them can rust" },
+  { parts: ["ice", "big"], gear: "blizzard", name: "Blizzard gear", text: "Made from an Ice gear and a Big gear. Fills half as fast, then sends 5 soldiers and slows the enemy's growth" },
 ];
 const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
@@ -492,7 +503,20 @@ const GEAR_TYPES = {
   dynamo: { hits: 8, soldiers: 5, boosts: true, heavy: true, palette: DYNAMO_PALETTE, mark: "DYN" },
   comet: { hits: 8, enemies: 3, blast: true, far: true, palette: COMET_PALETTE, mark: "COM" },
   hermit: { hits: 8, soldiers: 6, heavy: true, lone: true, palette: HERMIT_PALETTE, mark: "HER" },
+  // Gears that work with the rest of the game rather than sending soldiers.
+  // spark: charges the next Lightning. oil: can't rust, nor can its neighbours.
+  // chill: slows the enemy's growth for a while.
+  spark: { hits: 4, spark: true, palette: SPARK_PALETTE, mark: "SPK" },
+  oil: { hits: 4, soldiers: 1, oil: true, palette: OIL_PALETTE, mark: "OIL" },
+  ice: { hits: 6, chill: true, palette: ICE_PALETTE, mark: "ICE" },
+  storm: { hits: 8, enemies: 3, blast: true, spark: true, palette: STORM_PALETTE, mark: "STM" },
+  engine: { hits: 0, boosts: true, oil: true, palette: ENGINE_PALETTE, mark: "ENG" },
+  blizzard: { hits: 8, soldiers: 5, heavy: true, chill: true, palette: BLIZZARD_PALETTE, mark: "BLZ" },
 };
+const SPARK_CHARGE = 0.25; // next Lightning's extra strength each time a spark gear fills, per level
+const SPARK_MAX = 2; // so Lightning hits at most 3x as hard
+const ICE_SECONDS = 2; // how long a filled ice gear chills the enemy, plus a second per level above 1
+const ICE_GROWTH = 0.5; // enemy growth while chilled: slowed, never stopped, so a wave always ends
 
 const DRIVER_SPEED_REWARD = 0.1; // turns per second added by the reward
 const VETERANS_REWARD = 0.15; // added to the player's lead each wave
@@ -644,6 +668,9 @@ const REWARDS = [
   { id: "reinforcements", oneOff: true, name: "Reinforcements", text: "Start the next wave with extra soldiers", apply: () => { nextWaveBonus = REINFORCEMENTS_REWARD; } },
   { id: "farGear", name: "Far gear", text: "Pays 25% more for each step away from the main gear", gear: "far" },
   { id: "loneGear", name: "Lone gear", text: "Pays 50% more for each empty space beside it", gear: "lone" },
+  { id: "sparkGear", name: "Spark gear", text: "Each time it fills, your next Lightning hits 25% harder, up to 3x", gear: "spark", feature: "powerGears" },
+  { id: "oilGear", name: "Oil gear", text: "Sends 1 soldier. Never rusts, and the gears touching it can't rust either", gear: "oil", feature: "powerGears" },
+  { id: "iceGear", name: "Ice gear", text: "Each time it fills, the enemy grows at half speed for 2 seconds", gear: "ice", feature: "powerGears" },
   { id: "cooling", name: "Cooling oil", text: "Overdrive recharges 20% faster", max: 2 },
   { id: "staticCharge", name: "Static charge", text: "Lightning strikes hit 30% harder", max: 3 },
   { id: "scrapDealer", name: "Scrap dealer", text: "Scrapping gives 30% more soldiers", max: 1 },
@@ -708,6 +735,9 @@ const TIPS = [
   { id: "runner", urgent: true, text: "Goblin runners bring extra enemies, so win quickly.", when: () => enemyType?.id === "runner", card: () => enemyTypeCard("runner") },
   // Each tougher kind of enemy, the first wave it fights.
   ...ENEMY_RANKS.slice(1).map((rank) => ({ id: `rank:${rank.look}`, urgent: true, text: `${rank.plural} are tougher: each one counts for ${rank.strength} goblins. Train your army to keep up!`, when: () => !boss && waveTime > 0.2 && enemyRank().look === rank.look, card: () => ({ label: "New enemy!", name: rank.plural, hint: "", icon: enemyIcon(rank.look) }) })),
+  { id: "spark", text: "Spark gear! Each time it fills, your next Lightning strike hits harder, up to 3x. Use Lightning to spend the charge.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].spark) },
+  { id: "oil", text: "Oil gear! It never rusts, and keeps the gears touching it from rusting too. Put it among your best gears.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].oil) },
+  { id: "ice", text: "Ice gear! Each time it fills, the enemy grows at half speed for a few seconds.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].chill) },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -828,6 +858,8 @@ let winAt = 0; // when the current win happened, for the armies' reactions
 let fallenBoss = null; // { boss, x, t } a beaten boss toppling over
 let rewardTimer = 0;
 let fightCount = null; // the numbers above the armies, as a fight; see updateFightCount()
+let sparkCharge = 0; // next Lightning's extra strength, from spark gears
+let chillFor = 0; // seconds the enemy still grows at ICE_GROWTH
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
@@ -1534,6 +1566,8 @@ function hitGear(gear, hits) {
     const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
     if (spec.enemies) launchBomb(spec.enemies * level);
+    if (spec.spark) sparkCharge = Math.min(SPARK_MAX, sparkCharge + SPARK_CHARGE * cell.level);
+    if (spec.chill) chillFor = Math.max(chillFor, ICE_SECONDS + cell.level - 1);
   }
 }
 
@@ -1903,6 +1937,12 @@ function rustTargets() {
   return [...targets.values()];
 }
 
+// An oil gear can't rust, and keeps the gears touching it from rusting.
+function rustProof(row, col) {
+  const oily = (cell) => cell && !cell.driver && !cell.rusted && GEAR_TYPES[cell.type].oil;
+  return oily(grid[row][col]) || TOOTH_DIRS.some(([dr, dc]) => oily(grid[row + dr]?.[col + dc]));
+}
+
 function rustAttack() {
   if (heroIs("guardian") && !rustBlocked) {
     rustBlocked = true;
@@ -1910,7 +1950,7 @@ function rustAttack() {
     playClankSound();
     return;
   }
-  const targets = rustTargets();
+  const targets = rustTargets().filter((gear) => !rustProof(gear.row, gear.col));
   if (!targets.length) return;
   const count = rustPerAttack(targets.length);
   for (let i = 0; i < count; i++) {
@@ -2084,7 +2124,8 @@ function strikeEnemy() {
   strikeCount += 1;
   const triple = heroIs("archer") && strikeCount % ARCHER_TRIPLE_EVERY === 0 ? 3 : 1;
   const boost = triple * (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
-  const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost;
+  const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost * (1 + sparkCharge);
+  sparkCharge = 0;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
   if (partCount("chargedStrike")) {
@@ -2430,6 +2471,8 @@ function statusChips() {
   if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
   if (hotStreak > 0) chips.push({ kind: "good", icon: "\u{1F525}", count: hotStreak > 1 ? hotStreak : null, name: "Hot streak", text: `Main gear ${Math.round(hotStreak * STREAK.perLevel * 100)}% faster. Win waves within ${STREAK.fastSeconds} seconds to keep it.` });
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
+  if (sparkCharge > 0) add("good", STATUS_ICONS.spark, "Spark charge", `Your next Lightning hits ${Math.round(sparkCharge * 100)}% harder.`);
+  if (chillFor > 0) add("good", STATUS_ICONS.chill, "Chilled", "The enemy grows at half speed.");
   if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
   if (waveEvent?.id === "double") add("good", STATUS_ICONS.doubleEvent, waveEvent.name, capitalized(NEXT_WAVE_HINTS.double));
   if (heroIs("guardian") && !rustBlocked) {
@@ -2972,6 +3015,7 @@ function canOfferSpecialGear() {
 function rewardIsOpen(reward) {
   if (reward.rarity && !featureOn("rare")) return false;
   if ((reward.id === "farGear" || reward.id === "loneGear") && !featureOn("newGears")) return false;
+  if (reward.feature && !featureOn(reward.feature)) return false;
   if (reward.gear) return canOfferSpecialGear();
   if (reward.max && partCount(reward.id) >= reward.max) return false;
   return !reward.available || reward.available();
@@ -4699,7 +4743,8 @@ function update(dt) {
   peakRate = Math.max(peakRate, soldiersPerSecond());
 
   waveTime += dt;
-  const growthScale = (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
+  chillFor = Math.max(0, chillFor - dt);
+  const growthScale = (chillFor > 0 ? ICE_GROWTH : 1) * (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
   enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
@@ -7556,6 +7601,10 @@ function drawBattle() {
   roundRectFill(ctx, x0, barY, markerX - x0, barH, barH / 2, "#3a7ddb");
   roundRectFill(ctx, markerX, barY, x1 - markerX, barH, barH / 2, save.colorBlind ? "#f0a020" : "#d8432f");
   drawBarMarks(ctx, x0, x1, barY, barH);
+  if (chillFor > 0) {
+    ctx.fillStyle = `rgba(170, 225, 255, ${Math.min(0.25, chillFor * 0.15)})`;
+    ctx.fillRect(markerX, 0, battleCssW - markerX, barY - 2);
+  }
 
   ctx.beginPath();
   ctx.fillStyle = "#ffcc33";
@@ -7841,6 +7890,7 @@ function droppedGearType() {
   if (random() >= SPECIAL_DROP_CHANCE) return newGearType();
   const types = ["big", "booster", "bomb"];
   if (featureOn("newGears")) types.push("far", "lone");
+  if (featureOn("powerGears")) types.push("spark", "oil", "ice");
   return types[Math.floor(random() * types.length)];
 }
 
@@ -8805,6 +8855,8 @@ function startNewRun() {
   const coinsFromRestart = restarted || savedRun ? bankRun() : 0;
   drag = null;
   peakRate = 0;
+  sparkCharge = 0;
+  chillFor = 0;
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
