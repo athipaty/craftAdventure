@@ -495,24 +495,37 @@ const GEAR_TYPES = {
   soldier: { hits: 4, soldiers: 1, palette: GEAR_PALETTE },
   big: { hits: 8, soldiers: 5, heavy: true, palette: BIG_PALETTE },
   booster: { hits: 0, boosts: true, palette: BOOSTER_PALETTE },
-  bomb: { hits: 8, enemies: 2, blast: true, palette: BOMB_PALETTE },
+  bomb: { hits: 8, enemies: 2, blast: true, element: "fire", palette: BOMB_PALETTE },
   far: { hits: 4, soldiers: 1, far: true, palette: FAR_PALETTE, mark: "FAR" },
   lone: { hits: 4, soldiers: 1, lone: true, palette: LONE_PALETTE, mark: "LONE" },
   // Made by fusing two others. Each beats the two it came from, and frees a cell.
-  cannon: { hits: 8, soldiers: 6, enemies: 3, heavy: true, blast: true, palette: CANNON_PALETTE, mark: "CAN" },
+  cannon: { hits: 8, soldiers: 6, enemies: 3, heavy: true, blast: true, element: "fire", palette: CANNON_PALETTE, mark: "CAN" },
   dynamo: { hits: 8, soldiers: 5, boosts: true, heavy: true, palette: DYNAMO_PALETTE, mark: "DYN" },
-  comet: { hits: 8, enemies: 3, blast: true, far: true, palette: COMET_PALETTE, mark: "COM" },
+  comet: { hits: 8, enemies: 3, blast: true, far: true, element: "fire", palette: COMET_PALETTE, mark: "COM" },
   hermit: { hits: 8, soldiers: 6, heavy: true, lone: true, palette: HERMIT_PALETTE, mark: "HER" },
   // Gears that work with the rest of the game rather than sending soldiers.
   // spark: charges the next Lightning. oil: can't rust, nor can its neighbours.
   // chill: slows the enemy's growth for a while.
-  spark: { hits: 4, spark: true, palette: SPARK_PALETTE, mark: "SPK" },
+  spark: { hits: 4, spark: true, element: "storm", palette: SPARK_PALETTE, mark: "SPK" },
   oil: { hits: 4, soldiers: 1, oil: true, palette: OIL_PALETTE, mark: "OIL" },
-  ice: { hits: 6, chill: true, palette: ICE_PALETTE, mark: "ICE" },
-  storm: { hits: 8, enemies: 3, blast: true, spark: true, palette: STORM_PALETTE, mark: "STM" },
+  ice: { hits: 6, chill: true, element: "ice", palette: ICE_PALETTE, mark: "ICE" },
+  storm: { hits: 8, enemies: 3, blast: true, spark: true, element: "storm", palette: STORM_PALETTE, mark: "STM" },
   engine: { hits: 0, boosts: true, oil: true, palette: ENGINE_PALETTE, mark: "ENG" },
-  blizzard: { hits: 8, soldiers: 5, heavy: true, chill: true, palette: BLIZZARD_PALETTE, mark: "BLZ" },
+  blizzard: { hits: 8, soldiers: 5, heavy: true, chill: true, element: "ice", palette: BLIZZARD_PALETTE, mark: "BLZ" },
 };
+// Fire, ice and storm gears react when two different ones touch: each time
+// one of them fills, it sets off the reaction with each neighbour of another
+// element. Keyed by the two elements in alphabetical order.
+const ELEMENT_COLORS = { fire: "#ff6a2a", ice: "#8fe7ff", storm: "#ffe14d" };
+const REACTIONS = {
+  "fire+ice": { id: "steam", name: "Steam", icon: "\u2668\uFE0F", colors: ["#ffffff", "#cfe8f0"], text: "Fire and ice gears touching make steam: the enemy stops growing for a moment." },
+  "fire+storm": { id: "plasma", name: "Plasma", icon: "\u{1F4A5}", colors: ["#ff6a2a", "#ffe14d"], text: "Fire and storm gears touching make plasma: an extra blast of enemies." },
+  "ice+storm": { id: "shatter", name: "Shatter", icon: "\u2744\uFE0F", colors: ["#8fe7ff", "#ffe14d"], text: "Ice and storm gears touching make a shatter: a free lightning hit." },
+};
+const REACTION_GAP_SECONDS = 1; // a gear sets off reactions at most this often
+const STEAM_SECONDS = 1.5; // the enemy doesn't grow at all for this long
+const PLASMA_ENEMIES = 2; // blasted per reaction, per level
+const SHATTER_SECONDS = 0.5; // a shatter hits like this many seconds of the machine's soldiers, at least one
 const SPARK_CHARGE = 0.25; // next Lightning's extra strength each time a spark gear fills, per level
 const SPARK_MAX = 2; // so Lightning hits at most 3x as hard
 const ICE_SECONDS = 2; // how long a filled ice gear chills the enemy, plus a second per level above 1
@@ -738,6 +751,7 @@ const TIPS = [
   { id: "spark", text: "Spark gear! Each time it fills, your next Lightning strike hits harder, up to 3x. Use Lightning to spend the charge.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].spark) },
   { id: "oil", text: "Oil gear! It never rusts, and keeps the gears touching it from rusting too. Put it among your best gears.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].oil) },
   { id: "ice", text: "Ice gear! Each time it fills, the enemy grows at half speed for a few seconds.", when: () => grid.flat().some((cell) => cell && !cell.driver && GEAR_TYPES[cell.type].chill) },
+  { id: "elements", text: "Elements! Fire, ice and storm gears react when two different ones touch. Fire + ice makes steam (the enemy stops growing), fire + storm makes plasma (an extra blast), ice + storm makes a shatter (a free lightning hit).", when: () => grid.some((row, r) => row.some((cell, c) => reactionBetween(cell, grid[r][c + 1]) || reactionBetween(cell, grid[r + 1]?.[c]))) },
   { id: "merge", text: "Drag a gear onto a matching one to merge them into one stronger gear. Merging also frees up space.", when: () => grid.flat().filter((cell) => cell?.type === "soldier" && cell.level === 1).length >= 3 },
 ];
 
@@ -860,6 +874,7 @@ let rewardTimer = 0;
 let fightCount = null; // the numbers above the armies, as a fight; see updateFightCount()
 let sparkCharge = 0; // next Lightning's extra strength, from spark gears
 let chillFor = 0; // seconds the enemy still grows at ICE_GROWTH
+let steamFor = 0; // seconds the enemy doesn't grow at all, from steam
 let hitNumbers = []; // { side, amount, color, age } at most one per side, beside the fighters
 let laneRect = { x: 0, y: 0, w: 0, h: 0 }; // where the battle lane sits on the effects canvas
 let screenShake = 0; // pixels
@@ -1552,6 +1567,60 @@ function soldiersPerSecond() {
   return perTurn * driverTurnsPerSec;
 }
 
+function reactionBetween(a, b) {
+  const one = a && !a.driver && !a.rusted && GEAR_TYPES[a.type].element;
+  const two = b && !b.driver && !b.rusted && GEAR_TYPES[b.type].element;
+  if (!one || !two || one === two) return null;
+  return REACTIONS[[one, two].sort().join("+")];
+}
+
+// The gear at row, col just filled: it reacts with each neighbour of another element.
+function react(row, col) {
+  const cell = grid[row][col];
+  if (runTime - (cell.reactedAt ?? -Infinity) < REACTION_GAP_SECONDS) return;
+  for (const [dr, dc] of TOOTH_DIRS) {
+    const other = grid[row + dr]?.[col + dc];
+    const reaction = reactionBetween(cell, other);
+    if (!reaction) continue;
+    cell.reactedAt = runTime;
+    const level = Math.min(cell.level, other.level);
+    if (reaction.id === "steam") steamFor = Math.max(steamFor, STEAM_SECONDS);
+    else if (reaction.id === "plasma") launchBomb(PLASMA_ENEMIES * levelPayout(level) * armyStrength());
+    else if (reaction.id === "shatter") shatterHit(level);
+    recordStat("reactions");
+    showReaction(reaction, row, col, row + dr, col + dc);
+  }
+}
+
+// A free lightning hit, without using Lightning.
+function shatterHit(level) {
+  const amount = Math.max(armyStrength(), soldiersPerSecond() * SHATTER_SECONDS) * levelPayout(level);
+  enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
+  damageBoss(amount);
+  shove.enemy = 1;
+  spawnFaller("enemy");
+}
+
+let lastReactionToastAt = {};
+function showReaction(reaction, r1, c1, r2, c2) {
+  const a = cellCenter(r1, c1);
+  const b = cellCenter(r2, c2);
+  const x = (a.x + b.x) / 2;
+  const y = (a.y + b.y) / 2;
+  for (let i = 0; i < 12; i++) {
+    const angle = randomBetween(0, Math.PI * 2);
+    const speed = randomBetween(40, 150);
+    spawnParticle({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 30, gravity: 120, life: randomBetween(0.3, 0.6), size: randomBetween(2, 4), color: reaction.colors[i % 2] });
+  }
+  // Named now and then, not on every reaction.
+  const now = performance.now();
+  if (now - (lastReactionToastAt[reaction.id] ?? 0) > 4000) {
+    lastReactionToastAt[reaction.id] = now;
+    showToast(`${reaction.icon} ${reaction.name}!`);
+    playChestRattleSound(2);
+  }
+}
+
 // A full gear pays out and starts filling again, staying in place.
 function hitGear(gear, hits) {
   const cell = grid[gear.row][gear.col];
@@ -1568,6 +1637,7 @@ function hitGear(gear, hits) {
     if (spec.enemies) launchBomb(spec.enemies * level);
     if (spec.spark) sparkCharge = Math.min(SPARK_MAX, sparkCharge + SPARK_CHARGE * cell.level);
     if (spec.chill) chillFor = Math.max(chillFor, ICE_SECONDS + cell.level - 1);
+    if (spec.element) react(gear.row, gear.col);
   }
 }
 
@@ -2472,7 +2542,8 @@ function statusChips() {
   if (hotStreak > 0) chips.push({ kind: "good", icon: "\u{1F525}", count: hotStreak > 1 ? hotStreak : null, name: "Hot streak", text: `Main gear ${Math.round(hotStreak * STREAK.perLevel * 100)}% faster. Win waves within ${STREAK.fastSeconds} seconds to keep it.` });
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
   if (sparkCharge > 0) add("good", STATUS_ICONS.spark, "Spark charge", `Your next Lightning hits ${Math.round(sparkCharge * 100)}% harder.`);
-  if (chillFor > 0) add("good", STATUS_ICONS.chill, "Chilled", "The enemy grows at half speed.");
+  if (steamFor > 0) add("good", REACTIONS["fire+ice"].icon, "Steam", "The enemy has stopped growing.");
+  else if (chillFor > 0) add("good", STATUS_ICONS.chill, "Chilled", "The enemy grows at half speed.");
   if (rallying) add("good", STATUS_ICONS.rally, "Rally", "Holds arriving soldiers back. When the button says Charge!, press it to charge with 50% more.");
   if (waveEvent?.id === "double") add("good", STATUS_ICONS.doubleEvent, waveEvent.name, capitalized(NEXT_WAVE_HINTS.double));
   if (heroIs("guardian") && !rustBlocked) {
@@ -4744,7 +4815,8 @@ function update(dt) {
 
   waveTime += dt;
   chillFor = Math.max(0, chillFor - dt);
-  const growthScale = (chillFor > 0 ? ICE_GROWTH : 1) * (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
+  steamFor = Math.max(0, steamFor - dt);
+  const growthScale = (steamFor > 0 ? 0 : chillFor > 0 ? ICE_GROWTH : 1) * (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
   enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
@@ -4927,6 +4999,49 @@ function gearSprite(palette) {
   return sprite;
 }
 
+function drawElementDot(ctx, cx, cy, size, element) {
+  const x = cx + size * 0.3;
+  const y = cy - size * 0.3;
+  const r = size * 0.1;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = ELEMENT_COLORS[element];
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, size * 0.025);
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.fillStyle = OUTLINE;
+  ctx.beginPath();
+  if (element === "fire") {
+    ctx.moveTo(x, y - r * 0.6);
+    ctx.quadraticCurveTo(x + r * 0.55, y, x, y + r * 0.55);
+    ctx.quadraticCurveTo(x - r * 0.55, y, x, y - r * 0.6);
+  } else if (element === "ice") {
+    // A six-armed snowflake.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = r * 0.22;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI + Math.PI / 2;
+      ctx.moveTo(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62);
+      ctx.lineTo(x - Math.cos(a) * r * 0.62, y - Math.sin(a) * r * 0.62);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  } else {
+    ctx.moveTo(x + r * 0.1, y - r * 0.65);
+    ctx.lineTo(x - r * 0.4, y + r * 0.1);
+    ctx.lineTo(x, y + r * 0.1);
+    ctx.lineTo(x - r * 0.1, y + r * 0.65);
+    ctx.lineTo(x + r * 0.4, y - r * 0.1);
+    ctx.lineTo(x, y - r * 0.1);
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawGearCell(ctx, cx, cy, size, cell) {
   const flashBoost = 1 + cell.flash * 0.06;
   const r = size * 0.48 * flashBoost;
@@ -4996,6 +5111,7 @@ function drawGearCell(ctx, cx, cy, size, cell) {
     ctx.font = `800 ${Math.round(r * 0.3)}px system-ui, sans-serif`;
     ctx.fillText(badge, cx, cy + r * 0.73);
   }
+  if (spec.element) drawElementDot(ctx, cx, cy, size, spec.element);
   drawLevelMark(ctx, cx, cy, r, cell.level);
 }
 
@@ -5108,6 +5224,38 @@ function drawBoostLinks(ctx) {
   }
 }
 
+// A glowing dash between two touching gears that will react, in both colours.
+function drawReactionLinks(ctx) {
+  const pulse = 0.55 + Math.sin(performance.now() / 220) * 0.35;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineWidth = cellSize * 0.08;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      for (const [dr, dc] of [[0, 1], [1, 0]]) {
+        const other = grid[row + dr]?.[col + dc];
+        const reaction = reactionBetween(grid[row][col], other);
+        if (!reaction) continue;
+        const x = (col + 0.5 + dc / 2) * cellSize;
+        const y = (row + 0.5 + dr / 2) * cellSize;
+        const half = cellSize * 0.16;
+        ctx.globalAlpha = pulse;
+        ctx.strokeStyle = ELEMENT_COLORS[GEAR_TYPES[grid[row][col].type].element];
+        ctx.beginPath();
+        ctx.moveTo(x - dc * half - dr * 0, y - dr * half);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.strokeStyle = ELEMENT_COLORS[GEAR_TYPES[other.type].element];
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + dc * half, y + dr * half);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
 // Marks a cell a gear can be dragged into.
 function drawEmptyCell(ctx, cx, cy, size) {
   ctx.beginPath();
@@ -5212,6 +5360,7 @@ function drawBoard() {
   }
 
   drawBoostLinks(ctx);
+  drawReactionLinks(ctx);
 
   // The dragged gear follows the pointer, above everything else, with an
   // outline on the gear it would swap with.
@@ -8857,6 +9006,7 @@ function startNewRun() {
   peakRate = 0;
   sparkCharge = 0;
   chillFor = 0;
+  steamFor = 0;
   marchers = [];
   clashes = [];
   enemyBacklog = 0;
@@ -9128,6 +9278,7 @@ function guideSections() {
       ["Main gear", "Turns by itself, and its one tooth drives all the gears around it. It can't be moved.", mainGearIcon()],
       ["Normal gear", "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", gearIcon("soldier")],
       ...gearRewards.map((reward) => [reward.name, reward.text, rewardIcon(reward)]),
+      ["Elements", "Bomb gears are fire, Ice gears are ice and Spark gears are storm, and so are their fusions. Put two different ones side by side to make them react: fire + ice makes steam, fire + storm makes plasma, ice + storm makes a shatter.", emojiIcon("\u2668\uFE0F")],
       ["Gear fusion", "Drag a special gear onto a different one of the same level. If it has a purple ring, they fuse into a new, stronger gear. Find them all for your collection.", gearIcon("cannon")],
       ["Hot streak", "Win a wave quickly to build a streak, and each level spins the main gear faster. A slow wave ends it, but bosses and siege waves don't count.", emojiIcon("\u{1F525}")],
       ["Boss chests", "Beat a boss and pick one of three chests for coins or a strong gear. The others open too, so you'll see what you missed.", chestIcon(false, false)],
