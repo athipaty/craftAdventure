@@ -107,6 +107,16 @@
       <div id="pause-quests"></div>
     </div>
 
+    <div id="challenge-screen" class="hidden">
+      <div id="challenge-card">
+        <b>A friend challenges you!</b>
+        <p id="challenge-offer-text"></p>
+        <p id="challenge-offer-note" class="hidden">This ends the run you're in the middle of.</p>
+        <button id="challenge-accept-btn">Accept</button>
+        <button id="challenge-decline-btn" class="workshop-btn">Not now</button>
+      </div>
+    </div>
+
     <div id="install-screen" class="hidden">
       <div id="install-card">
         <p id="install-text">To install Gear Fight! on your iPhone or iPad, tap the Share button in Safari, then "Add to Home Screen".</p>
@@ -169,6 +179,8 @@
       <p id="level-gain"></p>
       <div id="gameover-goals"></div>
       <div id="gameover-actions">
+        <p id="challenge-result" class="challenge-result hidden"></p>
+        <button id="challenge-btn" class="hidden">Challenge a friend</button>
         <button id="share-btn" class="workshop-btn hidden">Share your score</button>
         <button id="retry-btn">Try again</button>
         <button id="gameover-worlds-btn" class="workshop-btn">Worlds</button>
@@ -247,6 +259,8 @@
       <p id="world-clear-stars"></p>
       <p id="world-clear-story"></p>
       <p id="world-clear-next"></p>
+      <p id="clear-challenge-result" class="challenge-result hidden"></p>
+      <button id="clear-challenge-btn" class="workshop-btn hidden">Challenge a friend</button>
       <button id="harder-btn" class="hidden"></button>
       <button id="next-world-btn">Next world</button>
       <button id="keep-going-btn" class="workshop-btn">Keep going (endless)</button>
