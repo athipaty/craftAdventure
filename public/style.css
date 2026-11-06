@@ -2477,18 +2477,13 @@ html.less-motion .chest-card.shaking {
 #side-actions {
   /* Every circle sits in a slot as tall as the biggest, centred, so all the
      circles line up through their middles and every label starts on one line. */
-  --band: 62px;
+  --band: 56px;
   flex: 1 1 auto;
   flex-direction: row;
   justify-content: space-evenly;
   align-items: flex-start;
   gap: 2px;
   margin: 0;
-}
-
-#side-actions > #strike-btn {
-  --size: 62px;
-  width: 78px;
 }
 
 #train-btn {
@@ -2503,7 +2498,7 @@ html.less-motion .chest-card.shaking {
 /* ---------- Lightning, Overdrive, Rally: round power buttons ---------- */
 
 #side-actions > button {
-  --size: 50px;
+  --size: 56px;
   --ring: 5px;
   --face-light: #fff4c9;
   --face: var(--top);
@@ -2701,18 +2696,13 @@ html.less-motion #side-actions > button::after {
   }
 
   #side-actions {
-    --band: 54px;
+    --band: 48px;
   }
 
   #side-actions > button {
-    --size: 44px;
-    width: 58px;
+    --size: 48px;
+    width: 62px;
     font-size: 0.66rem;
-  }
-
-  #side-actions > #strike-btn {
-    --size: 54px;
-    width: 66px;
   }
 
   /* Thai words are longer and don't break well. */
