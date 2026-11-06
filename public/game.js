@@ -4788,20 +4788,20 @@ function drawBoard() {
 }
 
 const SOLDIER_LOOKS = {
-  runner: { tunic: "#d6b13a", trim: "#7a5716", skin: "#9ccc5a", horns: "#2f2410", blade: "#c3ccd5", size: 0.92 },
-  brute: { tunic: "#59606b", trim: "#2a2f36", skin: "#6f8f45", horns: "#c3ccd5", blade: "#3f4a55", size: 1.35 },
-  shaman: { tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
-  frost: { tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
-  imp: { tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
+  runner: { eyes: 2, tunic: "#d6b13a", trim: "#7a5716", skin: "#9ccc5a", horns: "#2f2410", blade: "#c3ccd5", size: 0.92 },
+  brute: { eyes: 2, armor: true, tusks: true, tunic: "#59606b", trim: "#2a2f36", skin: "#6f8f45", horns: "#c3ccd5", blade: "#3f4a55", size: 1.35 },
+  shaman: { eyes: 3, tunic: "#5b3a8a", trim: "#2c1a4a", skin: "#8a7fb0", horns: "#a4552a", blade: "#a4552a", size: 1.05 },
+  frost: { eyes: 2, eye: "#e8fbff", spikes: 6, tunic: "#3f7fa8", trim: "#1d4560", skin: "#a8e0f5", horns: "#ffffff", blade: "#d8f6ff", glow: "#a8e6ff", size: 1.3 },
+  imp: { eyes: 2, wings: true, tunic: "#3a1208", trim: "#1c0804", skin: "#f06a2a", horns: "#1c0a06", blade: "#ffcc33", glow: "#ff8a3d", size: 0.98 },
   r0: { tunic: "#3a7ddb", trim: "#1f4a7a", skin: "#f3d5b0", helmet: "#c3ccd5", blade: "#eef2f5", size: 1 },
   r1: { tunic: "#8d99a6", trim: "#3f4a55", skin: "#f3d5b0", helmet: "#dfe5ea", blade: "#ffffff", plume: "#3a7ddb", size: 1.12 },
   r2: { tunic: "#e0a92e", trim: "#7a5716", skin: "#f3d5b0", helmet: "#ffe28a", blade: "#ffffff", plume: "#d8432f", cape: "#b5261a", size: 1.25 },
   r3: { tunic: "#fff0b8", trim: "#b98a1e", skin: "#f3d5b0", helmet: "#ffffff", blade: "#8fe7ff", plume: "#8fe7ff", cape: "#3a7ddb", glow: "#ffe28a", size: 1.4 },
   charge: { tunic: "#ffcc33", trim: "#a06d10", skin: "#f3d5b0", helmet: "#fff3c4", blade: "#ffffff", size: 1.1 },
-  e0: { tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
-  e1: { tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
-  e2: { tunic: "#4a5560", trim: "#262c33", skin: "#7a93a3", horns: "#d7dfe6", blade: "#59402a", size: 1.3 },
-  e3: { tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
+  e0: { eyes: 1, tunic: "#a32a1c", trim: "#5e140a", skin: "#7fa84a", horns: "#2f2410", blade: "#6e4a24", size: 1 },
+  e1: { eyes: 2, tusks: true, tunic: "#5a3a20", trim: "#2a1b08", skin: "#4f7a33", horns: "#e8dcc0", blade: "#8d99a6", size: 1.15 },
+  e2: { eyes: 2, spikes: 5, tunic: "#4a5560", trim: "#262c33", skin: "#7a93a3", horns: "#d7dfe6", blade: "#59402a", size: 1.3 },
+  e3: { eyes: 3, wings: true, tunic: "#2a1020", trim: "#120610", skin: "#c2362a", horns: "#1c0a06", blade: "#ff8a3d", glow: "#ff5a2a", size: 1.42 },
 };
 
 const OUTLINE = "#22150b";
@@ -4904,6 +4904,11 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
   if (colors.glow) {
     ctx.shadowColor = colors.glow;
     ctx.shadowBlur = glowBlur(8);
+  }
+  if (colors.horns) {
+    drawMonster(ctx, colors, state, time, stride, swing, mood);
+    ctx.restore();
+    return;
   }
   if (colors.cape) {
     ctx.beginPath();
@@ -5021,6 +5026,228 @@ function drawSoldier(ctx, x, feetY, facing, look, state, seed, mood = "neutral")
     }
   }
   ctx.restore();
+}
+
+// Mixes two #rrggbb colours, `t` of the way from `a` to `b`.
+function mixColor(a, b, t) {
+  const channel = (hex, i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const parts = [0, 1, 2].map((i) => Math.round(channel(a, i) + (channel(b, i) - channel(a, i)) * t));
+  return `#${parts.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// Monsters are built nothing like the knights, so the two sides are easy to
+// tell apart at a glance: a hunched blob with no neck or helmet, mostly mouth,
+// with glowing slit eyes, clawed arms, back spikes and a tail. Drawn facing
+// right with its feet on y = 0, in the same space as a soldier.
+function drawMonster(ctx, colors, state, time, stride, swing, mood) {
+  const bodyY = -13;
+  const rx = 9.5;
+  const ry = 11.5;
+  const onBody = (a, grow = 0) => [Math.cos(a) * (rx + grow), bodyY + Math.sin(a) * (ry + grow)];
+  const spike = (a, len, width = 0.2) => {
+    ctx.beginPath();
+    ctx.moveTo(...onBody(a - width, -1));
+    ctx.lineTo(...onBody(a, len));
+    ctx.lineTo(...onBody(a + width, -1));
+    ctx.closePath();
+    inked(ctx, colors.horns, 1);
+  };
+  const arm = (x, y, angle, fill) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(-2, 0);
+    ctx.quadraticCurveTo(-1.2, 5, -1.5, 9);
+    ctx.lineTo(1.7, 9);
+    ctx.quadraticCurveTo(2, 5, 2, 0);
+    ctx.closePath();
+    inked(ctx, fill);
+    for (const c of [-1.6, 0.2, 2]) {
+      ctx.beginPath();
+      ctx.moveTo(c - 0.8, 8.6);
+      ctx.lineTo(c + 0.5, 12.4);
+      ctx.lineTo(c + 1, 8.6);
+      ctx.closePath();
+      inked(ctx, colors.blade, 0.7);
+    }
+    ctx.restore();
+  };
+
+  // Tail, swishing faster on the move.
+  const wag = Math.sin(time * (state === "walk" || state === "flee" ? 12 : 3)) * 2;
+  ctx.beginPath();
+  ctx.moveTo(-6, -5);
+  ctx.quadraticCurveTo(-13, -3 + wag, -15, -11 + wag);
+  ctx.quadraticCurveTo(-11, -7, -5, -10);
+  ctx.closePath();
+  inked(ctx, colors.skin);
+  ctx.beginPath();
+  ctx.moveTo(-14, -9.5 + wag);
+  ctx.lineTo(-17.5, -15 + wag);
+  ctx.lineTo(-12.8, -12.5 + wag);
+  ctx.closePath();
+  inked(ctx, colors.horns, 1);
+
+  if (colors.wings) {
+    const flap = Math.sin(time * 9) * 0.25;
+    ctx.save();
+    ctx.translate(-3, -19);
+    ctx.rotate(-0.1 + flap);
+    ctx.beginPath();
+    ctx.moveTo(0, 2);
+    ctx.lineTo(-3, -12);
+    ctx.lineTo(-15, -10);
+    ctx.quadraticCurveTo(-11, -7, -11, -3);
+    ctx.quadraticCurveTo(-7.5, -4.5, -6, 0);
+    ctx.quadraticCurveTo(-3, -1, 0, 2);
+    ctx.closePath();
+    inked(ctx, mixColor(colors.skin, "#000000", 0.35));
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-3, -12);
+    ctx.lineTo(-11, -3);
+    ctx.moveTo(-3, -12);
+    ctx.lineTo(-6, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Stubby clawed feet.
+  for (const side of [-1, 1]) {
+    const x = side * 4 + side * stride;
+    for (const toe of [0, 1.6]) {
+      ctx.beginPath();
+      ctx.moveTo(x + 2 + toe, -1.4);
+      ctx.lineTo(x + 5.4 + toe * 0.6, 0.3);
+      ctx.lineTo(x + 2.6 + toe, 0.6);
+      ctx.closePath();
+      inked(ctx, colors.horns, 0.7);
+    }
+    ctx.beginPath();
+    ctx.ellipse(x + 0.6, -2.2, 3.6, 2.6, 0, 0, Math.PI * 2);
+    inked(ctx, colors.trim);
+  }
+
+  // Far arm, behind the body.
+  arm(-4, bodyY + 1, -swing * 0.5 + 0.3, mixColor(colors.skin, "#000000", 0.25));
+
+  // Spikes down the back, horns on top.
+  const spikeLen = colors.spikes || 4;
+  for (const a of [3.45, 3.9, 4.35]) spike(a, spikeLen);
+  spike(4.85, spikeLen + 1.5, 0.16);
+  spike(5.35, spikeLen + 0.5, 0.16);
+
+  // One big round body: no neck, no helmet.
+  ctx.beginPath();
+  ctx.ellipse(0, bodyY, rx, ry, 0, 0, Math.PI * 2);
+  inked(ctx, colors.skin);
+  ctx.beginPath();
+  ctx.ellipse(3, bodyY + 4, 5.4, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = mixColor(colors.skin, "#fff4d6", 0.45);
+  ctx.fill();
+  ctx.fillStyle = colors.tunic;
+  for (const [x, y, r] of [[-5, -18, 1.6], [-6.6, -12, 1.2], [-3, -22.5, 1]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (colors.armor) {
+    // A dented metal cap.
+    ctx.beginPath();
+    ctx.ellipse(0, bodyY, rx + 0.6, ry + 0.6, 0, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.quadraticCurveTo(0, bodyY - 6, ...onBody(Math.PI * 1.12, 0.6));
+    ctx.closePath();
+    inked(ctx, colors.blade);
+    ctx.fillStyle = OUTLINE;
+    for (const x of [-4, 0, 4]) {
+      ctx.beginPath();
+      ctx.arc(x, bodyY - 8.6 - (x === 0 ? 1 : 0), 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Glowing slit eyes.
+  const eyeSpots = {
+    1: [[3.6, -17.6, 3.4]],
+    2: [[0.8, -17.8, 2.3], [5.8, -17.2, 2.3]],
+    3: [[0.6, -17, 2], [5.6, -16.6, 2], [3.2, -21, 1.6]],
+  }[colors.eyes || 2];
+  for (const [x, y, r] of eyeSpots) {
+    if (mood === "wince" || mood === "happy") {
+      // Squeezed shut, or squinting with glee.
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = r * 0.5;
+      ctx.beginPath();
+      if (mood === "happy") {
+        ctx.arc(x, y + r * 0.3, r * 0.8, Math.PI * 1.1, Math.PI * 1.9);
+      } else {
+        ctx.moveTo(x - r * 0.8, y - r * 0.5);
+        ctx.lineTo(x + r * 0.6, y);
+        ctx.lineTo(x - r * 0.8, y + r * 0.5);
+      }
+      ctx.stroke();
+      continue;
+    }
+    inkedCircle(ctx, x, y, r, colors.eye || "#ffe14a", 0.8);
+    ctx.beginPath();
+    ctx.fillStyle = OUTLINE;
+    if (mood === "scared") ctx.arc(x + r * 0.2, y, r * 0.28, 0, Math.PI * 2);
+    else ctx.ellipse(x + r * 0.25, y, r * 0.28, r * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (mood !== "scared" && mood !== "wince" && mood !== "happy") {
+    // One heavy brow, frowning down toward the front.
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-1.6, -22.2);
+    ctx.lineTo(8, -19.6);
+    ctx.stroke();
+  }
+
+  // A huge mouth full of teeth.
+  const open = mood === "scared" ? 1.2 : mood === "happy" ? 4.5 : state === "fight" ? 2.2 + Math.abs(Math.sin(time * 11)) * 2 : 3;
+  const mouthL = mood === "scared" ? 3 : 0;
+  const mouthR = mood === "scared" ? 7.6 : 9.4;
+  ctx.beginPath();
+  ctx.moveTo(mouthL, -11.4);
+  ctx.quadraticCurveTo((mouthL + mouthR) / 2, -10.6, mouthR, -12);
+  ctx.quadraticCurveTo(mouthR - 2, -11 + open * 2, (mouthL + mouthR) / 2 - 1, -11 + open * 1.9);
+  ctx.quadraticCurveTo(mouthL, -11 + open * 1.4, mouthL, -11.4);
+  inked(ctx, "#3a0d06", 1);
+  if (mood !== "scared" && mood !== "wince") {
+    ctx.fillStyle = "#fffbea";
+    for (const x of [1.6, 3.9, 6.2, 8.2]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 0.9, -11.3);
+      ctx.lineTo(x, -9.4);
+      ctx.lineTo(x + 0.9, -11.4);
+      ctx.fill();
+    }
+    for (const x of [2.6, 6.4]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 0.8, -11 + open * 1.75);
+      ctx.lineTo(x, -11 + open * 1.75 - 1.8);
+      ctx.lineTo(x + 0.8, -11 + open * 1.75);
+      ctx.fill();
+    }
+  }
+  if (colors.tusks) {
+    for (const x of [0.4, 8.6]) {
+      ctx.beginPath();
+      ctx.moveTo(x - 1, -8.6);
+      ctx.quadraticCurveTo(x - 1.4, -13, x + 0.6, -15);
+      ctx.quadraticCurveTo(x + 0.6, -11, x + 1.2, -8.6);
+      ctx.closePath();
+      inked(ctx, "#fff4d6", 0.8);
+    }
+  }
+
+  // Near arm, swiping its claws forward in a fight.
+  arm(-3, bodyY + 3, swing * 0.9 + 0.1, colors.skin);
 }
 
 function drawBombIcon(ctx, x, y) {
