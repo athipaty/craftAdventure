@@ -135,6 +135,10 @@ async function check(name, fn) {
   await check("a small machine goes straight into the wave", async () => {
     await winWithGears(0);
     await page.click("#skip-btn");
+    // After the first wave the build comes first, then the wave.
+    assert.equal(await page.evaluate(() => gameState), "plan");
+    await page.waitForTimeout(500);
+    await page.locator(".build-card").first().click();
     assert.equal(await page.evaluate(() => gameState), "playing");
     assert.equal(await page.locator("#build-bar").isVisible(), false);
   });

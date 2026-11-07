@@ -66,8 +66,8 @@ const RUN_SAVE_KEY = "gearfight_run";
 // Lifetime waves won before each feature appears, so a new player meets them one
 // at a time. Anyone past these numbers simply has them all.
 const HINT_WAVES = 10; // the how-to line under the buttons shows until this many waves are won
-const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10, powerGears: 12 };
-const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!", powerGears: "New: Spark, Oil and Ice gears!" };
+const FEATURE_WAVES = { reroll: 3, rare: 3, rally: 4, train: 6, speed: 6, newGears: 8, deal: 10, powerGears: 12, builds: 14 };
+const FEATURE_NEWS = { reroll: "New: Rerolls and skips!", rare: "New: Rare rewards!", rally: "New: Rally!", train: "New: Training!", speed: "New: 2x speed!", newGears: "New: Far and Lone gears!", deal: "New: Risky deals!", powerGears: "New: Spark, Oil and Ice gears!", builds: "New: Builds! Pick a plan for each run" };
 const TIP_FEATURES = { rally: "rally", train: "train", short: "train" };
 const EASY_BOSS = 0.65; // boss health and reinforcements on Easy
 // One icon per reward, skill and word, the same wherever it appears. Gears, enemies
@@ -79,6 +79,7 @@ const REWARD_ICONS = {
   bossHunter: "\u{1F3AF}", demolition: "\u{1F4A3}", heavyLoad: "\u{1F3CB}\uFE0F", turbo: "\u{1F680}", blastCleaner: "\u{1F9F9}",
   stormEngine: "\u{1F329}\uFE0F", warDrums: "\u{1F941}", patterns: "\u{1F9E9}", forgeBonus: "\u{1F528}", forgedGear: "\u2692\uFE0F",
   chargedStrike: "\u{1F31F}", secondWind: "\u{1F4A8}", promotion: "\u2B50", clockwork: "\u23F0",
+  comboEngine: "\u{1F308}", chainBlast: "\u{1F4A5}", perpetual: "\u267E\uFE0F", twinStrike: "\u{1F300}",
 };
 // Icons for the non-reward status chips (statusChips() below) \u2014 rewards
 // already have an icon via REWARD_ICONS, these cover the rest.
@@ -168,6 +169,36 @@ const PATHS = {
   treasure: { id: "treasure", icon: "\u{1F4B0}", name: "Treasure trail", risk: "Enemies grow 25% faster", reward: "A treasure goblin, and win for +10 coins", growth: 1.25, goblin: true, coins: 10 },
   supply: { id: "supply", icon: "\u{1F4E6}", name: "Supply camp", risk: "20% more enemies", reward: "A level 2 gear right now", enemy: 1.2, gearLevel: 2, available: () => gearTray.length < TRAY_SLOTS },
 };
+// A build is the run's plan, picked once after the first wave. Each one changes
+// how the run plays: a perk, a cost, a gear to start it off, rewards it makes
+// more likely, and one epic reward only it can find. Numbers multiply the usual.
+const BUILD_FAVOUR_WEIGHT = 3; // how much more often a build's own rewards come up
+const BUILD_REWARD_WAVE = 8; // from this wave a build's own epic reward can be offered
+const BUILD_COMBO_GEARS = 2; // level 2 normal gears the Combo crafter starts with
+const COMBO_ENGINE_PER_COMBO = 0.05;
+const PERPETUAL_PER_BOOSTER = 0.05;
+const BUILDS = {
+  combo: {
+    id: "combo", icon: "\u2728", name: "Combo crafter", perk: "Combo bonuses are twice as strong", cost: "Lightning recharges 30% slower", start: "Two level 2 gears to start",
+    text: "Combo bonuses are twice as strong, but Lightning recharges 30% slower. Starts with two level 2 gears.",
+    strikeRecharge: 1.3, favours: ["patterns", "forgeBonus", "forgedGear", "gearUpgrade", "comboEngine"],
+  },
+  bomb: {
+    id: "bomb", icon: "\u{1F4A3}", name: "Demolition crew", perk: "Blasts hit 50% more enemies", cost: "Normal gears send 20% fewer soldiers", start: "A Bomb gear to start",
+    text: "Blasts hit 50% more enemies, but normal gears send 20% fewer soldiers. Starts with a Bomb gear.",
+    blastPayout: 1.5, soldierPayout: 0.8, gear: "bomb", favours: ["bombGear", "iceGear", "sparkGear", "demolition", "blastCleaner", "chainBlast"],
+  },
+  engine: {
+    id: "engine", icon: "\u2699\uFE0F", name: "Gear engine", perk: "The main gear turns 20% faster", cost: "Overdrive recharges 50% slower", start: "A Booster gear to start",
+    text: "The main gear turns 20% faster, but Overdrive recharges 50% slower. Starts with a Booster gear.",
+    driverSpeed: 1.2, overdriveRecharge: 1.5, gear: "booster", favours: ["boosterGear", "turbo", "fasterGear", "clockwork", "longChain", "perpetual"],
+  },
+  storm: {
+    id: "storm", icon: "\u26A1", name: "Storm caller", perk: "Lightning hits 30% harder and recharges 15% faster", cost: "Normal gears send 20% fewer soldiers", start: "A Spark gear to start",
+    text: "Lightning hits 30% harder and recharges 15% faster, but normal gears send 20% fewer soldiers. Starts with a Spark gear.",
+    strikePower: 1.3, strikeRecharge: 0.85, soldierPayout: 0.8, gear: "spark", favours: ["sparkGear", "staticCharge", "stormEngine", "chargedStrike", "cooling", "twinStrike"],
+  },
+};
 const GOBLIN_TIP_AGE = 1.2; // seconds in, so it's on screen when the tip points to it
 const GOBLIN_FIRST_WAVE = 2;
 const GOBLIN_WAVE_CHANCE = 0.2; // odds a normal wave has a treasure goblin, about three a run
@@ -194,7 +225,7 @@ const CROWD_SCALE = 0.62;
 const CROWD_SPRITE_SIZE = 64;
 const RUN_SAVE_VERSION = 1; // saves from another version are ignored
 const RUN_SAVE_SECONDS = 5; // how often a run is saved while playing
-const RUN_SAVE_STATES = ["playing", "building", "choosing", "chest", "path", "tip", "paused", "worldclear"];
+const RUN_SAVE_STATES = ["playing", "building", "choosing", "chest", "path", "plan", "tip", "paused", "worldclear"];
 const COINS_PER_WAVE = 2;
 const COINS_PER_BOSS = 10;
 const COIN_PURSE_PER_LEVEL = 0.1; // extra run coins per level
@@ -744,6 +775,10 @@ const REWARDS = [
   { id: "chargedStrike", rarity: "epic", name: "Charged strike", text: "Lightning also fills every connected gear", max: 1 },
   { id: "secondWind", rarity: "epic", name: "Second wind", text: "The next time you are overrun, the line resets instead", max: 1 },
   { id: "promotion", rarity: "epic", oneOff: true, name: "Field promotion", text: "Your army moves up a rank for free", available: () => Boolean(nextRank()), apply: () => { armyRank += 1; questEvent("rank", armyRank); } },
+  { id: "comboEngine", rarity: "epic", build: "combo", name: "Combo engine", text: "Every combo on your board makes all gears pay 5% more", max: 1 },
+  { id: "chainBlast", rarity: "epic", build: "bomb", name: "Chain blast", text: "Each blast also hits the gears touching it", max: 1 },
+  { id: "perpetual", rarity: "epic", build: "engine", name: "Perpetual motion", text: "Each Booster gear on the board makes the main gear 5% faster", max: 1 },
+  { id: "twinStrike", rarity: "epic", build: "storm", name: "Twin strike", text: "Lightning strikes twice", max: 1 },
   { id: "clockwork", rarity: "epic", name: "Clockwork", text: "The one-tooth gear turns 25% faster", max: 2, apply: () => { driverTurnsPerSec += PART_CLOCKWORK; } },
 ];
 
@@ -936,6 +971,8 @@ let chestCanvases = []; // each card's chest, redrawn every frame while the ches
 let chestOpenAt = []; // when each lid starts to open: null while shut, 0 if it was open already
 let chestFrame = null;
 let lastPathWave = 0; // the wave the last route was chosen for
+let runBuild = null; // id from BUILDS once picked for this run
+let offeredBuilds = null; // ids from BUILDS while the choice is open
 let offeredPaths = null; // ids from PATHS while a choice is open
 let nextPath = null; // the route chosen for the next wave
 let activePath = null; // this wave's route
@@ -1595,7 +1632,7 @@ function gearPlacePayout(row, col) {
 
 // Pattern master doubles each combo's bonus.
 function comboBonusScale() {
-  return 1 + (partCount("patterns") * PART_COMBO) / COMBO_BLOCK_BONUS;
+  return 1 + (partCount("patterns") * PART_COMBO) / COMBO_BLOCK_BONUS + (runBuild === "combo" ? 1 : 0);
 }
 
 // The payout of a gear in a line of this many matching gears.
@@ -1610,7 +1647,25 @@ function comboBlockFill() {
 // What this run's rewards add to one kind of gear's payout.
 function gearPartPayout(type) {
   const spec = GEAR_TYPES[type];
-  return (spec.heavy ? 1 + partCount("heavyLoad") * PART_BIG_PAYOUT : 1) * (spec.blast ? 1 + partCount("demolition") * PART_BOMB_PAYOUT : 1);
+  return (spec.heavy ? 1 + partCount("heavyLoad") * PART_BIG_PAYOUT : 1) * (spec.blast ? 1 + partCount("demolition") * PART_BOMB_PAYOUT : 1) * buildPayout(type);
+}
+
+function build() {
+  return BUILDS[runBuild] || null;
+}
+
+// What the run's build does to a gear's payout.
+function buildPayout(type) {
+  const plan = build();
+  const engine = partCount("comboEngine") ? 1 + COMBO_ENGINE_PER_COMBO * Object.values(comboCounts).reduce((sum, n) => sum + n, 0) : 1;
+  if (!plan) return engine;
+  return engine * (type === "soldier" ? plan.soldierPayout || 1 : 1) * (GEAR_TYPES[type].blast ? plan.blastPayout || 1 : 1);
+}
+
+// Perpetual motion: every working Booster on the board speeds the main gear up.
+function buildSpin() {
+  if (!partCount("perpetual")) return 1;
+  return 1 + PERPETUAL_PER_BOOSTER * grid.flat().filter((cell) => cell && !cell.driver && !cell.rusted && GEAR_TYPES[cell.type].boosts).length;
 }
 
 // Each turn the tooth hits all four sides once, so a gear reachable from two
@@ -1630,7 +1685,7 @@ function soldiersPerSecond() {
       perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * fill * payout) / spec.hits;
     }
   }
-  return perTurn * driverTurnsPerSec;
+  return perTurn * driverTurnsPerSec * buildSpin();
 }
 
 function reactionBetween(a, b) {
@@ -1701,9 +1756,20 @@ function hitGear(gear, hits) {
     const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout(cell.comboLine) : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
     if (spec.enemies) launchBomb(spec.enemies * level);
+    if (spec.blast && partCount("chainBlast")) chainBlast(gear.row, gear.col);
     if (spec.spark) sparkCharge = Math.min(SPARK_MAX, sparkCharge + SPARK_CHARGE * cell.level);
     if (spec.chill) chillFor = Math.max(chillFor, ICE_SECONDS + cell.level - 1);
     if (spec.element) react(gear.row, gear.col);
+  }
+}
+
+// A blast also hits each gear touching it, once. Other blast gears are left out,
+// so one blast can't set off another and run on forever.
+function chainBlast(row, col) {
+  for (const [dr, dc] of TOOTH_DIRS) {
+    const other = grid[row + dr]?.[col + dc];
+    if (!other || other.driver || other.rusted || GEAR_TYPES[other.type].blast) continue;
+    hitGear({ row: row + dr, col: col + dc, spin: 0 }, 1);
   }
 }
 
@@ -2242,7 +2308,8 @@ function updateStrikeButton() {
 
 function strikeRecharge() {
   const seconds = STRIKE_COOLDOWN_SECONDS - upgradeLevel("strikeRecharge") * STRIKE_RECHARGE_PER_LEVEL - (heroIs("archer") ? ARCHER_RECHARGE : 0);
-  return overdriveLeft > 0 && partCount("stormEngine") ? seconds / PART_STORM_RECHARGE : seconds;
+  const planned = seconds * (build()?.strikeRecharge || 1);
+  return overdriveLeft > 0 && partCount("stormEngine") ? planned / PART_STORM_RECHARGE : planned;
 }
 
 function strikeEnemy() {
@@ -2263,7 +2330,7 @@ function strikeEnemy() {
   frozenFor = 0;
   strikeCount += 1;
   const triple = heroIs("archer") && strikeCount % ARCHER_TRIPLE_EVERY === 0 ? 3 : 1;
-  const boost = triple * (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE);
+  const boost = triple * (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE) * (build()?.strikePower || 1) * (partCount("twinStrike") ? 2 : 1);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost * (1 + sparkCharge);
   sparkCharge = 0;
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
@@ -2443,7 +2510,8 @@ function updateRallyButton() {
 function overdriveRecharge() {
   const seconds = OVERDRIVE_COOLDOWN_SECONDS - upgradeLevel("overdriveRecharge") * OVERDRIVE_RECHARGE_PER_LEVEL;
   const cooled = seconds * Math.pow(PART_COOLING, partCount("cooling")) * (ruleOn("slowOverdrive") ? RULE_SLOW_OVERDRIVE : 1);
-  return currentEvent?.id === "overdrive" ? cooled / 3 : cooled;
+  const planned = cooled * (build()?.overdriveRecharge || 1);
+  return currentEvent?.id === "overdrive" ? planned / 3 : planned;
 }
 
 function overdriveSeconds() {
@@ -2609,6 +2677,7 @@ function statusChips() {
   if (activeDeal) add("bad", STATUS_ICONS.deal, "Risky deal", capitalized(activeDeal.text));
   if (activePath && activePath.id !== "safe") add("bad", activePath.icon, activePath.name, activePath.risk);
   if (wavePace) add("bad", STATUS_ICONS.pace[wavePace.id] || STATUS_ICONS.deal, wavePace.name, capitalized(NEXT_WAVE_HINTS[wavePace.id === "rush" ? "paceRush" : "paceSiege"]));
+  if (build()) add("good", build().icon, build().name, build().text);
   if (hotStreak > 0) chips.push({ kind: "good", icon: "\u{1F525}", count: hotStreak > 1 ? hotStreak : null, name: "Hot streak", text: `Main gear ${Math.round(hotStreak * STREAK.perLevel * 100)}% faster. Win waves within ${STREAK.fastSeconds} seconds to keep it.` });
   if (currentChallenge) add("good", "\u{1F3C1}", "Friend's challenge", `Beat your friend's wave ${currentChallenge.target}.`);
   if (overdriveLeft > 0) add("good", STATUS_ICONS.overdrive, "Overdrive", "The main gear spins 3x faster for a few seconds, then needs to recharge.");
@@ -2971,7 +3040,7 @@ function updateDrivers(dt) {
       const cell = grid[row][col];
       if (!cell?.driver) continue;
       const before = Math.floor(cell.angle / QUARTER_TURN);
-      const boost = (overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1) * (frozenFor > 0 ? FROST_SLOW : 1) * streakBoost();
+      const boost = (overdriveLeft > 0 ? OVERDRIVE_MULTIPLIER : 1) * (frozenFor > 0 ? FROST_SLOW : 1) * streakBoost() * buildSpin();
       cell.angle += driverTurnsPerSec * boost * Math.PI * 2 * dt;
       const after = Math.floor(cell.angle / QUARTER_TURN);
       for (let k = before + 1; k <= after; k++) {
@@ -3252,6 +3321,7 @@ function rewardDisplay(reward) {
 
 function rewardIsOpen(reward) {
   if (reward.upgrade) return specialGearCount() >= specialGearCap() && Boolean(gearUpgradeTarget());
+  if (reward.build && (runBuild !== reward.build || wave < BUILD_REWARD_WAVE)) return false;
   if (reward.rarity && !featureOn("rare")) return false;
   if ((reward.id === "farGear" || reward.id === "loneGear") && !featureOn("newGears")) return false;
   if (reward.feature && !featureOn(reward.feature)) return false;
@@ -3272,7 +3342,7 @@ function pickRewards(lucky, exclude = []) {
   const all = REWARDS.filter(rewardIsOpen);
   const fresh = all.filter((r) => !exclude.includes(r.id));
   const open = fresh.length >= 3 ? fresh : all;
-  const shuffled = open.map((r) => [Math.pow(random(), 1 / weights[rewardRarity(r)]), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
+  const shuffled = open.map((r) => [Math.pow(random(), 1 / (weights[rewardRarity(r)] * (build()?.favours.includes(r.id) ? BUILD_FAVOUR_WEIGHT : 1))), r]).sort((a, b) => b[0] - a[0]).map((pair) => pair[1]);
   const firstGear = shuffled.find((r) => r.gear || r.upgrade);
   const rest = shuffled.filter((r) => r !== firstGear);
   return (firstGear ? [firstGear, ...rest] : rest).slice(0, 3 + upgradeLevel("extraChoice"));
@@ -3780,6 +3850,10 @@ const REWARD_CHANGES = {
   forgeBonus: { label: "Soldiers per merge", show: showPlain, value: soldiersPerMerge },
   chargedStrike: { label: "Lightning fills gears", show: showOnOff, value: () => partCount("chargedStrike") },
   secondWind: { label: "Second chances", show: showPlain, value: () => partCount("secondWind") },
+  comboEngine: { label: "Payout per combo", show: showPercent, value: () => partCount("comboEngine") * COMBO_ENGINE_PER_COMBO },
+  chainBlast: { label: "Blasts hit nearby gears", show: showOnOff, value: () => partCount("chainBlast") },
+  perpetual: { label: "Speed per Booster", show: showPercent, value: () => partCount("perpetual") * PERPETUAL_PER_BOOSTER },
+  twinStrike: { label: "Lightning strikes", show: showPlain, value: () => 1 + partCount("twinStrike") },
   promotion: { label: "Army rank", show: (rank) => ARMY_RANKS[rank].name, value: () => armyRank, after: () => armyRank + 1 },
 };
 
@@ -4480,8 +4554,77 @@ function chooseReward(reward) {
   }
   offeredRewards = null;
   document.getElementById("reward-screen").classList.add("hidden");
+  if (buildChoiceDue()) showBuilds(pickBuilds());
+  else if (pathChoiceDue()) showPaths(pickPaths());
+  else carryOnToWave();
+}
+
+// Once, at the first reward of a run, for players who know the basics.
+function buildChoiceDue() {
+  return featureOn("builds") && !runBuild && wave === runStartWave + 1;
+}
+
+// Three of the builds, the same for everyone in a daily challenge.
+function pickBuilds() {
+  const random = runRandom("builds");
+  return Object.keys(BUILDS).map((id) => [random(), id]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]).slice(0, 3);
+}
+
+function showBuilds(ids) {
+  gameState = "plan";
+  drag = null;
+  offeredBuilds = ids;
+  rewardOpenedAt = performance.now();
+  const list = document.getElementById("build-options");
+  list.replaceChildren();
+  for (const id of ids) {
+    const plan = BUILDS[id];
+    const button = document.createElement("button");
+    button.className = `build-card build-${id}`;
+    const name = document.createElement("b");
+    name.textContent = plan.name;
+    const perk = document.createElement("span");
+    perk.className = "path-reward";
+    perk.textContent = plan.perk;
+    const cost = document.createElement("span");
+    cost.className = "path-risk";
+    cost.textContent = plan.cost;
+    const start = document.createElement("span");
+    start.className = "build-start";
+    start.textContent = plan.start;
+    const words = document.createElement("div");
+    words.className = "reward-words";
+    words.append(name, perk, cost, start);
+    button.append(emojiIcon(plan.icon), words);
+    button.addEventListener("click", () => {
+      if (performance.now() - rewardOpenedAt >= REWARD_CLICK_DELAY_MS) chooseBuild(id);
+    });
+    list.append(button);
+  }
+  document.getElementById("build-screen").classList.remove("hidden");
+  saveRun();
+}
+
+function chooseBuild(id) {
+  const plan = BUILDS[id];
+  runBuild = id;
+  offeredBuilds = null;
+  document.getElementById("build-screen").classList.add("hidden");
+  if (plan.driverSpeed) driverTurnsPerSec *= plan.driverSpeed;
+  const frame = document.getElementById("app-frame").getBoundingClientRect();
+  const from = { x: frame.width / 2, y: frame.height / 2 };
+  if (plan.gear) sendGearToTray(plan.gear, 1, from);
+  if (id === "combo") for (let i = 0; i < BUILD_COMBO_GEARS; i++) sendGearToTray("soldier", 2, from);
+  announce(`Build: ${plan.name}!`);
+  playClankSound();
   if (pathChoiceDue()) showPaths(pickPaths());
   else carryOnToWave();
+}
+
+function clearBuilds() {
+  runBuild = null;
+  offeredBuilds = null;
+  document.getElementById("build-screen")?.classList.add("hidden");
 }
 
 function carryOnToWave() {
@@ -4663,6 +4806,7 @@ function runSnapshot() {
     offered: offeredRewards,
     chests: { prizes: chestPrizes, picked: chestPicked },
     paths: { offered: offeredPaths, next: nextPath?.id ?? null, active: activePath?.id ?? null },
+    build: { chosen: runBuild, offered: offeredBuilds },
     nextPlan: nextWavePlan,
     daily: currentDaily,
     seed: runSeed,
@@ -4723,6 +4867,7 @@ function isValidRunSave(data) {
   if (data.enemyType !== null && !ENEMY_TYPES[data.enemyType]) return false;
   if (data.waveEvent !== null && !WAVE_EVENTS.some((e) => e.id === data.waveEvent)) return false;
   if (data.state === "chest" && !(Array.isArray(data.chests?.prizes) && data.chests.prizes.length === CHEST_COUNT && data.chests.prizes.every((id) => chestPrize(id)))) return false;
+  if (data.state === "plan" && !(Array.isArray(data.build?.offered) && data.build.offered.length && data.build.offered.every((id) => BUILDS[id]))) return false;
   if (data.state === "path" && !(Array.isArray(data.paths?.offered) && data.paths.offered.length && data.paths.offered.every((id) => PATHS[id]))) return false;
   if (data.state === "choosing" && !data.offered?.ids?.every((id) => REWARDS.some((r) => r.id === id))) return false;
   if (data.state === "worldclear" && !data.lastClear) return false;
@@ -4780,6 +4925,8 @@ function restoreRun(data) {
   hotStreak = n.hotStreak ?? 0;
   nextPath = PATHS[data.paths?.next] || null;
   activePath = PATHS[data.paths?.active] || null;
+  runBuild = BUILDS[data.build?.chosen] ? data.build.chosen : null;
+  offeredBuilds = null;
   clearTreasureGoblin();
   rustBlocked = Boolean(data.flags.rustBlocked);
   dealAccepted = Boolean(data.flags.dealAccepted);
@@ -4824,6 +4971,7 @@ function continueRun() {
   updateFeatureButtons();
   if (data.state === "chest") showChests(data.chests.prizes, data.chests.picked ?? null, 0);
   else if (data.state === "path") showPaths(data.paths.offered);
+  else if (data.state === "plan") showBuilds(data.build.offered);
   else if (data.state === "choosing") showRewards(data.offered.title, data.offered.ids.map((id) => REWARDS.find((r) => r.id === id)), data.offered.lucky);
   else if (data.state === "worldclear") {
     gameState = "worldclear";
@@ -9005,7 +9153,7 @@ function playMusicStep(song, step, at, stepSeconds) {
 }
 
 function updateMusic() {
-  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing" || gameState === "path" || gameState === "chest";
+  const playing = gameState === "playing" || gameState === "building" || gameState === "choosing" || gameState === "path" || gameState === "plan" || gameState === "chest";
   if (!audioCtx || audioCtx.state !== "running" || !playing || save.muted || !save.music || document.hidden) {
     musicTime = 0;
     return;
@@ -9466,6 +9614,7 @@ function startNewRun() {
   armyRank = 0;
   eventRustIn = EVENT_RUST_SECONDS;
   endless = Boolean(currentDaily);
+  clearBuilds();
   enemyType = null;
   enemyReinforcePerSec = 0;
   enemyPowerIn = 0;
@@ -9813,6 +9962,10 @@ function guideSections() {
       ["Treasure goblin", TREASURE_GOBLIN_NOTE, treasureGoblinIcon()],
       ["Free gear", "The only way to get more gears. Monsters drop them into the tray below the board, and every boss drops a level 2 gear at half health. A few are special gears. Drag one onto the board, or tap it.", gearIcon("soldier")],
       ["Rusted gear", "Stops working and blocks the gears behind it. Tap it to fix it.", gearIcon("soldier", true)],
+    ]],
+    ["Builds", [
+      ["Builds", "After the first wave, pick a plan for the run. Each has a perk and a cost, a gear to start with, and makes its own rewards come up more often. From wave 8 it can offer an epic reward only that build gets.", emojiIcon("\u{1F4CB}")],
+      ...Object.values(BUILDS).map((plan) => [plan.name, plan.text, emojiIcon(plan.icon)]),
     ]],
     ["Mixing gears", [
       ["Merge", "Drag a gear onto the same kind of gear at the same level, and they become one gear a level higher. Each level pays about 2.5x as much.", gearIcon("soldier", false, 2)],
