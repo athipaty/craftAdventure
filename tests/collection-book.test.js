@@ -57,12 +57,12 @@ async function check(name, fn) {
     assert.deepEqual(r.blank, []);
     assert.deepEqual(r.noArt, []);
     assert.equal(r.typesCovered, true);
-    assert.deepEqual(r.pages, [["enemies", r.ranks + r.types + 1], ["bosses", r.bosses], ["gears", r.gears + 1], ["rewards", r.rewards]]);
+    assert.deepEqual(r.pages, [["enemies", r.ranks + r.types + 1], ["bosses", r.bosses], ["gears", r.gears + 1], ["rewards", r.rewards], ["combos", 3]]);
   });
   await check("a new player starts with just the basics known", async () => {
     await wipe();
     const r = await page.evaluate(() => ({ known: bookPages().flatMap((p) => p.entries).filter(bookKnows).map((e) => e.id).sort(), totals: bookTotals() }));
-    assert.deepEqual(r.known, ["enemy:e0", "gear:soldier"]);
+    assert.deepEqual(r.known, ["combo:block", "combo:line", "combo:ring", "enemy:e0", "gear:soldier"]);
     assert.equal(r.totals.have, 2);
   });
 
@@ -172,7 +172,7 @@ async function check(name, fn) {
     assert.equal(await page.locator("#title-book-btn").textContent(), `Collection: 3 / ${t.total}`);
     await page.locator("#title-book-btn").click();
     assert.equal(await page.locator("#book-screen").isVisible(), true);
-    assert.equal(await page.locator(".book-tab").count(), 4);
+    assert.equal(await page.locator(".book-tab").count(), 5);
   });
   await check("found entries show art and a name; the rest are hidden, and give nothing away", async () => {
     await page.evaluate(() => openBook(0));
