@@ -161,12 +161,16 @@ async function check(name, fn) {
       const calls = [];
       Object.defineProperty(navigator, "vibrate", { value: (p) => { calls.push(p); return true; }, configurable: true });
       Object.defineProperty(navigator, "userActivation", { value: { hasBeenActive: true }, configurable: true });
-      lastBuzzAt = 0; save.vibrate = true;
+      // Set well in the past rather than to 0: buzz() throttles against real
+      // wall-clock time, and performance.now() isn't guaranteed to already
+      // be past the gap this soon after navigation.
+      const longAgo = () => performance.now() - BUZZ_GAP_MS - 1;
+      lastBuzzAt = longAgo(); save.vibrate = true;
       buzz(10); buzz(10);
       const throttled = calls.length;
-      lastBuzzAt = 0; save.vibrate = false; buzz(10);
+      lastBuzzAt = longAgo(); save.vibrate = false; buzz(10);
       const off = calls.length;
-      save.vibrate = true; lastBuzzAt = 0;
+      save.vibrate = true; lastBuzzAt = longAgo();
       strikeCooldown = 0; strikeEnemy();
       return { throttled, off, afterStrike: calls.length };
     });
