@@ -2798,6 +2798,10 @@ function onPointerUp(e) {
     drag = null;
     return;
   }
+  // Held still, not dragged elsewhere: a plain tap explains the gear,
+  // same as the long press, instead of doing nothing.
+  const isTap = Math.hypot(e.clientX - drag.pressX, e.clientY - drag.pressY) <= TAP_SLOP;
+  const { row, col } = drag;
   // Handling a rusted gear frees it, whether it was tapped or moved.
   if (drag.cell.rusted) {
     drag.cell.rusted = false;
@@ -2814,6 +2818,8 @@ function onPointerUp(e) {
     grid[drag.row][drag.col] = target.cell;
     grid[target.row][target.col] = drag.cell;
     playClankSound();
+  } else if (isTap) {
+    showGearTip(row, col);
   }
   drag = null;
 }
