@@ -76,6 +76,22 @@ async function check(name, fn) {
     const r = await page.evaluate(() => ({ every: bossEvery(), final: isBossWave(20), four: isBossWave(4), plan: planWave(20).boss }));
     assert.deepEqual(r, { every: 4, final: true, four: true, plan: "wyrm" });
   });
+  await check("endless waves stay short once the machine stops growing, and get tougher by growing faster", async () => {
+    await start({ world: 3 });
+    const r = await page.evaluate(() => {
+      peakRate = 50; waveLead = 0;
+      const perEnemy = WIN_RATIO / (1 - WIN_RATIO);
+      const seconds = (w) => (waveStartEnemy(w) * perEnemy) / peakRate; // the best output's time to win it
+      const before = { s30: seconds(30), growth: enemyGrowthPerSec(30, 0) };
+      endless = true;
+      const after = { s20: seconds(20), s30: seconds(30), s40: seconds(40), growth: enemyGrowthPerSec(30, 0) };
+      endless = false;
+      return { before, after };
+    });
+    assert.ok(r.after.s30 < r.before.s30 / 100, `capped: ${r.after.s30}s, was ${r.before.s30}s`);
+    assert.ok(r.after.s40 > r.after.s30 && r.after.s40 < r.after.s30 * 4, `still a little bigger each wave: ${r.after.s30}s, ${r.after.s40}s`);
+    assert.ok(r.after.growth > r.before.growth * 3, "the spared size makes the enemy grow faster");
+  });
   await check("every world's every level has rules that exist", async () => {
     const bad = await page.evaluate(() => WORLDS.flatMap((w, i) => WORLD_LEVELS.flatMap((_, l) => levelRules(i, l).filter((r) => !RULES[r]))));
     assert.deepEqual(bad, []);

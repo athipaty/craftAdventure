@@ -57,12 +57,12 @@ async function check(name, fn) {
     assert.deepEqual(r.blank, []);
     assert.deepEqual(r.noArt, []);
     assert.equal(r.typesCovered, true);
-    assert.deepEqual(r.pages, [["enemies", r.ranks + r.types + 1], ["bosses", r.bosses], ["gears", r.gears + 1], ["rewards", r.rewards], ["combos", 3]]);
+    assert.deepEqual(r.pages, [["enemies", r.ranks + r.types + 1], ["bosses", r.bosses], ["gears", r.gears + 1], ["rewards", r.rewards], ["combos", 5]]);
   });
   await check("a new player starts with just the basics known", async () => {
     await wipe();
     const r = await page.evaluate(() => ({ known: bookPages().flatMap((p) => p.entries).filter(bookKnows).map((e) => e.id).sort(), totals: bookTotals() }));
-    assert.deepEqual(r.known, ["combo:block", "combo:line", "combo:ring", "enemy:e0", "gear:soldier"]);
+    assert.deepEqual(r.known, ["enemy:e0", "gear:soldier"]);
     assert.equal(r.totals.have, 2);
   });
 
@@ -106,6 +106,41 @@ async function check(name, fn) {
     assert.equal(await known("enemy:treasure"), true);
     await page.evaluate(() => clearTreasureGoblin());
   });
+  await check("a combo shape is found the first time it's made, and a longer line counts as its own shape", async () => {
+    await wipe();
+    const r = await page.evaluate(() => {
+      const real = announce; const said = []; announce = (x) => { if (x.startsWith("New in the book")) said.push(x); };
+      const put = (c) => { const cell = freshCell("soldier"); cell.level = 2; grid[0][c] = cell; updateCombos(); };
+      const out = {};
+      put(0); put(1); out.two = [...said];
+      put(2); out.three = { said: [...said], counts: { ...comboCounts } };
+      put(3); out.four = { said: [...said], counts: { ...comboCounts }, marks: grid[0].slice(0, 4).map((c) => c.comboLine) };
+      put(4); out.five = { said: [...said], counts: { ...comboCounts } };
+      announce = real;
+      return out;
+    });
+    assert.deepEqual(r.two, []);
+    assert.deepEqual(r.three.said, ["New in the book: Line combo!"]);
+    assert.equal(r.three.counts.line, 1);
+    assert.deepEqual(r.four.said.slice(1), ["New in the book: Long line!"]);
+    assert.deepEqual([r.four.counts.line, r.four.counts.long], [0, 1]);
+    assert.deepEqual(r.four.marks, [4, 4, 4, 4]);
+    assert.deepEqual(r.five.said.slice(2), ["New in the book: Mega line!"]);
+    assert.deepEqual([r.five.counts.long, r.five.counts.mega], [0, 1]);
+    assert.equal(await known("combo:block"), false);
+  });
+  await check("a longer line pays more, and Pattern master doubles every bonus", async () => {
+    const r = await page.evaluate(() => {
+      const before = runParts.patterns;
+      const plain = [3, 4, 5, 7].map((n) => comboLinePayout(n)).concat(comboBlockFill());
+      runParts.patterns = 1;
+      const doubled = [3, 4, 5, 7].map((n) => comboLinePayout(n)).concat(comboBlockFill());
+      runParts.patterns = before;
+      return { plain, doubled };
+    });
+    assert.deepEqual(r.plain, [1.25, 1.5, 2, 2, 1.25]);
+    assert.deepEqual(r.doubled, [1.5, 2, 3, 3, 1.5]);
+  });
   await check("each find is announced once, and nothing for the basics or nonsense", async () => {
     await wipe();
     const r = await page.evaluate(() => {
@@ -138,6 +173,7 @@ async function check(name, fn) {
     assert.equal((await finish("enemies")).paid, 50);
     assert.equal((await finish("gears")).paid, 50);
     assert.equal((await finish("rewards")).paid, 100);
+    assert.equal((await finish("combos")).paid, 50);
     const t = await page.evaluate(() => bookTotals());
     assert.equal(t.have, t.total - (await page.evaluate(() => bookPages()[1].entries.length)));
   });
