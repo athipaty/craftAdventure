@@ -2904,6 +2904,46 @@ html.less-motion #side-actions > button::after {
   font-size: 0.82rem;
 }
 
+/* What a gear is and, like the Collection book, what it's made from or
+   fuses into. Opens on a long press, same shape as #status-tip but wider,
+   to fit the recipe row. */
+#gear-tip {
+  position: absolute;
+  z-index: 6;
+  width: max-content;
+  max-width: min(260px, calc(100% - 12px));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  background: #1c130a;
+  color: var(--text);
+  font-size: 0.76rem;
+  line-height: 1.25;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+#gear-tip::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: calc(var(--arrow-x, 16px) - 5px);
+  width: 10px;
+  height: 10px;
+  background: #1c130a;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+#gear-tip-name {
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
 #more-screen,
 #guide-screen,
 #book-screen {

@@ -181,6 +181,8 @@ const GOBLIN_COINS_MAX = 10;
 const SPECIAL_DROP_CHANCE = 0.15; // about three a run; the rest are soldier gears
 const TRAY_SLOTS = 5; // gears waiting below the board; a drop waits its turn when it's full
 const TAP_SLOP = 10; // pixels a press can move and still count as a tap
+const GEAR_TIP_HOLD_MS = 450; // how long a press on a gear must hold still to explain it
+const GEAR_TIP_SHOW_MS = 4000; // how long that explanation stays up on its own
 const BOSS_DROP_HEALTH = 0.5; // every boss drops a better gear when it falls this low
 const BOSS_DROP_LEVEL = 2;
 const NO_GEAR_DROP = -1;
@@ -800,6 +802,8 @@ let battleCssW = 0, battleCssH = 0;
 //                  one-tooth gear, or null for an empty cell
 let grid = [];
 let drag = null; // { cell, row, col, x, y } while a gear is being dragged
+let gearTipTimer = null; // armed on press, fires the explanation if it's held still
+let gearTipHideTimer = null;
 let peakRate = 0; // the most soldiers per second the machine has produced this run
 let marchers = []; // { side: "player" | "enemy", value, t } on their way to the front
 let clashes = []; // { t } sparks where soldiers reached the front
@@ -2677,6 +2681,41 @@ function refreshStatusTip() {
   else hideStatusTip();
 }
 
+// Holding a gear explains it — name, ability, and, like the Collection book,
+// what it's made from or what it can fuse into. Same gearEntry() data the
+// book uses, so the two can never say different things about a gear.
+function showGearTip(row, col) {
+  const cell = grid[row]?.[col];
+  if (!cell || cell.driver) return;
+  const entry = gearEntry(cell.type);
+  if (!entry) return;
+  const tip = document.getElementById("gear-tip");
+  document.getElementById("gear-tip-name").textContent = entry.name;
+  const recipe = document.getElementById("gear-tip-recipe");
+  const children = [];
+  if (entry.recipe) children.push(bookDetailLabel("Made from"), bookEquation(entry.recipe, gearKnown));
+  if (entry.usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(entry.usedIn, gearKnown));
+  recipe.replaceChildren(...children);
+  document.getElementById("gear-tip-text").textContent = entry.text;
+  tip.classList.remove("hidden");
+  const wrap = tip.parentElement.getBoundingClientRect();
+  const rect = boardCanvas.getBoundingClientRect();
+  const cx = rect.left + (col + 0.5) * cellSize - wrap.left;
+  const bottom = rect.top + (row + 1) * cellSize - wrap.top;
+  const left = Math.max(6, Math.min(cx - tip.offsetWidth / 2, wrap.width - tip.offsetWidth - 6));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${bottom + 7}px`;
+  tip.style.setProperty("--arrow-x", `${cx - left}px`);
+  buzz(15);
+  clearTimeout(gearTipHideTimer);
+  gearTipHideTimer = setTimeout(hideGearTip, GEAR_TIP_SHOW_MS);
+}
+
+function hideGearTip() {
+  clearTimeout(gearTipHideTimer);
+  document.getElementById("gear-tip").classList.add("hidden");
+}
+
 function wireStatusTips() {
   const wrap = document.getElementById("board-wrap");
   const box = document.getElementById("status-row");
@@ -2724,23 +2763,32 @@ function updateRateReadout() {
 
 function onPointerDown(e) {
   ensureAudio();
+  hideGearTip();
   if (drag || (gameState !== "playing" && gameState !== "building")) return;
   const point = boardPoint(e);
   const hit = cellAt(point);
   if (!hit || !hit.cell || hit.cell.driver) return;
   e.preventDefault();
   boardCanvas.setPointerCapture(e.pointerId);
-  drag = { ...hit, ...point };
+  drag = { ...hit, ...point, pressX: e.clientX, pressY: e.clientY };
+  clearTimeout(gearTipTimer);
+  gearTipTimer = setTimeout(() => {
+    if (!drag) return;
+    showGearTip(hit.row, hit.col);
+    drag = null;
+  }, GEAR_TIP_HOLD_MS);
 }
 
 function onPointerMove(e) {
   if (!drag) return;
+  if (Math.hypot(e.clientX - drag.pressX, e.clientY - drag.pressY) > TAP_SLOP) clearTimeout(gearTipTimer);
   Object.assign(drag, boardPoint(e), { overScrap: drag.tray === undefined && gameState === "playing" && pointerOverScrapZone(e) });
   updateDragPreview(e);
 }
 
 function onPointerUp(e) {
   if (!drag) return;
+  clearTimeout(gearTipTimer);
   if (drag.tray !== undefined) {
     dropTrayGear(e);
     return;
@@ -2850,7 +2898,7 @@ function wireBoardInput() {
   boardCanvas.addEventListener("pointerdown", onPointerDown);
   boardCanvas.addEventListener("pointermove", onPointerMove);
   boardCanvas.addEventListener("pointerup", onPointerUp);
-  boardCanvas.addEventListener("pointercancel", () => { drag = null; });
+  boardCanvas.addEventListener("pointercancel", () => { clearTimeout(gearTipTimer); drag = null; });
   boardCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
   wireStatusTips();
 }
@@ -9611,6 +9659,13 @@ function maskedGearIcon(type, known) {
   return wrap;
 }
 
+function bookDetailLabel(text) {
+  const el = document.createElement("small");
+  el.className = "book-detail-label";
+  el.textContent = text;
+  return el;
+}
+
 function bookSign(text) {
   const el = document.createElement("span");
   el.className = "book-sign";
@@ -9768,6 +9823,17 @@ function bookKnows(entry) {
   return Boolean(entry.starter || save.collection[entry.id]);
 }
 
+// For looking up a gear's own book entry (its recipe, what it fuses into)
+// from its board type, outside the book screen — e.g. the in-play gear tip.
+function gearEntry(type) {
+  return bookPages().find((p) => p.id === "gears").entries.find((e) => e.id === `gear:${type}`);
+}
+
+function gearKnown(type) {
+  const entry = gearEntry(type);
+  return !entry || bookKnows(entry);
+}
+
 function bookProgress(page) {
   return { have: page.entries.filter(bookKnows).length, total: page.entries.length };
 }
@@ -9822,18 +9888,12 @@ function openBook(index = bookPageIndex) {
   // So a recipe never spoils a gear the player hasn't found yet.
   const entryById = new Map(page.entries.map((e) => [e.id, e]));
   const typeKnown = (type) => { const e = entryById.get(`gear:${type}`); return !e || bookKnows(e); };
-  const detailLabel = (text) => {
-    const el = document.createElement("small");
-    el.className = "book-detail-label";
-    el.textContent = text;
-    return el;
-  };
   const showDetail = (name, text, recipe, usedIn) => {
     const title = document.createElement("b");
     title.textContent = name;
     const children = [title];
-    if (recipe) children.push(detailLabel("Made from"), bookEquation(recipe, typeKnown));
-    if (usedIn?.length) children.push(detailLabel("Fuses into"), usedInRow(usedIn, typeKnown));
+    if (recipe) children.push(bookDetailLabel("Made from"), bookEquation(recipe, typeKnown));
+    if (usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(usedIn, typeKnown));
     const words = document.createElement("span");
     words.textContent = text;
     children.push(words);
