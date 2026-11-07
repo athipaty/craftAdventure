@@ -9556,21 +9556,76 @@ function rewardIcon(reward) {
 const ELEMENT_TAGS = { fire: "Fire", ice: "Ice", storm: "Storm" };
 
 // A fusion in the guide: the recipe as pictures, then what it makes and does.
+function recipeSign(text) {
+  const el = document.createElement("span");
+  el.textContent = text;
+  return el;
+}
+
+// [gear] + [gear] = [gear], reused by the guide's recipe list and the
+// Collection book's detail panel.
+function fusionEquation(fusion) {
+  const recipe = document.createElement("div");
+  recipe.className = "guide-recipe";
+  recipe.append(gearIcon(fusion.parts[0]), recipeSign("+"), gearIcon(fusion.parts[1]), recipeSign("="), gearIcon(fusion.gear));
+  return recipe;
+}
+
 function recipeRow(fusion) {
   const row = document.createElement("div");
   row.className = "guide-row guide-recipe-row";
-  const recipe = document.createElement("div");
-  recipe.className = "guide-recipe";
-  const sign = (text) => {
-    const el = document.createElement("span");
-    el.textContent = text;
-    return el;
-  };
-  recipe.append(gearIcon(fusion.parts[0]), sign("+"), gearIcon(fusion.parts[1]), sign("="), gearIcon(fusion.gear));
   const spec = GEAR_TYPES[fusion.gear];
   const tag = spec.super ? "Super" : ELEMENT_TAGS[spec.element] || "";
   const words = guideRow(fusion.name, fusion.text, document.createElement("span"), tag).querySelector(".guide-words");
-  row.append(recipe, words);
+  row.append(fusionEquation(fusion), words);
+  return row;
+}
+
+// A gear icon that blanks itself out, like the book's grid, until the
+// player has actually found that gear — so a recipe can't spoil it.
+function maskedGearIcon(type, known) {
+  const wrap = document.createElement("span");
+  wrap.className = known ? "book-mini-art" : "book-mini-art hidden-art";
+  wrap.append(gearIcon(type));
+  return wrap;
+}
+
+function bookSign(text) {
+  const el = document.createElement("span");
+  el.className = "book-sign";
+  el.textContent = text;
+  return el;
+}
+
+// [part] + [part] = [this gear], in the Collection book's detail panel.
+// The result is always this entry, so it's always shown; typeKnown masks
+// an ingredient the player hasn't found on its own yet.
+function bookEquation(fusion, typeKnown) {
+  const row = document.createElement("div");
+  row.className = "book-equation";
+  row.append(
+    maskedGearIcon(fusion.parts[0], typeKnown(fusion.parts[0])),
+    bookSign("+"),
+    maskedGearIcon(fusion.parts[1], typeKnown(fusion.parts[1])),
+    bookSign("="),
+    maskedGearIcon(fusion.gear, true),
+  );
+  return row;
+}
+
+// What a gear can be fused into: just the results, each masked until found.
+function usedInRow(fusions, typeKnown) {
+  const row = document.createElement("div");
+  row.className = "book-used-in";
+  row.append(...fusions.map((fusion) => {
+    const known = typeKnown(fusion.gear);
+    const item = document.createElement("span");
+    item.className = "book-used-in-item";
+    const label = document.createElement("small");
+    label.textContent = known ? fusion.name : "???";
+    item.append(maskedGearIcon(fusion.gear, known), label);
+    return item;
+  }));
   return row;
 }
 
@@ -9672,8 +9727,8 @@ function bookPages() {
     { id: "bosses", name: "Bosses", coins: 100, entries: [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, name: kind.name, text: NEXT_WAVE_HINTS[kind.id], icon: () => bossIcon(kind) })) },
     { id: "gears", name: "Gears", coins: 50, entries: [
       { id: "gear:soldier", name: "Normal gear", text: "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", icon: () => gearIcon("soldier"), starter: true },
-      ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })),
-      ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear) })),
+      ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward), usedIn: FUSIONS.filter((f) => f.parts.includes(reward.gear)) })),
+      ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear), recipe: fusion, usedIn: FUSIONS.filter((f) => f.parts.includes(fusion.gear)) })),
     ] },
     { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
   ];
@@ -9730,12 +9785,25 @@ function openBook(index = bookPageIndex) {
   document.getElementById("book-progress-text").textContent = `${have} / ${total}`;
   document.getElementById("book-prize").textContent = save.collection[`page:${page.id}`] ? `Page complete! +${page.coins} coins earned` : `Complete this page: +${page.coins} coins`;
   const detail = document.getElementById("book-detail");
-  const showDetail = (name, text) => {
+  // So a recipe never spoils a gear the player hasn't found yet.
+  const entryById = new Map(page.entries.map((e) => [e.id, e]));
+  const typeKnown = (type) => { const e = entryById.get(`gear:${type}`); return !e || bookKnows(e); };
+  const detailLabel = (text) => {
+    const el = document.createElement("small");
+    el.className = "book-detail-label";
+    el.textContent = text;
+    return el;
+  };
+  const showDetail = (name, text, recipe, usedIn) => {
     const title = document.createElement("b");
     title.textContent = name;
+    const children = [title];
+    if (recipe) children.push(detailLabel("Made from"), bookEquation(recipe, typeKnown));
+    if (usedIn?.length) children.push(detailLabel("Fuses into"), usedInRow(usedIn, typeKnown));
     const words = document.createElement("span");
     words.textContent = text;
-    detail.replaceChildren(title, words);
+    children.push(words);
+    detail.replaceChildren(...children);
   };
   showDetail("Tap an entry", have === total ? "You've found everything on this page." : "Keep playing to find the rest.");
   const grid = document.getElementById("book-grid");
@@ -9753,7 +9821,7 @@ function openBook(index = bookPageIndex) {
     button.addEventListener("click", () => {
       for (const other of grid.children) other.classList.remove("selected");
       button.classList.add("selected");
-      if (known) showDetail(entry.name, entry.text);
+      if (known) showDetail(entry.name, entry.text, entry.recipe, entry.usedIn);
       else showDetail("???", "Not found yet. Keep playing to discover it.");
     });
     return button;
