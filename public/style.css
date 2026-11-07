@@ -566,7 +566,8 @@ html.less-motion .chest-card.shaking {
   box-shadow: 0 4px 0 var(--accent-dark);
 }
 
-#path-screen {
+#path-screen,
+#build-screen {
   position: absolute;
   inset: 0;
   z-index: 25;
@@ -581,20 +582,23 @@ html.less-motion .chest-card.shaking {
   animation: reward-in 0.25s ease;
 }
 
-#path-screen h2 {
+#path-screen h2,
+#build-screen h2 {
   margin: 0;
   color: var(--accent);
   font-size: 1.7rem;
 }
 
-#path-screen p {
+#path-screen p,
+#build-screen p {
   margin: 0;
   color: var(--accent);
   font-weight: 700;
   font-size: 0.85rem;
 }
 
-#path-options {
+#path-options,
+#build-options {
   width: 100%;
   max-width: 400px;
   display: flex;
@@ -603,7 +607,8 @@ html.less-motion .chest-card.shaking {
 }
 
 /* Each route has its own colours, so the danger reads before the words do. */
-.path-card {
+.path-card,
+.build-card {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -617,7 +622,8 @@ html.less-motion .chest-card.shaking {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-.path-card:active {
+.path-card:active,
+.build-card:active {
   transform: translateY(2px);
   box-shadow: 0 2px 0 #120a04;
 }
@@ -646,26 +652,60 @@ html.less-motion .chest-card.shaking {
   --path-edge: #8bd65a;
 }
 
-.path-card .emoji-icon {
+/* Builds, in the colours of what they lean on. */
+.build-card.build-combo {
+  --path-top: #6a3f8f;
+  --path-bottom: #34204a;
+  --path-edge: #d6a8ff;
+}
+
+.build-card.build-bomb {
+  --path-top: #8c3a1c;
+  --path-bottom: #4a1c0c;
+  --path-edge: #ff9a5a;
+}
+
+.build-card.build-engine {
+  --path-top: #3f6f2c;
+  --path-bottom: #213d17;
+  --path-edge: #8bd65a;
+}
+
+.build-card.build-storm {
+  --path-top: #2f4f8a;
+  --path-bottom: #18284a;
+  --path-edge: #ffe14d;
+}
+
+.build-card .build-start {
+  color: #e8e0d0;
+}
+
+.path-card .emoji-icon,
+.build-card .emoji-icon {
   flex-shrink: 0;
   font-size: 2.1rem;
   line-height: 1;
 }
 
-.path-card b {
+.path-card b,
+.build-card b {
   font-size: 1.1rem;
 }
 
-.path-card span:not(.emoji-icon) {
+.path-card span:not(.emoji-icon),
+.build-card span:not(.emoji-icon) {
   font-size: 0.8rem;
   line-height: 1.2;
 }
 
-.path-card .path-risk {
+.path-card .path-risk,
+.build-card .path-risk {
   color: #ffc4b5;
 }
 
-.path-card .path-reward {
+.path-card .path-reward,
+.build-card .path-reward {
   color: #c8f5a4;
   font-weight: 700;
 }
@@ -3495,5 +3535,21 @@ html.less-motion *::after {
   #reward-actions .workshop-btn {
     padding: 4px 12px;
     font-size: 0.72rem;
+  }
+}
+
+/* A phone held sideways is too short for three stacked builds: side by side instead. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #build-options {
+    max-width: 780px;
+    flex-direction: row;
+  }
+
+  .build-card {
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    text-align: center;
   }
 }

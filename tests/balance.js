@@ -4,7 +4,8 @@ const http = require("http"), fs = require("fs"), path = require("path");
 const root = path.join(__dirname, "..", "public");
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png" };
 const server = http.createServer((q, s) => { const n = q.url.split("?")[0].replace(/^\/$/, "/index.html"); if (n === "/sw.js") { s.writeHead(404); s.end(); return; } fs.readFile(path.join(root, n), (e, d) => { if (e) { s.writeHead(404); s.end(); return; } s.writeHead(200, { "Content-Type": types[path.extname(n)] || "text/plain" }); s.end(d); }); });
-const bot = ({ world, level, runs, upgrades, easy, smart }) => {
+// build: a BUILDS id to always pick, "none" to skip the choice, or left out to pick at random.
+const bot = ({ world, level, runs, upgrades, easy, smart, build }) => {
   requestAnimationFrame = () => 0;
   save.muted = true; save.stats.waves = 100; save.easy = Boolean(easy);
   for (const t of TIPS) save.tips[t.id] = true;
@@ -28,6 +29,7 @@ const bot = ({ world, level, runs, upgrades, easy, smart }) => {
     while (ticks++ < limit) {
       if (gameState === "choosing") { const o = offeredRewards.ids.map((id) => REWARDS.find((r) => r.id === id)); clearTimeout(rewardTimer); document.getElementById("reward-screen").classList.add("hidden"); chooseReward(o[Math.floor(Math.random() * o.length)]); continue; }
       if (gameState === "chest") { pickChest(Math.floor(Math.random() * CHEST_COUNT)); leaveChests(); continue; }
+      if (gameState === "plan") { if (build === "none") { clearBuilds(); runBuild = "none"; carryOnToWave(); } else chooseBuild(build || offeredBuilds[Math.floor(Math.random() * offeredBuilds.length)]); continue; }
       if (gameState === "path") { choosePath(smart ? offeredPaths[Math.floor(Math.random() * offeredPaths.length)] : "safe"); continue; }
       if (gameState === "building") { beginWave(); continue; }
       if (gameState !== "playing") break;
@@ -66,7 +68,7 @@ const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
   const names = ["Forest", "Desert", "Peaks", "Lava"], lv = ["Normal", "Hard", "Expert"];
   for (const cfg of JSON.parse(fs.readFileSync(process.argv[2] || path.join(__dirname, "balance-plan.json"), "utf8"))) {
     const r = await p.evaluate(bot, { runs: 6, ...cfg });
-    console.log(`${cfg.smart ? "smart " : "simple"} ${names[cfg.world].padEnd(6)} ${cfg.easy ? "Easy  " : lv[cfg.level || 0].padEnd(6)} upgrades ${String(Math.round((cfg.upgrades || 0) * 100)).padStart(3)}%: cleared ${r.clears}/6, median wave ${med(r.waves)}, ${med(r.mins).toFixed(1)} min, wave ${med(r.waveSecs).toFixed(0)}s, top gear L${med(r.levels)}`);
+    console.log(`${cfg.build ? `[${cfg.build}] `.padEnd(10) : ""}${cfg.smart ? "smart " : "simple"} ${names[cfg.world].padEnd(6)} ${cfg.easy ? "Easy  " : lv[cfg.level || 0].padEnd(6)} upgrades ${String(Math.round((cfg.upgrades || 0) * 100)).padStart(3)}%: cleared ${r.clears}/6, median wave ${med(r.waves)}, ${med(r.mins).toFixed(1)} min, wave ${med(r.waveSecs).toFixed(0)}s, top gear L${med(r.levels)}`);
   }
   await b.close(); server.close(); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(2); });

@@ -114,6 +114,10 @@ async function check(name, fn) {
     const parts0 = await page.evaluate(() => JSON.stringify(runParts));
     const gears0 = await page.evaluate(() => grid.flat().filter(Boolean).length);
     await page.click("#skip-btn");
+    // After the first wave the build comes first, then the wave.
+    assert.equal(await page.evaluate(() => gameState), "plan");
+    await page.waitForTimeout(500);
+    await page.locator(".build-card").first().click();
     assert.equal(await page.evaluate(() => save.coins), c0 + 3);
     assert.equal(await page.evaluate(() => JSON.stringify(runParts)), parts0);
     assert.equal(await page.evaluate(() => grid.flat().filter(Boolean).length), gears0);

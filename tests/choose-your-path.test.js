@@ -58,7 +58,8 @@ async function check(name, fn) {
     assert.equal(await page.locator("#reward-screen").isVisible(), false);
     await page.screenshot({ path: path.join(scratch, "choose-your-path.png") });
     await fresh(2);
-    await page.evaluate(() => { gameState = "choosing"; chooseReward(REWARDS.find((x) => x.id === "fasterGear")); });
+    // The build is picked after the first wave, so this run already has one.
+    await page.evaluate(() => { runBuild = "combo"; gameState = "choosing"; chooseReward(REWARDS.find((x) => x.id === "fasterGear")); });
     assert.equal(await page.evaluate(() => gameState), "playing");
     assert.equal(await page.locator("#path-screen").isVisible(), false);
   });

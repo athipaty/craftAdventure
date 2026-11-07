@@ -164,6 +164,10 @@ async function check(name, fn) {
   await page.waitForTimeout(500);
   await page.locator(".reward-option").first().click();
   await check("picking one starts the next wave", async () => {
+    // After the first wave the build comes first, then the wave.
+    assert.equal(await page.evaluate(() => gameState), "plan");
+    await page.waitForTimeout(500);
+    await page.locator(".build-card").first().click();
     assert.equal(await page.evaluate(() => gameState), "playing");
     assert.equal(await page.evaluate(() => wave), 2);
     assert.equal(await page.evaluate(() => offeredRewards), null);
