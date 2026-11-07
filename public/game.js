@@ -453,6 +453,13 @@ const QUARTER_TURN = Math.PI / 2;
 // rotation order (positive angles are clockwise): right, down, left, up.
 const TOOTH_DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 const MIN_WAVE_SECONDS = 20; // a new wave starts big enough to take the player's best output this long
+// Endless (and the daily) has no last wave, so the schedule keeps growing after the
+// machine has stopped. Left alone, each wave became a slower tug of war (minutes
+// long by wave 30). Instead a wave starts no bigger than the best output beats in
+// this long, and the size it was spared goes into how fast the enemy grows.
+const ENDLESS_MAX_WAVE_SECONDS = 30;
+const ENDLESS_SIZE_SHARE = 0.2; // a little of that spared size stays in the wave, so even a huge machine meets its wall
+const ENDLESS_GROWTH_SHARE = 0.5; // how much of that spared size becomes growth
 const ENEMY_BASE_GROWTH = 0.08; // enemy army per second at the start of wave 1
 const ENEMY_WAVE_SCALE = 1.2; // enemy growth multiplier per wave
 const ENEMY_DOUBLING_SECONDS = 30; // enemy growth doubles every this long within a wave
@@ -553,9 +560,22 @@ const VETERANS_MAX_LEAD = 1.7; // stays well under the lead that wins a wave out
 const REWARD_CLICK_DELAY_MS = 400; // ignores taps meant for the board when a choice or tip appears
 const CHAIN_FALLOFF = 0.85; // strength kept by a hit at each gear it passes through
 const CHAIN_MIN_POWER = 0.3; // a long chain never fades below this
-const COMBO_LINE_PAYOUT = 1.25; // three matching gears in a row
-const COMBO_BLOCK_FILL = 1.25; // four matching gears in a square
+// Extra payout for matching gears in a row, by how many: 3, 4, then 5 or more.
+// A longer line is worth building, so each step pays clearly more.
+const COMBO_LINE_BONUS = [0.25, 0.5, 1];
+const COMBO_BLOCK_BONUS = 0.25; // four matching gears in a square fill this much faster
 const COMBO_RING_BOOST = 2; // a booster with gears on all four sides
+// Grandest first, which is the order a new one is announced in.
+const COMBO_KINDS = ["mega", "long", "ring", "block", "line"];
+const COMBO_NAMES = { line: "Line combo!", long: "Long line!", mega: "Mega line!", block: "Square combo!", ring: "Ring combo!" };
+const COMBO_NOTES = {
+  line: "Three matching gears in a row, across or down. Each pays 25% more.",
+  long: "Four matching gears in a row. Each pays 50% more.",
+  mega: "Five or more matching gears in a row. Each pays twice as much.",
+  block: "Four matching gears in a 2x2 square. Each fills 25% faster.",
+  ring: "A Booster with a gear on all four sides. Its boost is twice as strong.",
+};
+const COMBO_TIP = "Combos! With merged or special gears: matching gears in a row pay more (3 in a row +25%, 4 +50%, 5 or more double), a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.";
 const BOSS_WALL_CELLS = 3; // empty cells blocked by each Wall Maker attack
 const BOSS_SCRAMBLE_SWAPS = 3; // pairs of gears swapped by each Scrambler attack
 const BOSS_SHIELD_TAPS = 5; // taps on the battle to break an Iron Guard shield
@@ -755,7 +775,7 @@ const TIPS = [
   { id: "overdrive", text: "Overdrive is ready! Tap it to spin the main gear 3x faster for a few seconds, then wait for it to recharge.", target: "#overdrive-btn", when: () => overdriveReady() },
   { id: "drag", text: "Drag a gear to move it. Drag it onto the red bar that appears to scrap it and get some soldiers back.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 4 },
   { id: "chain", text: "Hits fade as they pass along a chain, so far-away gears fill more slowly. A booster in the chain brings them back to full strength.", when: () => grid.flat().filter((cell) => cell && !cell.driver).length >= 5 },
-  { id: "combo", text: "Combos! With merged or special gears: 3 matching in a row pay 25% more, a 2x2 square fills 25% faster, and a booster with gears on all 4 sides is twice as strong.", when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
+  { id: "combo", text: COMBO_TIP, when: () => grid.flat().some((cell) => cell && !cell.driver && (cell.level > 1 || cell.type !== "soldier")) && grid.flat().filter((cell) => cell && !cell.driver).length >= 6 },
   { id: "bossShield", urgent: true, text: "The Iron Guard raises a shield that blocks all damage. Press Break shield 5 times to break it.", when: () => boss?.shield > 0 },
   { id: "rally", text: "Rally holds your arriving soldiers back. When the button says Charge!, tap it to charge with 50% more, but your line gets no help while you wait.", target: "#rally-btn", when: () => wave >= 2 },
   { id: "train", text: "You can train your army! Every new soldier becomes stronger, and prices count in soldiers of your new rank.", target: "#train-btn", when: () => canTrain() },
@@ -786,7 +806,7 @@ function isBossWave(forWave) {
 
 function enemyGrowthPerSec(wave, waveTime) {
   const early = EARLY_WAVE_GROWTH[wave - 1] ?? 1;
-  return early * ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
+  return early * ENEMY_BASE_GROWTH * Math.pow(ENEMY_WAVE_SCALE, wave - 1) * Math.pow(endlessSqueeze(wave), ENDLESS_GROWTH_SHARE) * Math.pow(2, waveTime / ENEMY_DOUBLING_SECONDS);
 }
 
 // =====================================================================
@@ -875,7 +895,7 @@ let armyRank = 0; // index into ARMY_RANKS
 let rallying = false;
 let rallyReserve = 0; // soldiers waiting for the charge
 let rallyHeld = 0; // seconds held so far
-let comboCounts = { line: 0, block: 0, ring: 0 };
+let comboCounts = { line: 0, long: 0, mega: 0, block: 0, ring: 0 };
 let waveEvent = null; // the twist on this wave, from WAVE_EVENTS
 let lastEventId = null; // so the same twist doesn't come twice in a row
 let eventAttackIn = 0;
@@ -1472,10 +1492,10 @@ function comboMatch(a, b) {
 // Marks every gear with the combos it is part of, and returns how many of each.
 function markCombos() {
   const at = (r, c) => grid[r]?.[c];
-  const counts = { line: 0, block: 0, ring: 0 };
+  const counts = { line: 0, long: 0, mega: 0, block: 0, ring: 0 };
   for (const cell of grid.flat()) {
     if (cell) {
-      cell.comboLine = false;
+      cell.comboLine = 0;
       cell.comboBlock = false;
       cell.comboRing = false;
     }
@@ -1484,13 +1504,18 @@ function markCombos() {
     for (let c = 0; c < COLS; c++) {
       const cell = at(r, c);
       if (!cell) continue;
+      // Each run of matching gears counts once, from its first gear. comboLine
+      // holds the run's length, the longer one when a gear is in two runs.
       for (const [dr, dc] of [[0, 1], [1, 0]]) {
-        const second = at(r + dr, c + dc);
-        const third = at(r + dr * 2, c + dc * 2);
-        if (comboMatch(cell, second) && comboMatch(cell, third)) {
-          cell.comboLine = second.comboLine = third.comboLine = true;
-          counts.line += 1;
+        if (comboMatch(cell, at(r - dr, c - dc))) continue;
+        let length = 1;
+        while (comboMatch(cell, at(r + dr * length, c + dc * length))) length += 1;
+        if (length < 3) continue;
+        for (let i = 0; i < length; i++) {
+          const member = at(r + dr * i, c + dc * i);
+          member.comboLine = Math.max(member.comboLine, length);
         }
+        counts[comboLineKind(length)] += 1;
       }
       const right = at(r, c + 1);
       const below = at(r + 1, c);
@@ -1511,14 +1536,19 @@ function markCombos() {
   return counts;
 }
 
-// Keeps the combo marks current and announces new ones.
+function comboLineKind(length) {
+  return length >= 5 ? "mega" : length === 4 ? "long" : "line";
+}
+
+// Keeps the combo marks current and announces new ones, the grandest first.
+// Each kind is also found in the Collection book the first time it's made.
 function updateCombos() {
   const counts = markCombos();
-  const newCombos = Math.max(0, counts.line - comboCounts.line) + Math.max(0, counts.block - comboCounts.block) + Math.max(0, counts.ring - comboCounts.ring);
+  const grown = COMBO_KINDS.filter((kind) => counts[kind] > (comboCounts[kind] || 0));
+  const newCombos = grown.reduce((sum, kind) => sum + counts[kind] - (comboCounts[kind] || 0), 0);
   if (newCombos > 0) questEvent("combos", newCombos);
-  if (counts.ring > comboCounts.ring) showToast("Ring combo!");
-  else if (counts.block > comboCounts.block) showToast("Square combo!");
-  else if (counts.line > comboCounts.line) showToast("Line combo!");
+  if (grown.length) showToast(COMBO_NAMES[grown[0]]);
+  for (const kind of grown) discover(`combo:${kind}`);
   comboCounts = counts;
 }
 
@@ -1563,12 +1593,18 @@ function gearPlacePayout(row, col) {
   return 1;
 }
 
-function comboLinePayout() {
-  return COMBO_LINE_PAYOUT + partCount("patterns") * PART_COMBO;
+// Pattern master doubles each combo's bonus.
+function comboBonusScale() {
+  return 1 + (partCount("patterns") * PART_COMBO) / COMBO_BLOCK_BONUS;
+}
+
+// The payout of a gear in a line of this many matching gears.
+function comboLinePayout(length = 3) {
+  return 1 + COMBO_LINE_BONUS[Math.min(length, 5) - 3] * comboBonusScale();
 }
 
 function comboBlockFill() {
-  return COMBO_BLOCK_FILL + partCount("patterns") * PART_COMBO;
+  return 1 + COMBO_BLOCK_BONUS * comboBonusScale();
 }
 
 // What this run's rewards add to one kind of gear's payout.
@@ -1589,7 +1625,7 @@ function soldiersPerSecond() {
       if (!spec.hits) continue;
       const level = levelPayout(grid[gear.row][gear.col].level) * armyStrength();
       const cell = grid[gear.row][gear.col];
-      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1);
+      const payout = ((spec.soldiers || 0) + (spec.enemies || 0) * soldiersPerEnemy) * level * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout(cell.comboLine) : 1);
       const fill = cell.comboBlock ? comboBlockFill() : 1;
       perTurn += ((1 + boostersTouching(gear.row, gear.col)) * gear.power * fill * payout) / spec.hits;
     }
@@ -1662,7 +1698,7 @@ function hitGear(gear, hits) {
   while (cell.ticks >= spec.hits) {
     cell.ticks -= spec.hits;
     cell.ticksAnim = cell.ticks;
-    const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout() : 1) * armyStrength();
+    const level = levelPayout(cell.level) * gearPartPayout(cell.type) * gearPlacePayout(gear.row, gear.col) * (cell.comboLine ? comboLinePayout(cell.comboLine) : 1) * armyStrength();
     if (spec.soldiers) sendSoldiers(spec.soldiers * level);
     if (spec.enemies) launchBomb(spec.enemies * level);
     if (spec.spark) sparkCharge = Math.min(SPARK_MAX, sparkCharge + SPARK_CHARGE * cell.level);
@@ -2999,7 +3035,16 @@ function updateMarchers(dt) {
 function waveStartEnemy(forWave) {
   const scheduled = BASE_POWER * Math.pow(worldScale(), forWave - 1);
   const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
-  return Math.max(scheduled, (peakRate * MIN_WAVE_SECONDS * runLevel().waveSeconds) / soldiersToWinPerEnemy);
+  return Math.max(scheduled / Math.pow(endlessSqueeze(forWave), 1 - ENDLESS_SIZE_SHARE), (peakRate * MIN_WAVE_SECONDS * runLevel().waveSeconds) / soldiersToWinPerEnemy);
+}
+
+// How many times bigger than the endless cap a wave's schedule is (1 when it fits).
+function endlessSqueeze(forWave) {
+  if (!endless || peakRate <= 0) return 1;
+  const scheduled = BASE_POWER * Math.pow(worldScale(), forWave - 1);
+  const soldiersToWinPerEnemy = WIN_RATIO / (1 - WIN_RATIO) - waveLead;
+  const cap = (peakRate * ENDLESS_MAX_WAVE_SECONDS * runLevel().waveSeconds) / soldiersToWinPerEnemy;
+  return Math.max(1, scheduled / cap);
 }
 
 function winWave() {
@@ -9417,7 +9462,7 @@ function startNewRun() {
   lastClear = null;
   runEventWeek = currentEvent ? weekNumber() : 0;
   boss = null;
-  comboCounts = { line: 0, block: 0, ring: 0 };
+  comboCounts = { line: 0, long: 0, mega: 0, block: 0, ring: 0 };
   armyRank = 0;
   eventRustIn = EVENT_RUST_SECONDS;
   endless = Boolean(currentDaily);
@@ -9577,6 +9622,10 @@ function comboIcon(kind) {
     };
     if (kind === "line") {
       for (const x of [9, 24, 39]) drawGearCell(ctx, x, 24, 15, comboCell("soldier", 2, "comboLine"));
+    } else if (kind === "long") {
+      for (const x of [7, 18, 30, 41]) drawGearCell(ctx, x, 24, 11, comboCell("soldier", 2, "comboLine"));
+    } else if (kind === "mega") {
+      for (const x of [6, 15, 24, 33, 42]) drawGearCell(ctx, x, 24, 9, comboCell("soldier", 2, "comboLine"));
     } else if (kind === "block") {
       for (const [x, y] of [[13, 13], [35, 13], [13, 35], [35, 35]]) drawGearCell(ctx, x, y, 18, comboCell("soldier", 2, "comboBlock"));
     } else {
@@ -9784,7 +9833,7 @@ function guideSections() {
     ["Words to know", [
       ["Rank", "How strong each soldier is. Prices count in soldiers of your current rank.", emojiIcon("\u{1F396}\uFE0F")],
       ["Merge", "Drag a gear onto a matching one. Each level pays about 2.5x as much.", emojiIcon("\u2795")],
-      ["Combo", "Three matching gears in a row, or four in a square, work better. Plain level 1 gears don't count.", emojiIcon("\u2728")],
+      ["Combo", "Matching gears in a row pay more, and more the longer the row. Four in a square fill faster, and a Booster with gears on all four sides is twice as strong. Plain level 1 gears don't count.", emojiIcon("\u2728")],
       ["Chain", "A line of connected gears. Hits get weaker along it, and a Booster brings them back to full.", emojiIcon("\u{1F517}")],
       ["Scrap", "Drag a gear onto the bar that appears to remove it and get some soldiers back.", emojiIcon("\u267B\uFE0F")],
     ]],
@@ -9822,14 +9871,12 @@ function bookPages() {
       ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, type: fusion.gear, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear), recipe: fusion, usedIn: FUSIONS.filter((f) => f.parts.includes(fusion.gear)) })),
     ] },
     { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
-    // A reference page, not a collection: nothing here is ever "found", so
-    // every entry is a starter and it pays no coins. See openBook().
-    { id: "combos", name: "Combos", reference: true, entries: ["line", "block", "ring"].map((kind) => ({
+    // Each shape is found the first time it's made on the board.
+    { id: "combos", name: "Combos", coins: 50, entries: ["line", "long", "mega", "block", "ring"].map((kind) => ({
       id: `combo:${kind}`,
-      name: { line: "Line combo!", block: "Square combo!", ring: "Ring combo!" }[kind],
-      text: TIPS.find((tip) => tip.id === "combo").text,
+      name: COMBO_NAMES[kind].replace("!", ""),
+      text: COMBO_NOTES[kind],
       icon: () => comboIcon(kind),
-      starter: true,
     })) },
   ];
 }
