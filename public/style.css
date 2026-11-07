@@ -3089,6 +3089,75 @@ html.less-motion #side-actions > button::after {
   line-height: 1.25;
 }
 
+.book-detail-label {
+  margin-top: 2px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+}
+
+.book-equation,
+.book-used-in {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.book-sign {
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.book-used-in-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 44px;
+}
+
+.book-used-in-item small {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.book-mini-art {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+}
+
+.book-mini-art .art-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.book-mini-art.hidden-art .art-icon {
+  filter: brightness(0) drop-shadow(0 0 2px rgba(255, 255, 255, 0.45));
+}
+
+.book-mini-art.hidden-art::after {
+  content: "?";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
 #trophy-screen {
   position: absolute;
   inset: 0;
