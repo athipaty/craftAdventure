@@ -2694,7 +2694,7 @@ function showGearTip(row, col) {
   const recipe = document.getElementById("gear-tip-recipe");
   const children = [];
   if (entry.recipe) children.push(bookDetailLabel("Made from"), bookEquation(entry.recipe, gearKnown));
-  if (entry.usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(entry.usedIn, gearKnown));
+  if (entry.usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(entry.type ?? cell.type, entry.usedIn, gearKnown));
   recipe.replaceChildren(...children);
   document.getElementById("gear-tip-text").textContent = entry.text;
   tip.classList.remove("hidden");
@@ -9689,20 +9689,29 @@ function bookEquation(fusion, typeKnown) {
   return row;
 }
 
-// What a gear can be fused into: just the results, each masked until found.
-function usedInRow(fusions, typeKnown) {
-  const row = document.createElement("div");
-  row.className = "book-used-in";
-  row.append(...fusions.map((fusion) => {
-    const known = typeKnown(fusion.gear);
-    const item = document.createElement("span");
-    item.className = "book-used-in-item";
-    const label = document.createElement("small");
-    label.textContent = known ? fusion.name : "???";
-    item.append(maskedGearIcon(fusion.gear, known), label);
-    return item;
+function usedInItem(type, known) {
+  const item = document.createElement("span");
+  item.className = "book-used-in-item";
+  const label = document.createElement("small");
+  label.textContent = known ? gearEntry(type)?.name ?? type : "???";
+  item.append(maskedGearIcon(type, known), label);
+  return item;
+}
+
+// What a gear fuses into, one row per recipe: the OTHER gear it needs, and
+// the result — so "fuses into" also answers "with what", not just "into
+// what". Each icon is masked until the player has found that gear.
+function usedInRow(type, fusions, typeKnown) {
+  const list = document.createElement("div");
+  list.className = "book-used-in";
+  list.append(...fusions.map((fusion) => {
+    const partner = fusion.parts[0] === type ? fusion.parts[1] : fusion.parts[0];
+    const row = document.createElement("div");
+    row.className = "book-used-in-row";
+    row.append(bookSign("+"), usedInItem(partner, typeKnown(partner)), bookSign("="), usedInItem(fusion.gear, typeKnown(fusion.gear)));
+    return row;
   }));
-  return row;
+  return list;
 }
 
 function guideRow(name, text, icon, tag) {
@@ -9803,8 +9812,8 @@ function bookPages() {
     { id: "bosses", name: "Bosses", coins: 100, entries: [...BOSS_KINDS, ...Object.values(FINAL_BOSSES)].map((kind) => ({ id: `boss:${kind.id}`, name: kind.name, text: NEXT_WAVE_HINTS[kind.id], icon: () => bossIcon(kind) })) },
     { id: "gears", name: "Gears", coins: 50, entries: [
       { id: "gear:soldier", name: "Normal gear", text: "Fills in 4 hits, then sends 1 soldier. Merge two matching gears to level them up.", icon: () => gearIcon("soldier"), starter: true },
-      ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward), usedIn: FUSIONS.filter((f) => f.parts.includes(reward.gear)) })),
-      ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear), recipe: fusion, usedIn: FUSIONS.filter((f) => f.parts.includes(fusion.gear)) })),
+      ...gearRewards.map((reward) => ({ id: `gear:${reward.gear}`, type: reward.gear, name: reward.name, text: reward.text, icon: () => rewardIcon(reward), usedIn: FUSIONS.filter((f) => f.parts.includes(reward.gear)) })),
+      ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, type: fusion.gear, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear), recipe: fusion, usedIn: FUSIONS.filter((f) => f.parts.includes(fusion.gear)) })),
     ] },
     { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
     // A reference page, not a collection: nothing here is ever "found", so
@@ -9888,12 +9897,12 @@ function openBook(index = bookPageIndex) {
   // So a recipe never spoils a gear the player hasn't found yet.
   const entryById = new Map(page.entries.map((e) => [e.id, e]));
   const typeKnown = (type) => { const e = entryById.get(`gear:${type}`); return !e || bookKnows(e); };
-  const showDetail = (name, text, recipe, usedIn) => {
+  const showDetail = (name, text, recipe, usedIn, type) => {
     const title = document.createElement("b");
     title.textContent = name;
     const children = [title];
     if (recipe) children.push(bookDetailLabel("Made from"), bookEquation(recipe, typeKnown));
-    if (usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(usedIn, typeKnown));
+    if (usedIn?.length) children.push(bookDetailLabel("Fuses into"), usedInRow(type, usedIn, typeKnown));
     const words = document.createElement("span");
     words.textContent = text;
     children.push(words);
@@ -9915,7 +9924,7 @@ function openBook(index = bookPageIndex) {
     button.addEventListener("click", () => {
       for (const other of grid.children) other.classList.remove("selected");
       button.classList.add("selected");
-      if (known) showDetail(entry.name, entry.text, entry.recipe, entry.usedIn);
+      if (known) showDetail(entry.name, entry.text, entry.recipe, entry.usedIn, entry.type);
       else showDetail("???", "Not found yet. Keep playing to discover it.");
     });
     return button;
