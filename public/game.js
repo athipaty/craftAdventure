@@ -9511,6 +9511,27 @@ function gearIcon(type, rusted = false, level = 1) {
   });
 }
 
+// A tiny board layout showing one combo shape, drawn with the game's own
+// gear art and combo ring colors so it matches what you'd see on the board.
+function comboIcon(kind) {
+  return artIcon((ctx) => {
+    const comboCell = (type, level, flag) => {
+      const cell = freshCell(type);
+      cell.level = level;
+      cell[flag] = true;
+      return cell;
+    };
+    if (kind === "line") {
+      for (const x of [9, 24, 39]) drawGearCell(ctx, x, 24, 15, comboCell("soldier", 2, "comboLine"));
+    } else if (kind === "block") {
+      for (const [x, y] of [[13, 13], [35, 13], [13, 35], [35, 35]]) drawGearCell(ctx, x, y, 18, comboCell("soldier", 2, "comboBlock"));
+    } else {
+      for (const [x, y] of [[24, 8], [24, 40], [8, 24], [40, 24]]) drawGearCell(ctx, x, y, 13, freshCell("soldier"));
+      drawGearCell(ctx, 24, 24, 18, comboCell("booster", 1, "comboRing"));
+    }
+  });
+}
+
 function mainGearIcon() {
   return artIcon((ctx) => {
     const cell = freshCell();
@@ -9731,6 +9752,15 @@ function bookPages() {
       ...FUSIONS.map((fusion) => ({ id: `gear:${fusion.gear}`, name: fusion.name, text: fusion.text, icon: () => gearIcon(fusion.gear), recipe: fusion, usedIn: FUSIONS.filter((f) => f.parts.includes(fusion.gear)) })),
     ] },
     { id: "rewards", name: "Rewards", coins: 100, entries: REWARDS.filter((reward) => !reward.gear).map((reward) => ({ id: `reward:${reward.id}`, name: reward.name, text: reward.text, icon: () => rewardIcon(reward) })) },
+    // A reference page, not a collection: nothing here is ever "found", so
+    // every entry is a starter and it pays no coins. See openBook().
+    { id: "combos", name: "Combos", reference: true, entries: ["line", "block", "ring"].map((kind) => ({
+      id: `combo:${kind}`,
+      name: { line: "Line combo!", block: "Square combo!", ring: "Ring combo!" }[kind],
+      text: TIPS.find((tip) => tip.id === "combo").text,
+      icon: () => comboIcon(kind),
+      starter: true,
+    })) },
   ];
 }
 
@@ -9743,7 +9773,7 @@ function bookProgress(page) {
 }
 
 function bookTotals() {
-  return bookPages().reduce((sum, page) => {
+  return bookPages().filter((page) => !page.reference).reduce((sum, page) => {
     const { have, total } = bookProgress(page);
     return { have: sum.have + have, total: sum.total + total };
   }, { have: 0, total: 0 });
@@ -9781,9 +9811,13 @@ function openBook(index = bookPageIndex) {
     return tab;
   }));
   const { have, total } = bookProgress(page);
-  document.getElementById("book-progress-fill").style.width = `${(have / total) * 100}%`;
-  document.getElementById("book-progress-text").textContent = `${have} / ${total}`;
-  document.getElementById("book-prize").textContent = save.collection[`page:${page.id}`] ? `Page complete! +${page.coins} coins earned` : `Complete this page: +${page.coins} coins`;
+  document.getElementById("book-progress").classList.toggle("hidden", Boolean(page.reference));
+  document.getElementById("book-prize").classList.toggle("hidden", Boolean(page.reference));
+  if (!page.reference) {
+    document.getElementById("book-progress-fill").style.width = `${(have / total) * 100}%`;
+    document.getElementById("book-progress-text").textContent = `${have} / ${total}`;
+    document.getElementById("book-prize").textContent = save.collection[`page:${page.id}`] ? `Page complete! +${page.coins} coins earned` : `Complete this page: +${page.coins} coins`;
+  }
   const detail = document.getElementById("book-detail");
   // So a recipe never spoils a gear the player hasn't found yet.
   const entryById = new Map(page.entries.map((e) => [e.id, e]));
