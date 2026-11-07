@@ -3138,8 +3138,20 @@ html.less-motion #side-actions > button::after {
   color: var(--accent);
 }
 
-.book-equation,
+.book-equation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .book-used-in {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.book-used-in-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -3154,16 +3166,13 @@ html.less-motion #side-actions > button::after {
 
 .book-used-in-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  width: 44px;
+  gap: 5px;
 }
 
 .book-used-in-item small {
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  text-align: center;
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
