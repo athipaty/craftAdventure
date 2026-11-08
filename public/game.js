@@ -792,7 +792,8 @@ const WAVE_EVENTS = [
 // Shown once each, the first time `when` is true. Earlier entries go first.
 // Tips wait their turn so they don't pile up, unless they're urgent.
 const TIPS = [
-  ...WORLDS.map((world, i) => ({ id: `story:${world.id}`, urgent: true, text: WORLD_STORIES[world.id].intro, when: () => !currentEvent && !currentDaily && currentWorld === i })),
+  { id: "duel", urgent: true, text: "Rival duel! Your rival has a machine too, and it keeps adding gears. Push the line to 70% to win the round, or hold more of it when the clock runs out. Win 2 rounds to win the match.", when: () => Boolean(duel) && waveTime > 0.5 },
+  ...WORLDS.map((world, i) => ({ id: `story:${world.id}`, urgent: true, text: WORLD_STORIES[world.id].intro, when: () => !duel && !currentEvent && !currentDaily && currentWorld === i })),
   { id: "start", urgent: true, text: "The main gear turns by itself. Each hit fills the gear beside it, and at 100% that gear sends a soldier to fight.", when: () => waveTime > 0.2 },
   { id: "boss", urgent: true, text: "Boss wave! Soldiers and bombs hurt the boss. Empty its health bar to win.", when: () => boss, card: () => bossCard() },
   // Every later boss gets its own introduction the first time it comes.
@@ -1034,6 +1035,7 @@ function loadSave() {
       dailyChallengeDay: typeof data?.dailyChallengeDay === "string" ? data.dailyChallengeDay : "",
       dailyChallengeBest: Number(data?.dailyChallengeBest) || 0,
       dailyChallengePaid: typeof data?.dailyChallengePaid === "string" ? data.dailyChallengePaid : "",
+      rivalLevel: Math.max(1, Math.floor(Number(data?.rivalLevel)) || 1),
     };
   } catch {
     return { lang: "", easy: false, bigText: false, colorBlind: false, lessMotion: false, worldStars: {}, startGear: "none", worldLevels: {}, heroWaves: {}, funnel: {}, playSeconds: 0, lastSeen: 0, dailyChallengeDay: "", dailyChallengeBest: 0, dailyChallengePaid: "", music: true, vibrate: true, speed: 1, coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
@@ -3192,6 +3194,10 @@ function winWave() {
 // the reward is picked so the wave is sized for the machine it will face.
 function startWave() {
   peakRate = Math.max(peakRate, soldiersPerSecond());
+  if (duel) {
+    startDuelRound();
+    return;
+  }
   const plan = nextWavePlan || planWave(wave);
   nextWavePlan = null;
   wavePace = WAVE_PACES[plan.pace] || null;
@@ -3744,8 +3750,8 @@ function showRewards(title, rewards, lucky = false) {
   rewardOpenedAt = performance.now() + VICTORY_MS;
   document.getElementById("reward-title").textContent = title;
   renderRewardOptions(rewards);
-  nextWavePlan = nextWavePlan || planWave(wave);
-  document.getElementById("reward-next").textContent = nextWaveText(nextWavePlan);
+  nextWavePlan = duel ? null : nextWavePlan || planWave(wave);
+  document.getElementById("reward-next").textContent = nextWavePlan ? nextWaveText(nextWavePlan) : "";
   updateDealButton();
   updateRewardActions();
   clearTimeout(rewardTimer);
@@ -4561,7 +4567,7 @@ function chooseReward(reward) {
 
 // Once, at the first reward of a run, for players who know the basics.
 function buildChoiceDue() {
-  return featureOn("builds") && !runBuild && wave === runStartWave + 1;
+  return !duel && featureOn("builds") && !runBuild && wave === runStartWave + 1;
 }
 
 // Three of the builds, the same for everyone in a daily challenge.
@@ -4956,6 +4962,8 @@ function continueRun() {
   ensureAudio();
   const data = savedRun;
   savedRun = null;
+  duel = null;
+  document.getElementById("game-screen").classList.remove("duel");
   restoreRun(data);
   updateCombos();
   document.getElementById("title-screen").classList.add("hidden");
@@ -4997,6 +5005,7 @@ function updateContinueButton() {
   const play = document.getElementById("play-btn");
   play.classList.toggle("has-run", Boolean(savedRun));
   play.textContent = savedRun ? "New game (ends this run)" : "Play game";
+  updateDuelButton();
 }
 
 function formatTime(seconds) {
@@ -5194,6 +5203,8 @@ function pauseGame() {
   drag = null;
   renderQuestList("pause-quests");
   renderRunParts();
+  document.getElementById("home-btn").textContent = duel ? "Leave the duel" : "Save and go home";
+  document.getElementById("restart-btn").textContent = duel ? "Restart the duel" : "Restart from wave 1";
   document.getElementById("pause-screen").classList.remove("hidden");
 }
 
@@ -5201,6 +5212,10 @@ function pauseGame() {
 // the title screen picks it up again where it was paused.
 function goHome() {
   if (gameState !== "paused") return;
+  if (duel) {
+    leaveDuel();
+    return;
+  }
   saveRun();
   savedRun = JSON.parse(JSON.stringify(runSnapshot()));
   gameState = "title";
@@ -5327,8 +5342,13 @@ function update(dt) {
   waveTime += dt;
   chillFor = Math.max(0, chillFor - dt);
   steamFor = Math.max(0, steamFor - dt);
-  const growthScale = (steamFor > 0 ? 0 : chillFor > 0 ? ICE_GROWTH : 1) * (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
-  enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
+  if (duel) {
+    updateDuel(dt);
+    duelFightLosses(dt);
+  } else {
+    const growthScale = (steamFor > 0 ? 0 : chillFor > 0 ? ICE_GROWTH : 1) * (wavePace ? wavePace.growth : 1) * (ruleOn("swarm") ? RULE_SWARM : 1) * runLevel().growth * (activeDeal?.growth || 1) * (activePath?.growth || 1);
+    enemyBacklog += (enemyGrowthPerSec(wave, waveTime) * growthScale + (boss ? boss.reinforcePerSec : 0) + eventReinforcePerSec + enemyReinforcePerSec) * dt;
+  }
   const newEnemies = Math.floor(enemyBacklog);
   if (newEnemies > 0) {
     enemyBacklog -= newEnemies;
@@ -5338,7 +5358,8 @@ function update(dt) {
   const ratio = total > 0 ? playerPower / total : 0.5;
   runLowestShare = Math.min(runLowestShare, ratio);
   const won = boss ? boss.hp <= 0 : ratio >= WIN_RATIO;
-  if (won) winWave();
+  if (duel) checkDuelRound(ratio);
+  else if (won) winWave();
   else if (ratio <= LOSE_RATIO) {
     if (partCount("secondWind") > 0) useSecondWind();
     else gameOver();
@@ -9535,8 +9556,267 @@ function handleResize() {
 // Game lifecycle / boot
 // =====================================================================
 
+// =====================================================================
+// Rival duel: a match of rounds against a computer rival, instead of a run of
+// waves. The rival's side of the line is fed by its own machine: it starts as
+// strong as the player's, keeps adding gears during a round, picks a reward
+// between rounds, and uses Lightning and Overdrive like the player does. A round
+// is won by pushing the line to 70%, or by holding more of it when time runs
+// out. Both armies lose soldiers in the fight all the time, so the line follows
+// what the machines do now and a round can still turn late. First to two rounds
+// wins the match, and beating a rival brings on a tougher one next time.
+// The rival is one object, so a ghost or a live player can take its place later.
+// =====================================================================
+
+const DUEL_FIRST_WAVES = 3; // lifetime waves won before the duel appears
+const DUEL_ROUNDS_TO_WIN = 2;
+const DUEL_ROUND_SECONDS = 60;
+const DUEL_START_GEARS = 2; // normal gears beside the first one, so round 1 has a machine to play with
+const DUEL_FIGHT_LOSS = 0.12; // share of each army lost per second in the fight
+const RIVAL_LEVEL_GROWTH = 1.1; // each rival beaten makes the next this much stronger
+const RIVAL_GEAR_SECONDS = 8; // the rival adds a gear this often during a round
+const RIVAL_GEAR_GROWTH = 1.025;
+const RIVAL_REWARD_GROWTH = 1.2; // the rival's pick between rounds
+const RIVAL_BEHIND_GROWTH = 1.1; // and a bit more when it lost the round
+const RIVAL_STRIKE_SECONDS = 9;
+const RIVAL_OVERDRIVE_SECONDS = 6;
+const RIVAL_OVERDRIVE_BOOST = 1.5;
+const DUEL_WIN_COINS = 20;
+const DUEL_LEVEL_COINS = 10; // more for each rival level
+const DUEL_ROUND_COINS = 5; // for each round won in a match that was lost
+const RIVALS = [
+  { name: "Rusty Rex", icon: "\u{1F916}" },
+  { name: "Sprocket Sue", icon: "\u{1F9D1}‍\u{1F527}" },
+  { name: "Baron Bolt", icon: "\u{1F3A9}" },
+  { name: "The Cog Queen", icon: "\u{1F451}" },
+  { name: "The Gearlord", icon: "\u{1F479}" },
+];
+const RIVAL_PICKS = ["Turbo", "New gear", "Gear upgrade", "Veterans", "Thick oil"];
+
+let duel = null; // the match in progress; see makeDuel()
+let startingDuel = false;
+
+function rivalLevel() {
+  return Math.max(1, Math.floor(Number(save.rivalLevel)) || 1);
+}
+
+function rivalFor(level) {
+  return RIVALS[Math.min(level, RIVALS.length) - 1];
+}
+
+function duelUnlocked() {
+  return statValue("waves") >= DUEL_FIRST_WAVES;
+}
+
+function makeDuel() {
+  const level = rivalLevel();
+  return { level, rival: rivalFor(level), round: 1, you: 0, them: 0, rate: 0, roundLeft: DUEL_ROUND_SECONDS, gearIn: 0, strikeIn: 0, overdriveAt: 0, overdriveLeft: 0, over: false };
+}
+
+function startDuel() {
+  if (!duelUnlocked()) return;
+  startingDuel = true;
+  pendingChallenge = null;
+  currentChallenge = null;
+  currentEvent = null;
+  currentDaily = null;
+  currentWorld = 0;
+  worldLevel = 0;
+  startNewRun();
+}
+
+// The rival's soldiers per second right now.
+function rivalRate() {
+  // Ice and steam slow the rival's army just as they slow any enemy.
+  return duel.rate * (duel.overdriveLeft > 0 ? RIVAL_OVERDRIVE_BOOST : 1) * (steamFor > 0 ? 0 : chillFor > 0 ? ICE_GROWTH : 1);
+}
+
+function startDuelRound() {
+  wave = duel.round;
+  boss = null;
+  setEnemyType("goblin");
+  wavePace = null;
+  activePath = null;
+  nextPath = null;
+  activeDeal = null;
+  dealAccepted = false;
+  dealPayout = 0;
+  nextWavePlan = null;
+  rustBlocked = false;
+  duel.roundLeft = DUEL_ROUND_SECONDS;
+  duel.gearIn = RIVAL_GEAR_SECONDS;
+  duel.strikeIn = RIVAL_STRIKE_SECONDS * randomBetween(0.6, 1);
+  duel.overdriveAt = randomBetween(15, DUEL_ROUND_SECONDS - RIVAL_OVERDRIVE_SECONDS - 5);
+  duel.overdriveLeft = 0;
+  // Both sides start the round as big as their machines keep them in the fight.
+  enemyPower = Math.max(BASE_POWER, duel.rate / DUEL_FIGHT_LOSS);
+  playerPower = enemyPower;
+  fightCount = null;
+  updateDuelHud();
+}
+
+function updateDuel(dt) {
+  duel.roundLeft -= dt;
+  duel.gearIn -= dt;
+  if (duel.gearIn <= 0) {
+    duel.gearIn += RIVAL_GEAR_SECONDS;
+    duel.rate *= RIVAL_GEAR_GROWTH;
+  }
+  duel.strikeIn -= dt;
+  if (duel.strikeIn <= 0) {
+    duel.strikeIn = RIVAL_STRIKE_SECONDS * randomBetween(0.8, 1.2);
+    rivalStrike();
+  }
+  if (duel.overdriveLeft > 0) duel.overdriveLeft -= dt;
+  else if (duel.overdriveAt > 0 && DUEL_ROUND_SECONDS - duel.roundLeft >= duel.overdriveAt) {
+    duel.overdriveAt = 0;
+    duel.overdriveLeft = RIVAL_OVERDRIVE_SECONDS;
+    announce(`${duel.rival.name} used Overdrive!`);
+    playOverdriveSound();
+  }
+  enemyBacklog += rivalRate() * dt;
+  updateDuelHud();
+}
+
+// The rival's Lightning, the mirror of the player's.
+function rivalStrike() {
+  const amount = rivalRate() * STRIKE_OUTPUT_SECONDS;
+  playerPower = Math.max(1, playerPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
+  const front = frontLineFx();
+  bolts.push({ x: front.x - 22, age: 0 });
+  shove.player = 1;
+  hitStop = HIT_STOP_SECONDS;
+  screenShake = Math.max(screenShake, 2);
+  spawnFaller("player");
+  showToast(`${duel.rival.name}: Lightning!`);
+  playStrikeSound();
+}
+
+// Armies lose soldiers in the fight, so the line shows the machines as they are now.
+function duelFightLosses(dt) {
+  const keep = Math.exp(-DUEL_FIGHT_LOSS * dt);
+  playerPower *= keep;
+  enemyPower *= keep;
+}
+
+function checkDuelRound(ratio) {
+  if (ratio >= WIN_RATIO) endDuelRound(true, false);
+  else if (ratio <= LOSE_RATIO) endDuelRound(false, false);
+  else if (duel.roundLeft <= 0) endDuelRound(ratio > 0.5, true);
+}
+
+function endDuelRound(won, onTime) {
+  if (won) duel.you += 1;
+  else duel.them += 1;
+  winAt = performance.now();
+  marchers = [];
+  enemyBacklog = 0;
+  waveTime = 0;
+  frozenFor = 0;
+  duel.overdriveLeft = 0;
+  blockedCells.clear();
+  resetRally();
+  for (const cell of grid.flat()) {
+    if (cell) cell.rusted = false;
+  }
+  updateDuelHud();
+  if (won) {
+    spawnConfetti();
+    playWinSound();
+    buzz(35);
+    showWaveBanner(onTime ? "Round won on time!" : "Round won!");
+  } else {
+    playLoseSound();
+    buzz(90);
+    showWaveBanner(onTime ? "Rival wins on time" : "Rival wins the round");
+  }
+  if (duel.you >= DUEL_ROUNDS_TO_WIN || duel.them >= DUEL_ROUNDS_TO_WIN) {
+    finishDuel(duel.you > duel.them);
+    return;
+  }
+  const finished = duel.round;
+  duel.round += 1;
+  wave = duel.round;
+  const pick = RIVAL_PICKS[Math.floor(Math.random() * RIVAL_PICKS.length)];
+  duel.rate *= RIVAL_REWARD_GROWTH * (won ? RIVAL_BEHIND_GROWTH : 1);
+  // Losing a round brings better rewards, so one lost round doesn't decide the match.
+  offerRewards(won ? `Round ${finished} won!` : `Round ${finished} lost`, !won);
+  document.getElementById("reward-next").textContent = `${duel.rival.name} picked: ${pick}. You ${duel.you} - ${duel.them} rival`;
+}
+
+function duelCoins(won) {
+  return won ? DUEL_WIN_COINS + DUEL_LEVEL_COINS * duel.level : DUEL_ROUND_COINS * duel.you;
+}
+
+function finishDuel(won) {
+  gameState = "duelover";
+  drag = null;
+  duel.over = true;
+  const coins = duelCoins(won);
+  save.coins += coins;
+  recordStat("duels");
+  if (won) {
+    recordStat("duelWins");
+    save.rivalLevel = duel.level + 1;
+  }
+  writeSave();
+  document.getElementById("duel-result-title").textContent = won ? "You won the duel!" : `${duel.rival.name} won the duel`;
+  document.getElementById("duel-result-score").textContent = `You ${duel.you} - ${duel.them} ${duel.rival.name}`;
+  document.getElementById("duel-result-coins").textContent = `+${coins} coins`;
+  document.getElementById("duel-result-next").textContent = won ? `Next rival: ${rivalFor(duel.level + 1).name}` : "Try again: the rival stays the same.";
+  document.getElementById("duel-again-btn").textContent = won ? "Next rival" : "Rematch";
+  clearTimeout(rewardTimer);
+  rewardTimer = setTimeout(() => {
+    if (gameState === "duelover") document.getElementById("duel-screen").classList.remove("hidden");
+  }, VICTORY_MS);
+}
+
+function updateDuelHud() {
+  if (!duel) return;
+  document.getElementById("duel-round").textContent = `Round ${duel.round}`;
+  document.getElementById("duel-score").textContent = `${duel.you} - ${duel.them}`;
+  document.getElementById("duel-clock").textContent = `${Math.max(0, Math.ceil(duel.roundLeft))}s`;
+  document.getElementById("duel-clock").classList.toggle("low", duel.roundLeft <= 10);
+}
+
+// Leaving a duel ends it; there is nothing to come back to.
+function leaveDuel() {
+  duel = null;
+  gameState = "title";
+  drag = null;
+  clearTimeout(rewardTimer);
+  for (const id of ["pause-screen", "duel-screen", "reward-screen", "game-screen"]) document.getElementById(id).classList.add("hidden");
+  document.getElementById("build-bar").classList.add("hidden");
+  document.getElementById("title-screen").classList.remove("hidden");
+  updateContinueButton();
+  updateDuelButton();
+  renderWorkshop();
+}
+
+function duelAgain() {
+  document.getElementById("duel-screen").classList.add("hidden");
+  startingDuel = true;
+  startNewRun();
+}
+
+function updateDuelButton() {
+  const button = document.getElementById("duel-btn");
+  button.classList.toggle("hidden", !duelUnlocked());
+  const rival = rivalFor(rivalLevel());
+  button.textContent = `${rival.icon} Rival duel: ${rival.name}`;
+}
+
 function startNewRun() {
   ensureAudio();
+  duel = startingDuel ? makeDuel() : null;
+  startingDuel = false;
+  document.getElementById("duel-screen").classList.add("hidden");
+  document.getElementById("game-screen").classList.toggle("duel", Boolean(duel));
+  if (duel) {
+    // A duel leaves the saved run alone, so Continue still finds it afterwards.
+    pendingChallenge = null;
+    currentChallenge = null;
+  }
   if (pendingChallenge) {
     currentChallenge = pendingChallenge;
     pendingChallenge = null;
@@ -9546,9 +9826,9 @@ function startNewRun() {
   runSeed = currentChallenge ? currentChallenge.seed : Math.floor(Math.random() * 2147483647);
   runRandomCounts = {};
   // Restart ends a run in progress, which still earns its coins.
-  const restarted = RUN_SAVE_STATES.includes(gameState);
+  const restarted = !duel && RUN_SAVE_STATES.includes(gameState);
   // So does giving up a run saved last time.
-  if (savedRun) {
+  if (savedRun && !duel) {
     ({ wave, bossesBeaten, runTime } = savedRun.numbers);
     runStartWave = savedRun.numbers.runStartWave ?? 1;
     runCoinScale = savedRun.numbers.runCoinScale ?? 1;
@@ -9557,7 +9837,7 @@ function startNewRun() {
     runParts = savedRun.parts;
     runBanked = false;
   }
-  const coinsFromRestart = restarted || savedRun ? bankRun() : 0;
+  const coinsFromRestart = !duel && (restarted || savedRun) ? bankRun() : 0;
   drag = null;
   peakRate = 0;
   sparkCharge = 0;
@@ -9651,8 +9931,22 @@ function startNewRun() {
   const startGear = START_GEARS.find((item) => item.id === save.startGear)?.gear;
   if (startGear && bestEmptyCell()) placeGear(startGear);
   if (currentEvent?.id === "bombs") grid[DRIVER_ROW][DRIVER_COL + 1] = freshCell("bomb");
-  runStartWave = nextRunHeadStart ? HEAD_START_WAVE : 1;
-  if (nextRunHeadStart) {
+  if (duel) {
+    // Never saved and never banked: the duel pays its own coins at the end.
+    runBanked = true;
+    runRules = [];
+    runEasy = false;
+    endless = false;
+    runCoinScale = 1;
+    runKey = "duel";
+    for (let i = 0; i < DUEL_START_GEARS && bestEmptyCell(); i++) placeGear(newGearType());
+    // The rival's machine starts as strong as the player's.
+    duel.rate = soldiersPerSecond() * Math.pow(RIVAL_LEVEL_GROWTH, duel.level - 1);
+    runStartWave = 1;
+    startWave();
+  }
+  runStartWave = nextRunHeadStart && !duel ? HEAD_START_WAVE : 1;
+  if (nextRunHeadStart && !duel) {
     nextRunHeadStart = false;
     wave = HEAD_START_WAVE;
     for (let i = 0; i < HEAD_START_GEARS; i++) placeGear(newGearType());
@@ -9668,7 +9962,10 @@ function startNewRun() {
   updateFeatureButtons();
   handleResize();
   if (coinsFromRestart > 0) showToast(`+${coinsFromRestart} coins`);
-  showWaveBanner(currentDaily ? "Daily challenge" : currentEvent ? currentEvent.name : runEasy ? `${WORLDS[currentWorld].name}: ${EASY_LEVEL.name}` : worldLevel ? `${WORLDS[currentWorld].name}: ${WORLD_LEVELS[worldLevel].name}` : WORLDS[currentWorld].name);
+  if (duel) {
+    showWaveBanner(`${duel.rival.name}!`);
+    announce(`Rival duel: first to ${DUEL_ROUNDS_TO_WIN} rounds wins. Round 1!`);
+  } else showWaveBanner(currentDaily ? "Daily challenge" : currentEvent ? currentEvent.name : runEasy ? `${WORLDS[currentWorld].name}: ${EASY_LEVEL.name}` : worldLevel ? `${WORLDS[currentWorld].name}: ${WORLD_LEVELS[worldLevel].name}` : WORLDS[currentWorld].name);
   saveRun();
 }
 
@@ -10240,7 +10537,13 @@ function init() {
     document.getElementById("worlds-screen").classList.add("hidden");
   });
   document.getElementById("retry-btn").addEventListener("click", startNewRun);
-  document.getElementById("restart-btn").addEventListener("click", startNewRun);
+  document.getElementById("restart-btn").addEventListener("click", () => {
+    if (duel) duelAgain();
+    else startNewRun();
+  });
+  document.getElementById("duel-btn").addEventListener("click", startDuel);
+  document.getElementById("duel-again-btn").addEventListener("click", duelAgain);
+  document.getElementById("duel-home-btn").addEventListener("click", leaveDuel);
   document.getElementById("home-btn").addEventListener("click", goHome);
   document.getElementById("strike-btn").addEventListener("click", pressLightning);
   document.getElementById("overdrive-btn").addEventListener("click", activateOverdrive);

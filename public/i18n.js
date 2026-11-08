@@ -9,6 +9,12 @@
 // =====================================================================
 
 const TH_WORDS = {
+  // Rival duel
+  "Rusty Rex": "เร็กซ์ขี้สนิม", "Sprocket Sue": "ซูเฟืองโซ่", "Baron Bolt": "บารอนน็อต", "The Cog Queen": "ราชินีเฟือง", "The Gearlord": "จอมเฟือง",
+  "Rival duel": "ดวลคู่แข่ง", "Round won!": "ชนะรอบนี้!", "Round won on time!": "ชนะรอบเมื่อหมดเวลา!", "Rival wins the round": "คู่แข่งชนะรอบนี้", "Rival wins on time": "คู่แข่งชนะเมื่อหมดเวลา",
+  "You won the duel!": "คุณชนะการดวล!", "Try again: the rival stays the same.": "ลองอีกครั้ง: คู่แข่งยังเป็นคนเดิม", "Next rival": "คู่แข่งถัดไป", "Rematch": "แข่งใหม่", "Home": "หน้าหลัก",
+  "Leave the duel": "ออกจากการดวล", "Restart the duel": "เริ่มดวลใหม่", "New gear": "เฟืองใหม่", "Gear upgrade": "อัปเกรดเฟือง", "Turbo": "เทอร์โบ", "Thick oil": "น้ำมันข้น",
+  "Rival duel! Your rival has a machine too, and it keeps adding gears. Push the line to 70% to win the round, or hold more of it when the clock runs out. Win 2 rounds to win the match.": "ดวลคู่แข่ง! คู่แข่งก็มีเครื่องจักรเหมือนกัน และจะเพิ่มเฟืองไปเรื่อยๆ ดันแนวรบให้ถึง 70% เพื่อชนะรอบ หรือครองแนวรบได้มากกว่าเมื่อหมดเวลา ชนะ 2 รอบเพื่อชนะการแข่งขัน",
   // Builds
   "Payout per combo": "ส่งทหารเพิ่มต่อคอมโบ", "Blasts hit nearby gears": "ระเบิดกระทบเฟืองข้างๆ", "Speed per Booster": "ความเร็วต่อบูสเตอร์", "Lightning strikes": "จำนวนครั้งที่สายฟ้าฟาด",
   "Choose your build": "เลือกแนวทางการสร้าง",
@@ -243,6 +249,17 @@ function thaiList(text) {
 }
 
 const TH_PATTERNS = [
+  [/^(\S+) Rival duel: (.+)$/, (m) => `${m[1]} ดวลคู่แข่ง: ${T(m[2])}`],
+  [/^Rival duel: first to (\d+) rounds wins\. Round 1!$/i, (m) => `ดวลคู่แข่ง: ใครชนะก่อน ${m[1]} รอบเป็นผู้ชนะ รอบ 1!`],
+  [/^Round (\d+)$/i, (m) => `รอบ ${m[1]}`],
+  [/^Round (\d+) won!$/i, (m) => `ชนะรอบ ${m[1]}!`],
+  [/^Round (\d+) lost$/i, (m) => `แพ้รอบ ${m[1]}`],
+  [/^(.+) used Overdrive!$/, (m) => `${T(m[1])} ใช้โอเวอร์ไดรฟ์!`],
+  [/^(.+): Lightning!$/, (m) => `${T(m[1])}: สายฟ้า!`],
+  [/^(.+) picked: (.+)\. You (\d+) - (\d+) rival$/, (m) => `${T(m[1])} เลือก: ${T(m[2])} คุณ ${m[3]} - ${m[4]} คู่แข่ง`],
+  [/^(.+) won the duel$/, (m) => `${T(m[1])} ชนะการดวล`],
+  [/^You (\d+) - (\d+) (.+)$/, (m) => `คุณ ${m[1]} - ${m[2]} ${T(m[3])}`],
+  [/^Next rival: (.+)$/, (m) => `คู่แข่งถัดไป: ${T(m[1])}`],
   [/^Level (\d+) gear$/i, (m) => `เฟืองเลเวล ${m[1]}`],
   [/^(\d+(?:\.\d+)?)s$/, (m) => `${m[1]} วิ`],
   [/^(\d+(?:\.\d+)?)\/s$/, (m) => `${m[1]}/วิ`],
