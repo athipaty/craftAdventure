@@ -20,6 +20,7 @@
       <p>Build a gear machine, send soldiers to fight, and beat the bosses.</p>
       <button id="continue-btn" class="hidden"></button>
       <button id="play-btn">Play game</button>
+      <button id="duel-btn" class="hidden">Rival duel</button>
       <div id="title-actions">
         <button id="title-workshop-btn" class="workshop-btn">Workshop: <b id="title-coins">0</b> coins</button>
         <button id="title-quests-btn" class="workshop-btn">Quests &amp; awards</button>
@@ -38,6 +39,7 @@
     <div id="game-screen" class="hidden">
       <div id="hud">
         <span id="wave-indicator">Wave <b id="wave-num">1</b></span>
+        <span id="duel-indicator"><span id="duel-round">Round 1</span> <b id="duel-score">0 - 0</b> <span id="duel-clock">60s</span></span>
         <span id="score-indicator"><b id="rank-label">Recruits</b></span>
         <button id="mute-btn"></button>
         <button id="speed-btn"></button>
@@ -197,6 +199,17 @@
         <button id="gameover-worlds-btn" class="workshop-btn">Worlds</button>
         <button id="gameover-workshop-btn" class="workshop-btn">Workshop</button>
         <button id="gameover-quests-btn" class="workshop-btn">Quests &amp; awards</button>
+      </div>
+    </div>
+
+    <div id="duel-screen" class="hidden">
+      <div id="duel-card">
+        <h2 id="duel-result-title"></h2>
+        <p id="duel-result-score"></p>
+        <p id="duel-result-coins"></p>
+        <p id="duel-result-next"></p>
+        <button id="duel-again-btn">Rematch</button>
+        <button id="duel-home-btn" class="workshop-btn">Home</button>
       </div>
     </div>
 

@@ -3553,3 +3553,100 @@ html.less-motion *::after {
     text-align: center;
   }
 }
+
+/* ---------- Rival duel ---------- */
+
+#duel-btn {
+  padding: 12px 26px;
+  border: 2px solid #1c0f06;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff8a5c, #c8432a);
+  color: #fff4e6;
+  font-size: 1rem;
+  font-weight: 800;
+  box-shadow: 0 4px 0 #7a2412;
+}
+
+#duel-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #7a2412;
+}
+
+#duel-indicator {
+  display: none;
+  white-space: nowrap;
+}
+
+#game-screen.duel #duel-indicator {
+  display: inline;
+}
+
+#game-screen.duel #wave-indicator {
+  display: none;
+}
+
+#duel-clock {
+  display: inline-block;
+  min-width: 2.6em;
+  text-align: right;
+}
+
+#duel-clock.low {
+  color: #ff7a5c;
+  font-weight: 800;
+}
+
+#duel-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 5, 2, 0.75);
+}
+
+#duel-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+  padding: 20px;
+  border: 2px solid #ff8a5c;
+  border-radius: 14px;
+  background: var(--panel);
+  text-align: center;
+}
+
+#duel-card h2 {
+  margin: 0;
+  color: #ffe14d;
+}
+
+#duel-card p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+#duel-result-score {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+#duel-result-coins {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+#duel-again-btn {
+  padding: 11px 26px;
+  border: 2px solid #1c0f06;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe14d, #e0a92e);
+  color: #2a1405;
+  font-weight: 900;
+  box-shadow: 0 4px 0 #8a5200;
+}
