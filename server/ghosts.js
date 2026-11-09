@@ -44,6 +44,7 @@ function memoryStore() {
   let ghosts = [];
   let nextId = 1;
   return {
+    kind: "memory (lost on restart)",
     async add(ghost) {
       ghosts.push({ ...ghost, id: nextId++, created: Date.now() });
       const mine = ghosts.filter((g) => g.player === ghost.player);
@@ -79,6 +80,7 @@ async function postgresStore(url) {
   await pool.query("CREATE INDEX IF NOT EXISTS ghosts_power ON ghosts (power)");
   await pool.query("CREATE INDEX IF NOT EXISTS ghosts_player ON ghosts (player, created)");
   return {
+    kind: "Postgres",
     async add(ghost) {
       await pool.query("INSERT INTO ghosts (player, name, power, rounds) VALUES ($1, $2, $3, $4)", [ghost.player, ghost.name, ghost.power, JSON.stringify(ghost.rounds)]);
       await pool.query(

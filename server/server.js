@@ -100,7 +100,7 @@ function makeServer(store) {
 if (require.main === module) {
   makeStore().then((store) => {
     const port = Number(process.env.PORT) || 3000;
-    makeServer(store).listen(port, () => console.log(`Ghost server on port ${port}`));
+    makeServer(store).listen(port, () => console.log(`Ghost server on port ${port}, ghosts kept in ${store.kind}`));
   });
 }
 
