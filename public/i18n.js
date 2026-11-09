@@ -11,7 +11,8 @@
 const TH_WORDS = {
   // Rival duel
   "Rusty Rex": "เร็กซ์ขี้สนิม", "Sprocket Sue": "ซูเฟืองโซ่", "Baron Bolt": "บารอนน็อต", "The Cog Queen": "ราชินีเฟือง", "The Gearlord": "จอมเฟือง",
-  "Rival duel": "ดวลคู่แข่ง", "Round won!": "ชนะรอบนี้!", "Round won on time!": "ชนะรอบเมื่อหมดเวลา!", "Rival wins the round": "คู่แข่งชนะรอบนี้", "Rival wins on time": "คู่แข่งชนะเมื่อหมดเวลา",
+  "Rival duel": "ดวลคู่แข่ง", "Another ghost": "ผีตัวต่อไป",
+  "That was a real player's machine. Yours goes out as a ghost too.": "นั่นคือเครื่องจักรของผู้เล่นจริง ของคุณก็จะถูกส่งไปเป็นผีด้วย", "Round won!": "ชนะรอบนี้!", "Round won on time!": "ชนะรอบเมื่อหมดเวลา!", "Rival wins the round": "คู่แข่งชนะรอบนี้", "Rival wins on time": "คู่แข่งชนะเมื่อหมดเวลา",
   "You won the duel!": "คุณชนะการดวล!", "Try again: the rival stays the same.": "ลองอีกครั้ง: คู่แข่งยังเป็นคนเดิม", "Next rival": "คู่แข่งถัดไป", "Rematch": "แข่งใหม่", "Home": "หน้าหลัก",
   "Leave the duel": "ออกจากการดวล", "Restart the duel": "เริ่มดวลใหม่", "New gear": "เฟืองใหม่", "Gear upgrade": "อัปเกรดเฟือง", "Turbo": "เทอร์โบ", "Thick oil": "น้ำมันข้น",
   "Rival duel! Your rival has a machine too, and it keeps adding gears. Push the line to 70% to win the round, or hold more of it when the clock runs out. Win 2 rounds to win the match.": "ดวลคู่แข่ง! คู่แข่งก็มีเครื่องจักรเหมือนกัน และจะเพิ่มเฟืองไปเรื่อยๆ ดันแนวรบให้ถึง 70% เพื่อชนะรอบ หรือครองแนวรบได้มากกว่าเมื่อหมดเวลา ชนะ 2 รอบเพื่อชนะการแข่งขัน",
@@ -250,6 +251,8 @@ function thaiList(text) {
 
 const TH_PATTERNS = [
   [/^(\S+) Rival duel: (.+)$/, (m) => `${m[1]} ดวลคู่แข่ง: ${T(m[2])}`],
+  [/^(\S+) Ghost duel: looking for ghosts\.\.\.$/, (m) => `${m[1]} ดวลกับผี: กำลังหาผี...`],
+  [/^(\S+) Ghost duel: (.+)$/, (m) => `${m[1]} ดวลกับผี: ${m[2]}`],
   [/^Rival duel: first to (\d+) rounds wins\. Round 1!$/i, (m) => `ดวลคู่แข่ง: ใครชนะก่อน ${m[1]} รอบเป็นผู้ชนะ รอบ 1!`],
   [/^Round (\d+)$/i, (m) => `รอบ ${m[1]}`],
   [/^Round (\d+) won!$/i, (m) => `ชนะรอบ ${m[1]}!`],

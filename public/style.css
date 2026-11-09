@@ -3650,3 +3650,24 @@ html.less-motion *::after {
   font-weight: 900;
   box-shadow: 0 4px 0 #8a5200;
 }
+
+#ghost-btn {
+  padding: 10px 22px;
+  border: 2px solid #1c0f06;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #b48cff, #6f45c9);
+  color: #f6f0ff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  box-shadow: 0 4px 0 #3c2373;
+}
+
+#ghost-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #3c2373;
+}
+
+#ghost-btn:disabled {
+  opacity: 0.6;
+  font-weight: 600;
+}

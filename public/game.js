@@ -1036,6 +1036,8 @@ function loadSave() {
       dailyChallengeBest: Number(data?.dailyChallengeBest) || 0,
       dailyChallengePaid: typeof data?.dailyChallengePaid === "string" ? data.dailyChallengePaid : "",
       rivalLevel: Math.max(1, Math.floor(Number(data?.rivalLevel)) || 1),
+      playerId: typeof data?.playerId === "string" ? data.playerId : "",
+      duelStartRate: Math.max(0, Number(data?.duelStartRate) || 0),
     };
   } catch {
     return { lang: "", easy: false, bigText: false, colorBlind: false, lessMotion: false, worldStars: {}, startGear: "none", worldLevels: {}, heroWaves: {}, funnel: {}, playSeconds: 0, lastSeen: 0, dailyChallengeDay: "", dailyChallengeBest: 0, dailyChallengePaid: "", music: true, vibrate: true, speed: 1, coins: 0, upgrades: {}, muted: false, tips: {}, quests: [], questsDone: 0, dailyClaimedOn: "", dailyStreak: 0, dailyQuestsOn: "", dailyQuests: [], xp: 0, playerLevel: 1, stats: {}, worldsCleared: {}, worldBest: {}, owned: {}, hero: "knight", armySkin: "blue", gearSkin: "brass", eventClearedWeek: 0, achievements: {} };
@@ -1718,6 +1720,7 @@ function react(row, col) {
 // A free lightning hit, without using Lightning.
 function shatterHit(level) {
   const amount = Math.max(armyStrength(), soldiersPerSecond() * SHATTER_SECONDS) * levelPayout(level);
+  recordGhostHit(amount * (1 - WIN_RATIO) / WIN_RATIO);
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
   shove.enemy = 1;
@@ -2046,6 +2049,7 @@ function scrapGear(row, col) {
   const refund = scrapRefund();
   grid[row][col] = null;
   playerPower += refund * armyStrength();
+  recordGhostSoldiers(refund * armyStrength());
   spawnRustBurst(row, col);
   showToast(`Scrapped: +${refund}`);
   playClankSound();
@@ -2335,6 +2339,7 @@ function strikeEnemy() {
   const boost = triple * (1 + upgradeLevel("strikePower") * STRIKE_POWER_PER_LEVEL) * (heroIs("archer") ? ARCHER_STRIKE : 1) * (1 + partCount("staticCharge") * PART_STRIKE) * (build()?.strikePower || 1) * (partCount("twinStrike") ? 2 : 1);
   const amount = Math.max(armyStrength(), soldiersPerSecond() * STRIKE_OUTPUT_SECONDS) * boost * (1 + sparkCharge);
   sparkCharge = 0;
+  recordGhostHit(amount * (1 - WIN_RATIO) / WIN_RATIO);
   enemyPower = Math.max(1, enemyPower - amount * (1 - WIN_RATIO) / WIN_RATIO);
   damageBoss(amount);
   if (partCount("chargedStrike")) {
@@ -3081,10 +3086,12 @@ function updateMarchers(dt) {
         rallyReserve += value;
       } else {
         playerPower += value;
+        recordGhostSoldiers(value);
         damageBoss(value);
       }
     }
     else if (m.side === "bomb") {
+      recordGhostHit(m.value);
       enemyPower = Math.max(1, enemyPower - m.value);
       damageBoss((m.value * WIN_RATIO) / (1 - WIN_RATIO));
       screenShake = Math.max(screenShake, BOMB_SHAKE);
@@ -9593,8 +9600,227 @@ const RIVALS = [
 ];
 const RIVAL_PICKS = ["Turbo", "New gear", "Gear upgrade", "Veterans", "Thick oil"];
 
+// Ghosts: every finished duel is sent to the ghost server as a record of what
+// the player's machine sent each second, and the hits it landed. A ghost duel
+// replays another player's record as the rival, so it fights the way they did.
+// One ghost is fetched ahead of time and kept, because a free server can take
+// a minute to wake up. Uploads wait in a queue until the server answers.
+const GHOST_SERVER_LIVE = "https://gear-fight-ghosts.onrender.com";
+const GHOST_KEY = "gearfight_ghost"; // the next ghost to fight
+const GHOST_QUEUE_KEY = "gearfight_ghost_uploads";
+const GHOST_SERVER_KEY = "gearfight_ghost_server"; // a different server, for trying it out
+const GHOST_QUEUE_MAX = 5;
+const GHOST_FETCH_MS = 70000; // long enough for a sleeping server to wake
+const GHOST_EXTRA_ROUND_GROWTH = 1.2; // a round past the ghost's record replays its last one this much stronger
+const GHOST_WIN_COINS = 30;
+const GHOST_MAX_HITS = 200;
+// The same lists as server/names.js, so a player's name is the same everywhere.
+const NAME_ADJECTIVES = ["Brave", "Rusty", "Shiny", "Swift", "Mighty", "Clever", "Steady", "Lucky", "Bold", "Golden", "Iron", "Copper", "Quick", "Jolly", "Silent", "Stormy"];
+const NAME_NOUNS = ["Cog", "Gear", "Sprocket", "Bolt", "Spring", "Piston", "Wheel", "Lever", "Rivet", "Spanner", "Crank", "Valve", "Anvil", "Hammer", "Engine", "Dynamo"];
+
 let duel = null; // the match in progress; see makeDuel()
 let startingDuel = false;
+let pendingGhost = null; // the ghost the next duel is against
+let ghostFetching = false;
+let ghostUploading = false;
+
+// The server, or null where there is none: the local copy has no server unless one is set.
+function ghostServer() {
+  let chosen = null;
+  try {
+    chosen = localStorage.getItem(GHOST_SERVER_KEY);
+  } catch {
+    chosen = null;
+  }
+  if (chosen) return chosen.replace(/\/$/, "");
+  return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) || location.protocol === "file:" ? null : GHOST_SERVER_LIVE;
+}
+
+function playerId() {
+  if (!/^[0-9a-f]{16}$/.test(save.playerId || "")) {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    save.playerId = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    writeSave();
+  }
+  return save.playerId;
+}
+
+function ghostName(id) {
+  const n = parseInt(id.slice(0, 8), 16);
+  return `${NAME_ADJECTIVES[n % 16]} ${NAME_NOUNS[(n >>> 4) % 16]} ${(n >>> 8) % 100}`;
+}
+
+function readStored(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Without storage there is simply no ghost kept for later.
+  }
+}
+
+// Only what a replay needs, in the shape the server sends.
+function isValidGhost(ghost) {
+  return typeof ghost?.name === "string" && ghost.name.length < 40 && Array.isArray(ghost.rounds) && ghost.rounds.length >= 1
+    && ghost.rounds.every((r) => Number(r?.start) > 0 && Array.isArray(r.soldiers) && r.soldiers.length >= 1 && r.soldiers.every(Number.isFinite)
+      && Array.isArray(r.hits) && r.hits.every((h) => Array.isArray(h) && Number.isFinite(h[0]) && Number.isFinite(h[1])));
+}
+
+function storedGhost() {
+  const ghost = readStored(GHOST_KEY, null);
+  return isValidGhost(ghost) ? ghost : null;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), GHOST_FETCH_MS);
+  try {
+    return await fetch(url, { ...options, signal: abort.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Keeps one ghost ready, close to the player's own machine.
+async function refreshGhost() {
+  const server = ghostServer();
+  if (!server || ghostFetching || storedGhost() || !duelUnlocked()) return;
+  ghostFetching = true;
+  try {
+    const power = Number(save.duelStartRate) || 0;
+    const response = await fetchWithTimeout(`${server}/ghosts/match?power=${power}&player=${playerId()}`);
+    if (response.ok) {
+      const ghost = await response.json();
+      if (isValidGhost(ghost)) writeStored(GHOST_KEY, { name: ghost.name, rounds: ghost.rounds });
+    }
+  } catch {
+    // Offline, or the server is still asleep: try again next time.
+  } finally {
+    ghostFetching = false;
+    updateGhostButton();
+  }
+}
+
+function queueGhostUpload(record) {
+  const queue = readStored(GHOST_QUEUE_KEY, []);
+  queue.push(record);
+  writeStored(GHOST_QUEUE_KEY, queue.slice(-GHOST_QUEUE_MAX));
+}
+
+async function flushGhostUploads() {
+  const server = ghostServer();
+  if (!server || ghostUploading) return;
+  ghostUploading = true;
+  try {
+    while (readStored(GHOST_QUEUE_KEY, []).length) {
+      const response = await fetchWithTimeout(`${server}/ghosts`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(readStored(GHOST_QUEUE_KEY, [])[0]) });
+      // A record the server turns down would be turned down again, so it goes too.
+      if (!response.ok && response.status !== 400 && response.status !== 413) break;
+      writeStored(GHOST_QUEUE_KEY, readStored(GHOST_QUEUE_KEY, []).slice(1));
+    }
+  } catch {
+    // Kept for next time.
+  } finally {
+    ghostUploading = false;
+  }
+}
+
+function ghostRecordRound() {
+  return duel?.record.rounds[duel.round - 1];
+}
+
+function recordGhostSoldiers(amount) {
+  const round = gameState === "playing" && ghostRecordRound();
+  if (!round) return;
+  const second = Math.min(DUEL_ROUND_SECONDS - 1, Math.max(0, Math.floor(DUEL_ROUND_SECONDS - duel.roundLeft)));
+  round.soldiers[second] = (round.soldiers[second] || 0) + amount;
+}
+
+function recordGhostHit(amount) {
+  const round = gameState === "playing" && ghostRecordRound();
+  if (!round || round.hits.length >= GHOST_MAX_HITS) return;
+  round.hits.push([Math.round((DUEL_ROUND_SECONDS - duel.roundLeft) * 10) / 10, amount]);
+}
+
+const shortNumberForGhost = (x) => Number(x.toPrecision(4));
+
+// What gets sent: every second filled in, and numbers kept short.
+function ghostUpload() {
+  return {
+    player: playerId(),
+    power: shortNumberForGhost(duel.record.power),
+    rounds: duel.record.rounds.map((round) => ({
+      start: shortNumberForGhost(round.start),
+      soldiers: Array.from({ length: round.seconds }, (_, i) => shortNumberForGhost(round.soldiers[i] || 0)),
+      hits: round.hits.map(([t, amount]) => [t, shortNumberForGhost(amount)]),
+    })),
+  };
+}
+
+// The ghost's record for this round, and how much stronger to play it.
+function ghostRound() {
+  const rounds = duel.ghost.rounds;
+  const extra = Math.max(0, duel.round - rounds.length);
+  return { round: rounds[Math.min(duel.round, rounds.length) - 1], scale: Math.pow(GHOST_EXTRA_ROUND_GROWTH, extra) };
+}
+
+// What the ghost sent in this second; past the end of its record, the average of its last few.
+function ghostSoldiersAt(round, second) {
+  if (second < round.soldiers.length) return round.soldiers[second];
+  const last = round.soldiers.slice(-5);
+  return last.reduce((sum, n) => sum + n, 0) / last.length;
+}
+
+function updateGhost(dt, elapsed) {
+  const { round, scale } = ghostRound();
+  // Ice and steam slow a ghost's army too.
+  const slow = steamFor > 0 ? 0 : chillFor > 0 ? ICE_GROWTH : 1;
+  enemyBacklog += ghostSoldiersAt(round, Math.floor(elapsed)) * scale * slow * dt;
+  while (duel.ghostHit < round.hits.length && round.hits[duel.ghostHit][0] <= elapsed) {
+    const amount = round.hits[duel.ghostHit][1] * scale;
+    duel.ghostHit += 1;
+    ghostStrike(amount);
+  }
+}
+
+// One of the ghost's hits, landing on the player's side. Small ones (bombs) just push.
+function ghostStrike(amount) {
+  playerPower = Math.max(1, playerPower - amount);
+  shove.player = 1;
+  spawnFaller("player");
+  if (amount < playerPower * 0.05) return;
+  const front = frontLineFx();
+  bolts.push({ x: front.x - 22, age: 0 });
+  hitStop = HIT_STOP_SECONDS;
+  screenShake = Math.max(screenShake, 2);
+  playStrikeSound();
+}
+
+function startGhostDuel() {
+  const ghost = storedGhost();
+  if (!ghost) return;
+  writeStored(GHOST_KEY, null);
+  pendingGhost = ghost;
+  startDuel();
+  refreshGhost();
+}
+
+function updateGhostButton() {
+  const button = document.getElementById("ghost-btn");
+  const ghost = storedGhost();
+  button.classList.toggle("hidden", !duelUnlocked() || !ghostServer());
+  button.disabled = !ghost;
+  button.textContent = ghost ? `\u{1F47B} Ghost duel: ${ghost.name}` : "\u{1F47B} Ghost duel: looking for ghosts...";
+}
 
 function rivalLevel() {
   return Math.max(1, Math.floor(Number(save.rivalLevel)) || 1);
@@ -9610,7 +9836,13 @@ function duelUnlocked() {
 
 function makeDuel() {
   const level = rivalLevel();
-  return { level, rival: rivalFor(level), round: 1, you: 0, them: 0, rate: 0, roundLeft: DUEL_ROUND_SECONDS, gearIn: 0, strikeIn: 0, overdriveAt: 0, overdriveLeft: 0, over: false };
+  const ghost = pendingGhost;
+  pendingGhost = null;
+  return {
+    level, rival: ghost ? { name: ghost.name, icon: "\u{1F47B}" } : rivalFor(level), ghost, ghostHit: 0,
+    round: 1, you: 0, them: 0, rate: 0, roundLeft: DUEL_ROUND_SECONDS, gearIn: 0, strikeIn: 0, overdriveAt: 0, overdriveLeft: 0, over: false,
+    record: { power: 0, rounds: [] },
+  };
 }
 
 function startDuel() {
@@ -9648,15 +9880,25 @@ function startDuelRound() {
   duel.strikeIn = RIVAL_STRIKE_SECONDS * randomBetween(0.6, 1);
   duel.overdriveAt = randomBetween(15, DUEL_ROUND_SECONDS - RIVAL_OVERDRIVE_SECONDS - 5);
   duel.overdriveLeft = 0;
+  duel.ghostHit = 0;
   // Both sides start the round as big as their machines keep them in the fight.
-  enemyPower = Math.max(BASE_POWER, duel.rate / DUEL_FIGHT_LOSS);
+  const ghost = duel.ghost && ghostRound();
+  enemyPower = Math.max(BASE_POWER, ghost ? ghost.round.start * ghost.scale : duel.rate / DUEL_FIGHT_LOSS);
   playerPower = enemyPower;
+  duel.record.rounds[duel.round - 1] = { start: playerPower, soldiers: [], hits: [], seconds: 1 };
   fightCount = null;
   updateDuelHud();
 }
 
 function updateDuel(dt) {
+  const elapsed = DUEL_ROUND_SECONDS - duel.roundLeft;
+  ghostRecordRound().seconds = Math.min(DUEL_ROUND_SECONDS, Math.floor(elapsed) + 1);
   duel.roundLeft -= dt;
+  if (duel.ghost) {
+    updateGhost(dt, elapsed);
+    updateDuelHud();
+    return;
+  }
   duel.gearIn -= dt;
   if (duel.gearIn <= 0) {
     duel.gearIn += RIVAL_GEAR_SECONDS;
@@ -9741,11 +9983,12 @@ function endDuelRound(won, onTime) {
   duel.rate *= RIVAL_REWARD_GROWTH * (won ? RIVAL_BEHIND_GROWTH : 1);
   // Losing a round brings better rewards, so one lost round doesn't decide the match.
   offerRewards(won ? `Round ${finished} won!` : `Round ${finished} lost`, !won);
-  document.getElementById("reward-next").textContent = `${duel.rival.name} picked: ${pick}. You ${duel.you} - ${duel.them} rival`;
+  document.getElementById("reward-next").textContent = duel.ghost ? `You ${duel.you} - ${duel.them} ${duel.rival.name}` : `${duel.rival.name} picked: ${pick}. You ${duel.you} - ${duel.them} rival`;
 }
 
 function duelCoins(won) {
-  return won ? DUEL_WIN_COINS + DUEL_LEVEL_COINS * duel.level : DUEL_ROUND_COINS * duel.you;
+  if (!won) return DUEL_ROUND_COINS * duel.you;
+  return duel.ghost ? GHOST_WIN_COINS : DUEL_WIN_COINS + DUEL_LEVEL_COINS * duel.level;
 }
 
 function finishDuel(won) {
@@ -9755,16 +9998,28 @@ function finishDuel(won) {
   const coins = duelCoins(won);
   save.coins += coins;
   recordStat("duels");
-  if (won) {
+  if (won && duel.ghost) recordStat("ghostWins");
+  else if (won) {
     recordStat("duelWins");
     save.rivalLevel = duel.level + 1;
   }
   writeSave();
+  // This match becomes a ghost for someone else.
+  queueGhostUpload(ghostUpload());
+  flushGhostUploads();
   document.getElementById("duel-result-title").textContent = won ? "You won the duel!" : `${duel.rival.name} won the duel`;
   document.getElementById("duel-result-score").textContent = `You ${duel.you} - ${duel.them} ${duel.rival.name}`;
   document.getElementById("duel-result-coins").textContent = `+${coins} coins`;
-  document.getElementById("duel-result-next").textContent = won ? `Next rival: ${rivalFor(duel.level + 1).name}` : "Try again: the rival stays the same.";
-  document.getElementById("duel-again-btn").textContent = won ? "Next rival" : "Rematch";
+  const again = document.getElementById("duel-again-btn");
+  if (duel.ghost) {
+    document.getElementById("duel-result-next").textContent = "That was a real player's machine. Yours goes out as a ghost too.";
+    again.textContent = "Another ghost";
+    again.classList.toggle("hidden", !storedGhost());
+  } else {
+    document.getElementById("duel-result-next").textContent = won ? `Next rival: ${rivalFor(duel.level + 1).name}` : "Try again: the rival stays the same.";
+    again.textContent = won ? "Next rival" : "Rematch";
+    again.classList.remove("hidden");
+  }
   clearTimeout(rewardTimer);
   rewardTimer = setTimeout(() => {
     if (gameState === "duelover") document.getElementById("duel-screen").classList.remove("hidden");
@@ -9793,8 +10048,15 @@ function leaveDuel() {
   renderWorkshop();
 }
 
+// From the results, the next match: another ghost after a ghost duel.
 function duelAgain() {
   document.getElementById("duel-screen").classList.add("hidden");
+  if (duel?.ghost && duel.over) {
+    startGhostDuel();
+    return;
+  }
+  // Restarting from the pause menu keeps the same opponent.
+  pendingGhost = duel?.ghost || null;
   startingDuel = true;
   startNewRun();
 }
@@ -9804,6 +10066,11 @@ function updateDuelButton() {
   button.classList.toggle("hidden", !duelUnlocked());
   const rival = rivalFor(rivalLevel());
   button.textContent = `${rival.icon} Rival duel: ${rival.name}`;
+  updateGhostButton();
+  if (gameState === "title" && ghostServer() && duelUnlocked()) {
+    refreshGhost();
+    flushGhostUploads();
+  }
 }
 
 function startNewRun() {
@@ -9942,6 +10209,8 @@ function startNewRun() {
     for (let i = 0; i < DUEL_START_GEARS && bestEmptyCell(); i++) placeGear(newGearType());
     // The rival's machine starts as strong as the player's.
     duel.rate = soldiersPerSecond() * Math.pow(RIVAL_LEVEL_GROWTH, duel.level - 1);
+    duel.record.power = soldiersPerSecond();
+    save.duelStartRate = duel.record.power;
     runStartWave = 1;
     startWave();
   }
@@ -10542,6 +10811,7 @@ function init() {
     else startNewRun();
   });
   document.getElementById("duel-btn").addEventListener("click", startDuel);
+  document.getElementById("ghost-btn").addEventListener("click", startGhostDuel);
   document.getElementById("duel-again-btn").addEventListener("click", duelAgain);
   document.getElementById("duel-home-btn").addEventListener("click", leaveDuel);
   document.getElementById("home-btn").addEventListener("click", goHome);

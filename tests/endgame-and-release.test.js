@@ -434,7 +434,11 @@ async function check(name, fn) {
     assert.deepEqual(r.f, { forest: { 7: 1 } });
     assert.deepEqual(r.inBackup, r.f);
     const source = fs.readFileSync(path.join(root, "game.js"), "utf8");
-    assert.ok(!/sendBeacon|fetch\(|XMLHttpRequest|WebSocket/.test(source), "game.js must not send data anywhere");
+    // The only thing that ever leaves the device is a duel's ghost record: no play record, no save.
+    assert.ok(!/sendBeacon|XMLHttpRequest|WebSocket/.test(source), "game.js must not send data anywhere else");
+    assert.equal(source.match(/fetch\(/g).length, 1, "one fetch, for ghosts");
+    assert.match(source, /async function fetchWithTimeout[\s\S]{0,300}?fetch\(/);
+    assert.ok(!/fetchWithTimeout\([^)]*(save|funnel|backup)/i.test(source));
   });
 
   console.log("\nOffline");

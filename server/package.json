@@ -1,0 +1,15 @@
+{
+  "name": "gear-fight-ghosts",
+  "private": true,
+  "description": "Stores Gear Fight! duel records so other players can fight them as ghosts.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
+  }
+}
